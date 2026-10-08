@@ -151,6 +151,11 @@ module ppc_special #(
   // Retirement of a branch resolved at dispatch.
   input logic branch_retire_i, branch_retire_lk_i, branch_retire_ctr_i,
   input logic [31:0] branch_retire_pc_i,
+  // A removed bl's LR value, written once every older instruction retires.
+  input logic shadow_lr_write_i,
+  input logic [31:0] shadow_lr_i,
+  input logic shadow_ctr_write_i,
+  input logic [31:0] shadow_ctr_i,
   output logic result_valid_o,
   input logic result_ready_i,
   output ppc_pkg::result_packet_t result_o,
@@ -177,6 +182,10 @@ module ppc_special #(
   output logic retire_hold_o,
   // Registered: the lane owns the shared result port this cycle.
   output logic result_select_o,
+  // The result is a completion-serialized one, not a memory access's.
+  output logic result_late_o,
+  // The result faults on nothing and writes no CR or XER field.
+  output logic result_port1_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
   output logic [31:0] lr_o, ctr_o,
@@ -300,7 +309,7 @@ module ppc_special #(
   logic [31:0] hid0_q, ear_q;
   logic trap_taken_q, hid0_write, dispatch_hid0_write, hid0_power_unsupported;
   // The held uop's SPR number decoded at dispatch.
-  logic spr_xer_q, spr_sdr1_q, spr_hid0_q;
+  logic spr_xer_lr_q, spr_sdr1_q, spr_hid0_q;
   logic icache_change, external_denied;
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
@@ -735,6 +744,10 @@ module ppc_special #(
   assign mem_dst_o = uop_q.dst;
   assign retire_hold_o = retire_hold_q;
   assign result_select_o = result_select_q;
+  assign result_late_o = (state_q == S_EXEC) || (state_q == S_MMU_RESULT) ||
+                         (state_q == S_TIMER_RESULT);
+  assign result_port1_o = ((state_q == S_EXEC) || (state_q == S_TIMER_RESULT)) &&
+    !result_o.fault && !uop_q.write_cr_fields && !uop_q.write_cr_bit && !uop_q.write_xer;
   assign producer_o = producer_q;
   // The next plain access may dispatch on the releasing result edge.
   assign dispatch_ready_o = !cancel_i && ((state_q == S_IDLE) ||
@@ -813,7 +826,9 @@ module ppc_special #(
     if (state_q == S_EXEC) begin
       result_valid_o = !timer_read && !tlbsync_held;
       if (uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
-      if (uop_q.special_op == SPECIAL_MTSPR && spr_xer_q)
+      // mtxer and mtlr carry their value on the result bus; mtlr feeds the
+      // BPU's LR rename register (UM 6.4.1.1).
+      if (uop_q.special_op == SPECIAL_MTSPR && spr_xer_lr_q)
         result_o.value = a_q;
       if (uop_q.special_op == SPECIAL_MFMSR)
         result_o.value = msr_o & MSR_MASK;
@@ -1657,7 +1672,7 @@ module ppc_special #(
       fetch_page_miss_q <= '0;
       fetch_miss_eligible_q <= 1'b0;
       timer_read_q <= 1'b0;
-      spr_xer_q <= 1'b0;
+      spr_xer_lr_q <= 1'b0;
       spr_sdr1_q <= 1'b0;
       spr_hid0_q <= 1'b0;
       trap_taken_q <= 1'b0;
@@ -1666,7 +1681,7 @@ module ppc_special #(
       pc_q <= interrupt_pc_i;
       uop_q <= '0;
       timer_read_q <= 1'b0;
-      spr_xer_q <= 1'b0;
+      spr_xer_lr_q <= 1'b0;
       spr_sdr1_q <= 1'b0;
       spr_hid0_q <= 1'b0;
     end else if (dispatch_fire) begin
@@ -1681,7 +1696,7 @@ module ppc_special #(
       fetch_page_miss_q <= dispatch_page_miss_i;
       fetch_miss_eligible_q <= dispatch_fetch_miss_eligible;
       timer_read_q <= reads_timer(uop_i.special_op, uop_i.spr);
-      spr_xer_q <= uop_i.spr == 10'd1;
+      spr_xer_lr_q <= (uop_i.spr == 10'd1) || (uop_i.spr == 10'd8);
       spr_sdr1_q <= uop_i.spr == 10'd25;
       spr_hid0_q <= uop_i.spr == SPR_HID0;
       producer_q <= producer_i;
@@ -1874,8 +1889,12 @@ module ppc_special #(
         if (branch_lr_write_q) lr_q <= branch_lr_next_q;
         if (branch_ctr_write_q) ctr_q <= branch_ctr_next_q;
       end
+      if (shadow_lr_write_i) lr_q <= shadow_lr_i;
       if (branch_retire_i && branch_retire_lk_i) lr_q <= branch_retire_pc_i + 32'd4;
-      if (branch_retire_i && branch_retire_ctr_i) ctr_q <= ctr_q - 32'd1;
+      // A retiring counting branch younger than the CTR shadow counts on it.
+      if (shadow_ctr_write_i || (branch_retire_i && branch_retire_ctr_i))
+        ctr_q <= (shadow_ctr_write_i ? shadow_ctr_i : ctr_q) -
+                 32'(branch_retire_i && branch_retire_ctr_i);
     end
   end
 
@@ -2080,8 +2099,8 @@ module ppc_special #(
           else $error("data page miss lost its capture provenance");
       assert (timer_read_q == reads_timer(uop_q.special_op, uop_q.spr))
         else $error("registered timer-read decode disagrees with the held uop");
-      assert ({spr_xer_q, spr_sdr1_q, spr_hid0_q} ==
-              {uop_q.spr == 10'd1, uop_q.spr == 10'd25, uop_q.spr == SPR_HID0})
+      assert ({spr_xer_lr_q, spr_sdr1_q, spr_hid0_q} ==
+              {(uop_q.spr == 10'd1) || (uop_q.spr == 10'd8), uop_q.spr == 10'd25, uop_q.spr == SPR_HID0})
         else $error("registered SPR decode disagrees with the held uop");
       if (tlb_fill_commit_o)
         assert (!tlb_fill_abort_o && !cancel_i && fence_q &&

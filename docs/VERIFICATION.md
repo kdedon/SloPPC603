@@ -78,7 +78,7 @@ Each task must preserve this smoke regression until it is intentionally replaced
 ## Accepted foundation checks
 
 - `python3 -m unittest discover -s sim/cosim -p 'test_*.py'`: seven parser tests passed; the actual corpus inventory has 5,620 integer, 2,054 FP and 397 disassembly rows. This validates parsing, not execution semantics.
-- `python3 sim/spec/check_timing.py`: 190 timing rows, 39 rules and 384 source locators pass structural checks. Broken references, duplicate graphical cycles and inconsistent FP stage sums are rejected; 35 graphical instruction rows / 162 cells are structurally checked; the data is not yet a cycle checker.
+- `python3 sim/spec/check_timing.py`: 190 timing rows, 40 rules and 387 source locators pass structural checks. Broken references, duplicate graphical cycles and inconsistent FP stage sums are rejected; 35 graphical instruction rows / 162 cells are structurally checked; the data is not yet a cycle checker.
 - BE/LE cross artifacts passed ELF32 PowerPC, entry, byte-order and symbol checks; clean-build reproducibility passed. See the toolchain README and BUILD_STATUS.md for commands and versions. The compiled program cannot execute on the current branch/LSU-free core.
 
 ## Tagged execution checks

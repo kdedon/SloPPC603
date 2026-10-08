@@ -13,8 +13,8 @@ counters are in [PERFORMANCE.md](PERFORMANCE.md).
 
 | Definition | Cycles per Dhrystone run | Dhrystones/s per MHz | DMIPS/MHz | Firmness |
 |---|---:|---:|---:|---|
-| **Primary.** Our binary on a manual-accurate PID7v 603e, warm caches | **506** | **1976** | **1.125** | Model, about ±10% |
-| Same, PID6 (37-cycle divide) | 523 | 1912 | 1.088 | Model |
+| **Primary.** Our binary on a manual-accurate PID7v 603e, warm caches | **509** | **1965** | **1.118** | Model, about ±10% |
+| Same, PID6 (37-cycle divide) | 526 | 1901 | 1.082 | Model |
 | Published Motorola figure (other compiler and library) | (406) | 2460 | 1.40 | Vendor, compiler unstated |
 
 CoreMark on the same model: CPI 0.918 over one full iteration (319,000
@@ -42,7 +42,7 @@ cycles a 603e needs. Each rule cites its source in the code:
 | Dispatch two per cycle in order; DQ1 needs a different free unit; five CQ entries, five GPR renames (update forms take two) | UM 6.3.3, 6.6, 6.6.1.2 |
 | Reservation station per unit; operands from rename on the cycle they are written | UM 6.3.3, 6.3.3.1 |
 | IU one execute stage; multiply 1 + multiplier bytes; divide 20 (PID7v) or 37 (PID6) | UM 6.4.2; T6-4; UM 1.1 |
-| SRU adder runs `add`/`addi`/`addis`/`cmp*` beside the IU | UM 1.1.2.2.3, 6.4.5 |
+| SRU adder runs `add`/`addo`/`addi`/`addis`/`cmp*` beside the IU; on a start-cycle tie it takes the one the next integer instruction does not need | UM 1.1.2.2.3, 6.4.5; T6-4 note 1; UM 6.3.3 |
 | LSU two stages (EA/translate, cache), 2-cycle load-use, one access per cycle | UM 6.4.4; T6-6 `2:1` |
 | Completion two per cycle in order; CQ1 only integer or load; ≤2 GPR, ≤1 CR writes; stores, SRU and FP only from CQ0; nothing completes behind an unresolved prediction | UM 6.3.3, 6.6.1.3 |
 | Completion-serialized SRU work (`mfspr`, `mtspr`, CR logicals) starts after all older work completes, result forwarded after it completes; `mtspr` 2 cycles | UM 6.3.3.2, 1.1.4.4; T6-2 |
@@ -59,13 +59,24 @@ Assumptions (`perf_model_603e.py --assumptions` prints them):
 - A7: work behind a correctly predicted branch may complete in its resolve cycle.
 - A8: `mullw`/`mulhw` take 3 cycles without operand values (CoreMark only).
 - A9: a station accepts the next instruction when the previous starts executing.
-- A10: SRU adder present. Without it: 512 cycles.
+- A10: SRU adder present (603e only; UM C.2.3). The manual gives no unit-steering
+  rule: an add or compare takes the unit that starts it first and, on a tie, the
+  SRU when the next non-branch instruction needs the IU (UM 6.4.5 "in parallel
+  with another integer instruction"; an IU station it held would stall that
+  instruction, UM 6.3.3). IU on every tie: 521 cycles. Without the adder: 526.
 - A11, A12: SRU serialization as above.
-- A13: the single CR rename (UM 6.3.3.1) is not modelled; UM 6.6.1.2 does
-  not list it as a dispatch condition. Holding a CR writer's finish until the
-  previous writer completes adds 1 cycle.
+- A13: the single CR rename (UM 6.3.3.1) is not a dispatch condition (UM
+  6.6.1.2 lists only GPR and FPR renames); a CR writer finishes, writing the
+  rename, no earlier than the cycle after the previous CR writer completes.
+- A14: a held branch stops fetch (UM 6.4.1.1 "Fetching is stopped"); the
+  word fetched beside it stays, and the next fetch is the cycle after the
+  branch executes. A CR branch behind an unresolved predicted branch is held
+  even when its own CR is ready (UM 6.6.1.1).
+- A15: an instruction after a branch dispatches no earlier than the branch
+  executes; a held branch is not yet predicted, and the 603e executes through
+  one level of prediction (UM 6.4.1.1, 6.4.1.2). No Dhrystone change.
 
-Sensitivity of the primary figure: 500–523 cycles across A2, A10 and the divide.
+Sensitivity of the primary figure: 502–526 cycles across A2, A10 and the divide.
 A6 and A7 make the model optimistic (fewer cycles), so the target is, if anything,
 slightly strict. The model has not been replayed against Figures 6-3 to 6-5
 cycle by cycle; doing so is the first step that would firm it up.
@@ -463,8 +474,11 @@ retirement, which A6 does not charge the 603e), SPR moves (`mtspr` drain 3,
 
 ### Model corrections
 
-None changes the target. The single CR rename is now A13 (+1 cycle with
-`--core cr-rename`). A6 stays the main optimistic assumption; the store
+The single CR rename is now A13, applied by default (+1 cycle on
+Dhrystone). A14 stops fetch at a held branch and holds a CR branch behind
+an unresolved prediction (UM 6.4.1.1, 6.6.1.1; +12 cycles). Together they
+raise the Dhrystone model from 506 to 519 cycles per run (width-2 core
+trace at d798e7d). A6 stays the main optimistic assumption; the store
 residual bounds it at about 25 cycles.
 
 ### CQ entry reuse
@@ -752,8 +766,8 @@ load-use path the 66 MHz fit flags; the chip needs a fresh fit.
 
 The largest LSU-area gap left in the width 2 profile is `DRAIN_MEMORY LOAD`
 (20 cycles/run, strcmp's `lbz r10,0(r4)` behind `mr r4,r8`): a load waiting
-at dispatch for its base. `LSU_BASE_SNOOP` removes it but is off until a fit
-meets the clock target (LSU_PIPELINE.md, Base snooping). `CQ_FULL STORE`
+at dispatch for its base. `LSU_BASE_SNOOP` removes it and is the default
+since 2026-10-06 (LSU_PIPELINE.md, Base snooping). `CQ_FULL STORE`
 (6) and `LSU_BUSY STORE` (3) in memcpy follow.
 
 ## Branch removal (gap 8)
@@ -838,7 +852,934 @@ resolves, and the core's taken-branch refetch is no slower than before.
 The pair behind a released branch is followed by a fetch the cycle after,
 one cycle later than the 603e.
 
-## Gaps
+## Timing accuracy round 1
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 BRANCH_REMOVAL=<0|1> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, commit 382022b, 2026-10-06.
+LSU unit and store queue on, prebuilt firmware. `perf-diff` now runs with
+`BRANCH_REMOVAL=1`: the retire trace numbers each record after the branches
+removed before it, and the model restores them from the disassembly.
+
+| Dhrystone, width 2 | Core | 603e model | Gap |
+|---|---:|---:|---:|
+| Branch removal off | 641.0 | 506.0 | 135.0 (27%) |
+| Branch removal on (UM 6.4.1.3) | 640.0 | 506.0 | 134.0 (26%) |
+
+Excess cycles per run with removal on, ranked: DQ1 not supplied 74,
+predicted `bc`/`beqlr` in DQ1 refused 36 (`units ... dq0-flags`), CQ full
+27, update form in DQ0 blocks DQ1 17 (`LSU+IU update`), CQ1 not free for a
+DQ1 integer op 19 (`LSU+IU cq`), taken-branch refetch 21, empty IQ 12.
+`--core branch-slot` prices branches that take a dispatch slot and a CQ
+entry at 63 cycles per run (model 569 against 506): with removal on, only
+11 branches per run leave at dispatch; the 70 loop branches of `strcmp`
+and `strcpy` are predicted and keep their entry.
+
+Tried, not accepted (branch `timing-acc1-wip`):
+
+- DQ1 predicted in the cycle the older prediction resolves correctly
+  (UM 6.4.1.2, Figure 6-5). No change alone: the DQ1 branch then waits
+  for a CQ entry.
+- A conditional `bclr` with committed LR predicted from DQ1 like `bc`.
+- A branch predicted from DQ1 takes no CQ entry (UM 6.3.1, A3): it is
+  anchored on DQ0, its CR owner; nothing younger completes until it
+  resolves, and a miss keeps the anchor (or removes everything once it has
+  retired). Dhrystone stays at 640: the loops become fetch-bound
+  (`BRANCH_REFETCH` 35) and the `lbzu` + `cmpwi` pair is refused by the
+  update rule (35). `test-core-dual` fails at width 2 with removal on (a
+  plain `b` is dispatched); the other width-2 benches run passed
+  (`test-core`, `-recovery` with removal on; all nine focused benches,
+  `test-dispatch-rules` and `test-reference-machine` with removal off).
+- DQ1 beside an update form when DQ1 takes no GPR rename (UM 6.6.1.2
+  counts renames, not ports). Deadlocks Dhrystone in `strcmp` with the
+  anchored branch; not kept.
+
+What remains is the front end: a held branch released as its older
+branch resolves reaches dispatch with its target at R+3 or later against
+Figure 6-5's R+2, because the fetch-to-decode register sits between the
+cache and the IQ (UM 6.3.2.2: one cycle from request to IQ).
+
+## Timing accuracy round 2a
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BRANCH_REMOVAL=<0|1> FETCH_DECODE_REG=<0|1> MISPREDICT_FETCH_NOW=<0|1> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commit 1b154ee, 2026-10-06.
+"Before" is `FETCH_DECODE_REG=1 MISPREDICT_FETCH_NOW=0`, round 1's front end
+(measured at 15e5182; later commits do not change that setting). The
+second row is `FETCH_DECODE_REG=0 MISPREDICT_FETCH_NOW=0` at dfc9309.
+
+| | Dhrystone cycles/run, w1 | w2 | w2, removal | CoreMark/MHz, w1 | w2 | w2, removal |
+|---|---:|---:|---:|---:|---:|---:|
+| Before | 764.0 | 641.0 | 640.0 | 2.281 | 2.632 | 2.635 |
+| No fetch-to-decode register | | | 618.0 | | | |
+| Both | 749.0 | 610.0 | 610.0 | 2.390 | 2.838 | 2.849 |
+
+- `FETCH_DECODE_REG` (default 0): a word enters the IQ in the cycle the
+  cache returns it (UM 6.3.2.2). The register holds only words the IQ
+  refuses. A folded target now dispatches three cycles after its branch
+  is fetched (UM Figure 6-3: branch 2F, target 4F 5D).
+- `MISPREDICT_FETCH_NOW` (default 1): a misprediction redirects the front
+  end and requests the correct path in the cycle it resolves; the path
+  dispatches two cycles later (UM 6.4.1.2, Figure 6-5: resolve 5E, target
+  6F 7D). The recovery on the next edge leaves the front end alone.
+
+Neither can be faster than the manual: the cache answers a cycle after the
+request at the earliest, the IQ is emptied on the resolve edge, and
+dispatch is blocked until the recovery edge. `test-dispatch-rules` passes
+at both widths with removal off and on, at both settings.
+
+Still a cycle later than the manual: an unfolded branch resolved at
+dispatch, or a folded one that falls through, requests its target on the
+edge after dispatch (UM Figure 6-3: execute 3E, target 4F).
+
+## Predicted branches without a CQ entry
+
+Recorded: `make -C sim [DISPATCH_WIDTH=2] BRANCH_REMOVAL=<0|1> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 382022b (before) and f080b24 (after), 2026-10-06.
+LSU unit and store queue on, prebuilt firmware. Every run passes its checks
+(CoreMark CRC 0xfcaf).
+
+UM 6.3.1 and 6.4.1.3: a branch predicted and resolved in the BPU takes no
+CQ entry. With `BRANCH_REMOVAL=1` a predicted branch, from DQ0 or DQ1, is
+now removed at dispatch and anchored on the youngest CQ entry before it
+([CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit)). A DQ1 branch may be
+predicted in the cycle the older prediction resolves correctly (UM
+6.4.1.2, Figure 6-5), and a conditional `bclr` with a committed LR is
+predicted from DQ1 like `bc`.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Removal off, before | 764.0 | 641.0 | 2.281 | 2.632 |
+| Removal off, after | 764.0 | 641.0 | 2.281 | 2.632 |
+| Removal on, before | 760.0 | 640.0 | 2.287 | 2.635 |
+| Removal on, after | 711.0 | 639.0 | 2.331 | 2.638 |
+
+Width 1 gains 49 cycles per run: the CQ entry was the limit. Width 2 gains
+one: `CQ_FULL` falls from 27 to 11 cycles per run and the refused DQ1
+`bc`/`beqlr` (36) are gone, but the `strcmp` and `strcpy` loops become
+fetch-bound (`BRANCH_REFETCH` 14 → 35) and the `lbzu` + `cmpwi` pair is
+refused by the update rule (17 → 35). Remaining excess at width 2, ranked:
+DQ1 not supplied 74, update form in DQ0 blocks DQ1 35, taken-branch refetch
+43, wrong-path dispatch 9, empty IQ 12, CQ full 11. A predicted branch
+still takes the DQ0 dispatch slot; the 603e takes it out of the IQ at
+fetch.
+
+Recorded: `make -C sim BRANCH_REMOVAL=<0|1> test-core test-core-recovery test-core-dual test-core-fetch2 test-core-branch-fold test-core-branch-recovery test-core-machine-check-trace test-core-control-memory test-core-interrupt test-core-alignment test-dispatch-rules`, at width 1 and at width 2 with the LSU unit, commit f66a75c (`test-dispatch-rules` at f080b24), 2026-10-06; `make -C sim DISPATCH_WIDTH=2 BRANCH_REMOVAL=1 VERILATOR=... test-reference-machine MACHINE_PROGRAMS="dhrystone coremark selftest"`, commit f080b24.
+All pass. The reference machine steps 266,595 removed branches in
+Dhrystone at width 2. Two bench faults were found: `tb_core_dual` read
+`dcycle[0x6c]` in a pair check, which inserted the key, so "a plain b was
+dispatched" fired whenever removal was on, though the `b` never was; and
+`tb_core_interrupt` expected the `b` at 0x28 to retire. The rule checker
+now locates a removed mispredicted branch from the trace's `!<n>*<m>`.
+
+## Timing accuracy round 4
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-reference-machine perf-diff`, commits 3cdb974 (before), d798e7d, 103a0af and the branch-removal commit after it, 2026-10-06.
+LSU unit and store queue on, removal on; every run passes the reference
+machine and `test-dispatch-rules`.
+
+| Dhrystone cycles/run | w1 | w2 | 603e model |
+|---|---:|---:|---:|
+| Before (3cdb974) | 692 | 593 | 506 |
+| Rename and DQ1 rules (d798e7d) | 692 | 593 | 506 |
+| Model A13, A14 (103a0af) | 692 | 593 | 519 |
+| Resolved `bc`/`bclr` removed at IQ push | 687 | 592 | 519 |
+
+- A DQ0 instruction without a GPR result needs no rename slot, and a DQ1
+  IU instruction without one dispatches beside an update form (UM
+  6.6.1.2). Load results reach the SRU station as they finish (UM 6.3).
+  No change on Dhrystone.
+- A `bc` or `bclr` without LR or CTR writes whose condition is final as it
+  is queued is removed there (UM 6.4.1.1, 6.3.1), taken or not. A
+  not-taken one in the first fetch lane is removed only without a second
+  word. Predicted branches still take a DQ0 dispatch slot: removing them
+  at push needs an IQ-side anchor for recovery, the remaining part of the
+  63 cycles `--core branch-slot` prices.
+
+## Timing accuracy round 14
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-core test-core-recovery test-core-dual test-dispatch-rules test-reference-machine perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits e6c5cb2 (before), 95a1efc, 95ec321 and 2032aef, 2026-10-06.
+LSU unit and store queue on, removal on. Every run passes its benches, the
+reference machine and `test-dispatch-rules`; CoreMark CRCs match.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before (e6c5cb2) | 649 | 554 | 4,971,885 | 4,315,278 |
+| Base snoop by default (95a1efc) | 649 | 553 | 4,827,248 | 4,238,258 |
+| Held branch predicted from FD (95ec321) | 631 | 553 | 4,764,675 | 4,235,978 |
+| Target requested on release (2032aef) | 629 | 543 | 4,765,478 | 4,234,377 |
+
+The 603e model gives 521 cycles per Dhrystone run.
+
+- `LSU_BASE_SNOOP` is on: a load whose base a load or add produces waits
+  Table 6-6's 2 cycles. `LSU_BASE_SNOOP=0` keeps the base wait, the named
+  timing trade ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)).
+- A held CR branch released from FD with no IQ entry left to carry its
+  prediction no longer enters the IQ (UM 6.3.1): it is predicted from FD,
+  anchored on the youngest entry dispatching that cycle or the youngest CQ
+  entry, and may replace an anchored prediction whose CR arrives matching
+  it that cycle. In `strcmp` the slot becomes fetch wait.
+- A held branch predicted taken as it is released requests its target on
+  that edge rather than through `fold_q` a cycle later (UM Figure 6-5).
+  `strcmp` and `strcpy` now match the model.
+
+## Timing accuracy rounds 15 and 16
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-core test-core-recovery test-core-dual test-dispatch-rules test-reference-machine perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 2032aef (before), 36c7e3c and 383e017, 2026-10-06.
+LSU unit and store queue on, removal on. At 383e017 both widths pass
+their benches, the LSU benches, the reference machine and
+`test-dispatch-rules`; CoreMark CRCs match. `test-core` and
+`test-core-full-decode` pass at the default configuration.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before (2032aef) | 629 | 543 | 4,765,478 | 4,234,377 |
+| IU, load and SRU results forwarded as they finish (36c7e3c) | 629 | 542 | 4,765,478 | 4,195,696 |
+| Store data from an LR or CTR move (383e017) | 627 | 539 | 4,764,252 | 4,194,493 |
+
+The 603e model gives 521 cycles per Dhrystone run.
+
+- A second forward port carries IU or load results to the SRU station and
+  SRU results to the IU station in their finish cycle (UM 6.3.1).
+  Mispredicted `bc` mean at width 2: 4.67 → 4.50 (model 4.33).
+- A store whose data an `mflr` or `mfctr` writes dispatches to the LSU
+  and takes its data from the wake bus (UM 6.3.3, 6.4.5); only a base
+  read waits for the move. In `Func_2`, `stw r0,20(r1)` dispatched four
+  cycles after `mflr`; it now dispatches with the model. Mispredicted `bc`
+  mean at width 2: 4.50 → 4.33, the model's.
+- Linking branches still take a CQ entry. Removing them needs the shadow
+  LR (UM 6.3.1, 6.6.1.1) written when every older instruction has
+  completed, with interrupts and the retirement trace treating the branch
+  as done at that point; not yet built.
+
+## Timing accuracy round 17
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff test-dispatch-rules` and `make -C sim check-spec`, commit e9c2a0a plus the checker and report changes below, 2026-10-06.
+
+perf-diff reported the core faster than the model on mispredicted
+branches (width 1: `bc` 4.17 against 4.33, `bclr` 4 against 6; width 2:
+`bclr` 5 against 6). The same report showed it at 36c7e3c and at
+3cdb974 (`bc` 3.17 at width 1). It was the metric, not the core: the
+core side ran from the dispatch of the instruction before a removed
+branch, the model side from the branch's BPU execute, which the model
+places at fetch + 1, often before older instructions dispatch.
+Measured from a common older instruction, every Dhrystone misprediction
+reaches the correct path no earlier than the model. Example, `memcpy`
+`andi.` then `beq` at fff03318, width 2: `andi.` dispatches in cycle 3,
+executes in 4 and writes back in 5, which resolves the branch; the
+target is fetched in 6 and dispatches in 7, as in Figure 6-5 (UM
+6.4.1.2.1: resolved in 5, fetched in 6, dispatched in 7). A `cmpwi`
+producer in `fb_palette_default` dispatches in 13262, its CR is
+available in 13264 (T6-4 '^'), and the correct path dispatches in 13266.
+
+- perf-diff now measures a taken branch from the dispatch of the last
+  older non-branch (for a misprediction, the CR producer) to the next
+  dispatch, on both sides. Mispredicted `bc` reads 4.67 against 5.00 at
+  both widths, `bclr` 5 against 5. The residue is a model producer that
+  dispatches early and waits in its station for a load result; the core
+  dispatches it later and executes it in the same cycle.
+- `test-dispatch-rules` checks TIM-BPU-MISPREDICT: the first dispatch
+  after a recovery is at least four cycles after the dispatch of the
+  branch's CR producer (execute, resolve, fetch, dispatch; Figure 6-5).
+  Dhrystone meets the bound exactly in 30,532 of 34,052 recoveries at
+  width 1 and 31,919 of 32,065 at width 2, and fails none, here or at
+  3cdb974.
+
+## Timing accuracy round 18
+
+A `bl` now leaves at dispatch like a branch without LR or CTR writes
+(UM 6.3.1: only branches that update LR or CTR need a completion
+entry). It holds PC + 4 in a shadow LR, written to LR when the next
+allocated instruction reaches the CQ head or retires second of a pair,
+so LR is written in order. An interrupt taken before then sees LR
+unwritten and resumes at the `bl`. A `bl` is removed only when the
+shadow is free, no prediction is outstanding and no recovery is in
+flight; a recovery keeps the shadow while the `bl` survives. Removed
+`bcl`, `bclrl` and `bcctrl` stay excluded: they are conditional or read
+a register (UM 6.4.1.1, 6.6.1.1).
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 16 (383e017) | 627 | 539 | 4,764,252 | 4,194,493 |
+| Removed `bl` (99c3e2e) | 621 | 536 | 4,760,510 | 4,194,442 |
+
+The 603e model gives 521 cycles per Dhrystone run; both widths stay
+slower than it. CoreMark CRCs match at both widths (w1 361,101, w2
+313,643 cycles per iteration).
+
+Rules:
+
+- `test-dispatch-rules` (TIM-BPU-FOLD) accepts a removed branch that
+  writes no CTR and LR only as a `bl`; a younger LR-writing branch other
+  than `bl` may not dispatch until everything older than a removed `bl`
+  has completed (UM 6.4.1.1, 6.6.1.1).
+- The reference runner steps a removed `bl` and compares LR at the next
+  record against DingusPPC's LR after the `bl`. It fetches each removed
+  word through the reference's instruction translation, so a branch in
+  translated space is checked; a fetch fault, a removed non-branch or a
+  removed `bcl`/`bclrl`/`bcctrl` fails. When an interrupt is taken with
+  removed branches not yet counted on a record (empty CQ), the runner
+  steps removed branches, at most three, until its PC equals the RTL's
+  SRR0; each must pass the same rule. The runner holds DingusPPC's clock,
+  so its decrementer never expires on its own: the RTL decides when DEC
+  is taken, and the runner checks where.
+- A new negative control flips LR in the first record after a removed
+  `bl`; it must fail.
+
+Recorded: `make -C sim -j2 lint check-spec`; and at `DISPATCH_WIDTH=1`
+and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules perf-diff`,
+CoreMark on the demo model (`+IMAGE=coremark.hex`), and
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`;
+`test-core test-core-full-decode` at the default configuration; commit
+99c3e2e, 2026-10-06. All pass. Dispatch rules: Dhrystone 61,496
+removed branches at w1, 59,494 at w2, no failures; CoreMark and
+Whetstone pass at both widths.
+
+Recorded: `test-core-branch-fold test-core-branch-recovery test-core-interrupt test-core-interrupt-disabled perf-diff`,
+`test-reference-machine REFERENCE_DIR=<dingusppc> MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`
+and `test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+at both widths with the flags above, commit 4d979d9 (`lint check-spec` also
+rerun there: 250 and 29 checker tests), 2026-10-06. All pass, except that
+`test-core-branch-fold` at w1 stops at its built-in w2 build on
+REDEFMACRO (`PPC_DISPATCH_WIDTH` redefined), a harness quirk; its w1
+program passes (checks=102,522, removed=284) and both programs pass at
+w2. Interrupt benches: 382 checks. Reference, w2: 5 programs and 7
+negative controls pass; Dhrystone 1,009,270 records, 288,579 removed
+branches of which 21,980 `bl`; MMU stress 42,364 records, 233
+interrupts, 122 TLB misses, 10,379 removed branches (665 `bl`). w1:
+MMU stress 49,363 records, 250 interrupts, 10,395 removed branches
+(681 `bl`); 5 programs and 7 negative controls pass, Dhrystone
+1,313,360 records, 290,548 removed branches of which 23,982 `bl`.
+
+## Timing accuracy round 19
+
+A held `mflr`, `mtlr`, `mfctr` or `mtctr` now enters the special lane in
+the cycle the entry ahead of it retires, so it executes the cycle after
+every older instruction has completed (UM 6.3.3.2) instead of one cycle
+later. It is not started beside the retirement of the lane's own last
+instruction. The lane reads LR and CTR in its execute cycle, after a
+retiring branch or the shadow LR has written them. An IU instruction in
+DQ1 now dispatches beside such a move in DQ0 unless it reads the move's
+result: the move is completion-serialized, and UM 6.6.1.2 stops DQ1 only
+behind a dispatch-serialized instruction.
+
+| | Dhrystone cycles/run, w2 |
+|---|---:|
+| Round 18 (64e707f) | 536 |
+| Moves (b1e85e5) | 533 |
+
+Proc_1's gap to the model drops from 4 to 2 cycles; the `mflr r0` at its
+entry completed two cycles after `stwu` instead of the model's one.
+
+The model has no width-1 mode: it always dispatches two (UM 6.6.1.2), so
+the w1 gap (621 against 521) is mostly DQ1 slots w1 cannot use. Only w2
+is compared against it.
+
+Open, w2 (gap per run against the model): `memcpy` 6, `dhry_main` 5,
+`Proc_8` 2, `Proc_1` 2. The `memcpy` loop runs 7.5 cycles per pass
+against the model's 7, filling the five-entry CQ (CQ_FULL STORE). The
+core keeps a CQ entry for `bdnz` (it decrements CTR at retirement); the
+model's A3 gives no branch a CQ entry. With nine entries per pass, each
+held three to five cycles, five entries cannot sustain seven cycles per
+pass. The manual says a branch that needs a write back does it "sometime
+after the decode/execute phase" (UM 6.3.1) and lists only CTR
+availability as a resource for `bc` on CTR (UM 6.6.1.1); T6-1 marks `bc`
+as foldable to an effective zero cycles. Neither fixes whether a counting
+branch takes a CQ entry. Closing it means a CTR shadow written in order,
+as round 18 did for LR, or a model change with a citation.
+
+The early entry is withheld while a predicted branch is unresolved
+(0178fe9). In Whetstone at w1, `mflr r0` in `cos` entered the lane as the
+`cmplw` ahead of it retired; that CR resolved the removed `bgt` between
+them as mispredicted, and the recovery killed the lane, tripping the
+special-lane kill assertion. The dispatch-rules failure (`retired
+0000fff0 was not dispatched`) was the checker reading the trace cut off
+by that abort. Dhrystone and CoreMark cycles are unchanged by the fix.
+
+At w1 Dhrystone is 622, one above round 18's 621. In `Func_2` the move
+now executes in the cycle the following `li r9,0` offers its result. At
+w1 the IU shares the one result port and yields while the lane holds it,
+then to the two `lbz` and the `stw` behind, so `li` completes four
+cycles late and the CQ fills (CQ_FULL, 3 cycles). This is the w1 result
+port, not a manual rule: the IU and SRU have their own result buses (UM
+6.3.3), as w2's second port shows. CoreMark w1 improves (4,760,510 to
+4,740,364).
+
+| | w1 | w2 |
+|---|---:|---:|
+| Dhrystone cycles/run | 622 | 533 |
+| CoreMark cycles (demo run) | 4,740,364 | 4,174,575 |
+| CoreMark cycles/iteration | 359,202 | 311,896 |
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 0178fe9, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=102,527). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths (w1 Whetstone 3,939,931 retirements; w2 837,058 pairs
+dispatched). CoreMark CRCs match at both widths. Interrupt benches: 13,953 and
+382 checks. Reference: 5 programs and 7 negative controls at both widths; MMU
+stress 48,921 records and 210 interrupts at w1, 42,238 and 220 at w2.
+
+## Timing accuracy round 20
+
+A `bc` that counts CTR without LK (`bdnz`, `bdz`, and their CR forms
+when CR is final) now leaves at dispatch like round 18's `bl`. Only CTR
+availability is listed as a resource for a `bc` on CTR (UM 6.6.1.1), and
+T6-1 folds `bc` to an effective zero cycles. A shadow CTR holds CTR - 1,
+written to CTR as the next allocated instruction reaches the CQ head or
+retires second of a pair, so CTR is written in order. An interrupt taken
+before then sees CTR unwritten and resumes at the `bc`. The `bc` is
+removed only when no older CTR writer (`mtctr` or a counting branch) is
+uncommitted, the shadow is free, no prediction is outstanding and no
+recovery is in flight; otherwise it takes a CQ entry as before. A
+younger `bc` on CTR or `bcctr` waits until the removed `bc` completes,
+that is until everything older has (UM 6.4.1.1). Once the CQ has drained
+behind it with nothing allocated since, the `bc` has completed and a
+`bcctr` uses the shadow's value. A held `mfctr`/`mtctr` (or
+`mflr`/`mtlr`) that is a shadow's tagged entry enters the special lane
+only at the CQ head, after the shadow has written.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 19 (efc1a82) | 622 | 533 | 4,740,364 | 4,174,575 |
+| Removed `bdnz` (7a2a472) | 622 | 531 | 4,674,089 | 4,170,333 |
+
+CoreMark per iteration: w1 352,524, w2 311,603; CRCs match at both
+widths. The `memcpy` loop now runs at the model's 7 cycles per pass in
+steady state. Its first pass still takes 9: that `bdnz` is fetched
+behind the `mtctr`, is not folded, and sits in DQ1 behind a store. A
+trial that removed counting `bc` from DQ1 too left `memcpy` unchanged
+and cost 3 cycles in `Proc_1` (534), so it was dropped. Open, w2:
+`dhry_main` 5, `memcpy` 4, `Proc_8` 2, `Proc_1` 2.
+
+Rules:
+
+- `test-dispatch-rules` (TIM-BPU-FOLD) accepts a removed branch that
+  writes CTR only as a `bc` without LK, and LR only as a `bl`. A younger
+  `bc` on CTR or `bcctr` may not dispatch until everything older than a
+  removed counting `bc` has completed (TIM-BPU-FETCH-STOP). The invalid
+  counting `bcctr` form counts as a CTR write.
+- The reference runner steps a removed counting `bc` and compares CTR at
+  the next record. New negative controls flip CTR in the first record
+  after a removed `bdnz`, and offer `bdnzl`, `bdnzlr` and a counting
+  `bcctr` as removable words; each must fail (11 controls in all).
+- `tb_core_interrupt` phase 12 raises an IRQ as a `bdnz` is removed; the
+  IRQ must see CTR unwritten and resume at the `bdnz`, which then counts
+  once (`mfctr` reads 0x54 from 0x55).
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 7a2a472, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; Dhrystone
+28,967 removed `bdnz` and selftest about 1.07 million; MMU stress 46,088
+records, 220 interrupts and 2,944 removed `bdnz` at w1, 41,061 records and
+236 interrupts at w2.
+
+## Timing accuracy round 21
+
+An `mtlr`/`mtctr` now dispatches into its holding slot before its
+operand is written and takes it from the result buses there, as a
+reservation station would (UM 6.3.3); it still enters the special lane
+only at the CQ head. Before, it waited at dispatch for a ready source,
+so in `memcpy` the `mtctr` behind `srwi` dispatched a cycle late.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 20 (7a2a472) | 622 | 531 | 4,674,089 | 4,170,333 |
+| Held-move snoop (5b26f0e) | 623 | 531 | 4,671,880 | 4,170,343 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,014,111 to
+2,013,520 cycles; Whetstone 6,481,816 to 6,481,565.
+
+Diagnosis of the open w2 gaps (one iteration, core dispatch against the
+model's front end):
+
+- `dhry_main`: after `Proc_7` the core fetches `fff03e70` alone and its
+  `blr` a cycle later, because a pair is fetched only with two free IQ
+  entries. The model fetches the pair, since a branch goes to the BPU and
+  takes no IQ entry (UM 6.3.1). The core is slow; every later fetch in
+  the block is a cycle behind. Fix: let a fetched pair in when only one
+  entry is free and the second word is removed.
+- `memcpy`: with the `mtctr` fixed, `lwz` at `fff0333c` still dispatches
+  a cycle after it, as DQ1 pairs beside a move only with an IU op. A
+  trial that also paired an access beside `mtspr` matched the model's
+  dispatch but then lost three cycles to `LSU_BUSY` before `fff0334c`
+  (Dhrystone 532), so it was dropped; that stall is undiagnosed.
+- `Proc_8`: `lwz r6,76(r1)` at `fff03850` reads the word `Proc_7` just
+  stored and completes one cycle later than the model (A6), which fills
+  the CQ and delays `fff03e7c` (+1). `stwx` at `fff03e88` then misses
+  pairing in DQ1 (`IU+LSU lsu`, +1). Not yet traced into the LSU.
+- `Proc_1`: not diagnosed this round.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 5b26f0e, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,319 records and 241 interrupts at w1, 41,058 records and 236 interrupts at w2.
+
+## Timing accuracy round 22
+
+A fetched pair whose second word is a `b`, or a `bclr` on an available
+LR with BO "branch always", now enters with one free IQ entry: the word
+goes to the BPU and takes none (UM 6.3.1). The decision reads only the
+fetched word and LR state; if the word is not removed after all (a
+waiting first word, trace mode), the pair waits in the FD registers for
+two entries, as before. The FD registers' own pair also enters with one
+entry when its second word is removed, folded or held back.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 21 (bec1db2) | 623 | 531 | 4,671,880 | 4,170,343 |
+| Removed pair word (230bb7a) | 623 | 530 | 4,671,878 | 4,170,242 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,013,520 to
+2,011,451 cycles; Whetstone 6,481,565 to 6,481,470.
+
+Diagnosis of the other w2 gaps:
+
+- An access in DQ1 beside an `mtctr` or `mtlr` in DQ0 is allowed by UM
+  6.6.1.2 (different units, neither dispatch-serialized). A retrial of
+  the pairing (`c0_move && d1_lsu && !dispatch_uop.gpr_write`) still
+  costs a cycle (Dhrystone 531). In `memcpy` it never pairs: after the
+  mispredicted `beq` at `fff03318`, the `mtctr` waits two to three
+  cycles at the DQ0 head with `LSU_BUSY`, because the special lane is
+  still busy with a non-overlapped memory operation (the
+  `!special_busy || ... || (sru_move && (special_mem_overlap ||
+  sru_in_lane))` dispatch term, `perf_special_mem_q` set). Which access
+  holds the lane, and why it is not overlapped, is not yet traced; the
+  pairing stays off.
+- `Proc_8`: the model's A6 text and code agree once read as "the store
+  writes the cache the cycle after it completes, and the load reads it
+  the cycle after that": the code starts the load's EA cycle at store
+  C + 1, so its cache read is at C + 2. The core's `lwz r6,76(r1)` reads
+  a cycle later; the LSU side is not yet traced.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 230bb7a, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,319 records and 241 interrupts at w1, 41,058 records and 236 interrupts at w2.
+
+## Timing accuracy round 23
+
+A retired store in the LSU pipe's store queue now offers its write in its
+retire cycle instead of the cycle after. The cache takes the write the
+cycle after the store completes, and an overlapping load offers the cycle
+after that and reads the cache then (A6, UM 1.1.4.3). A load's offer
+cycle is the model's EA cycle and its response the cache cycle, as for a
+load with no older store. In `Proc_8`, `lwz r6,76(r1)` behind the `stw`
+in `Proc_7` now retires three cycles after the store, as in the model,
+not four. The `test-core-lsu-timing` store-then-load retirement spacing
+expectation moves from 4 to 3 to match.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 22 (230bb7a) | 623 | 530 | 4,671,878 | 4,170,242 |
+| Store offers at retirement (120f35f) | 623 | 529 | 4,645,044 | 4,148,984 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,011,451 to
+2,008,517 cycles; Whetstone 6,481,470 to 6,467,554.
+
+Diagnosis of the other w2 gaps:
+
+- `memcpy`: the round 22 note was wrong. The `LSU_BUSY` cycles at the
+  `mtctr` are a stale `perf_special_mem_q` label: the special lane is
+  busy with the `mtctr` itself (state EXEC, then HOLD, after it reaches
+  the CQ head), and the younger `addi` waits on a full CQ and IU station,
+  not on a memory access. No wrong-path access holds the lane. The
+  `mtctr` itself retires on the model's cycle (D + 4). The loss is the
+  first `bdnz`: fetch stops behind it (UM 6.4.1.1) and the core resolves
+  it only at DQ0, four cycles after the model's BPU resolves it (the
+  cycle after the `mtctr` executes). The target dispatches two cycles
+  later than the model's, which is bounded by the CQ. Resolving a waiting
+  CTR branch in the IQ when CTR becomes ready would recover those two
+  cycles. Pairing the `lwz` beside the `mtctr` in DQ1 gains nothing:
+  the CQ fills behind the serialized `mtctr` either way.
+- Memcpy exit: `cmpwi` (an adder op) in DQ0 beside `slwi` in DQ1 does
+  not pair. The model sends the `cmpwi` to the SRU and the `slwi` to the
+  IU; the core only sends DQ1 to the SRU. The cycle is recovered a few
+  instructions later.
+- `stwx` at `fff03e88` in DQ1 waits for its index registers to be ready
+  (`d1_lsu_ready` needs ready sources except a D-form base). The model
+  dispatches it beside the `mulli` with unready sources into the LSU
+  reservation station (UM 6.6.1.2).
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 120f35f, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,418 records and 250 interrupts at w1, 41,049 records and 235 interrupts at w2.
+
+Recorded: `make -C sim -j2 check-spec` and, at both widths with the same LSU-pipe settings,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`;
+commit 120f35f plus the spacing-expectation change committed with this record, 2026-10-07. All pass
+(timing benches: 3,209 checks, 55 spacings).
+
+## Timing accuracy round 24
+
+A load or store with one address source not yet written now dispatches
+from either slot into the LSU and waits there for it, with the other
+source or the displacement as its offset (UM 6.3.3, 6.6.1.2). Before, only
+a D-form load could wait on its base; an indexed access, or a store, waited
+at dispatch for both sources. Update forms still wait at dispatch. In
+`Proc_8`, `stwx` at `fff03e88` now dispatches beside the `mulli`, as in the
+model.
+
+An add or compare in DQ0 now takes the SRU when DQ1 holds an IU-only
+operation, and the pair dispatches together (UM 6.4.5: the SRU executes
+add and compare "in parallel with another integer instruction"). The
+`memcpy` exit `cmpwi` and `slwi` now pair. The `test-core-dual`
+`add + mullw` case now expects a pair when the SRU is built, for the
+same reason.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 23 (93b4201) | 623 | 529 | 4,645,044 | 4,148,984 |
+| Waiting accesses, SRU pairing (23298cb) | 622 | 528 | 4,639,686 | 4,144,826 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,008,517 to
+2,003,717 cycles; Whetstone 6,467,554 to 6,443,526.
+
+Not done: the first `bdnz` behind `mtctr` in `memcpy` still resolves at
+DQ0, four cycles after the model's BPU (about two cycles per call). Fetch
+stops behind it (UM 6.4.1.1) and `ctr_pending_q` clears only when the
+`mtctr` retires. Resolving the youngest waiting CTR-only branch in the IQ
+in the cycle after `ctr_pending_q` clears, and redirecting fetch from
+there, would recover the cycles.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 23298cb, 2026-10-07 (the w1 `test-core-dual` run was repeated after the bench change). All pass
+(Quartus: 0 errors), except the known `test-core-branch-fold` REDEFMACRO stop at its built-in w2 build
+at w1; its w1 program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and Whetstone
+at both widths. Interrupt benches: 15,044 and 382 checks. Reference: 5 programs and 11 negative
+controls at both widths; MMU stress 46,319 records and 241 interrupts at w1, 41,094 records and
+252 interrupts at w2. LSU timing benches: 3,209 checks, 55 spacings.
+
+## Timing accuracy round 25
+
+A `bc` on the CTR alone (BO[0] set, no LK) that stops fetching behind an
+`mtctr` (UM 6.4.1.1) now executes in the IQ: in the cycle after the
+`mtctr` retires, with no other CTR writer queued or uncommitted, the
+youngest IQ entry, if it is that branch, resolves from CTR. Taken, fetch
+redirects to its target and the entry is marked folded, so DQ0 does not
+redirect again; not taken, fetch restarts after it. The branch still
+dispatches and decrements CTR. Before, it resolved only at DQ0.
+
+When CTR is ready: the manual says the branch "waits for the mtspr to
+execute" (UM 6.4.1.1), and the BPU holds a CTR rename register for
+`mtspr(CTR)` (UM 6.3). `mtspr` is completion-serialized (UM 6.3.3.2) and
+takes 2 cycles (Table 6-2), so it finishes executing as it becomes able to
+complete. The model's `ctr_ready = fin + 1` is therefore the earliest the
+manual allows and is unchanged. The core resolves one cycle later (the
+cycle after retirement, from the committed CTR), so it is never faster.
+
+In `memcpy`, the first loop `lwz` now retires 8 cycles after the `mtctr`,
+as in the model (10 before).
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 24 (23298cb) | 622 | 528 | 4,639,686 | 4,144,826 |
+| CTR release in the IQ (dd7afe6) | 620 | 525 | 4,629,935 | 4,135,770 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,003,717 to
+1,997,520 cycles; Whetstone unchanged (6,443,526).
+
+Remaining w2 Dhrystone gap (perf-diff, per iteration): `dhry_main` +6
+front end, `Proc_1` +2, `strcpy` and `memcpy` +1 each.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit dd7afe6, 2026-10-07. All pass (Quartus: 0 errors), except the known `test-core-branch-fold`
+REDEFMACRO stop at its built-in w2 build at w1; its w1 program passes (checks=101,519). Dispatch
+rules pass Dhrystone, CoreMark and Whetstone at both widths. Interrupt benches: 15,044 and 382
+checks. Reference: 5 programs and 11 negative controls at both widths; MMU stress 46,141 records
+and 225 interrupts at w1, 41,006 records and 243 interrupts at w2. LSU timing benches: 3,209
+checks, 55 spacings. No bench expectation changed.
+
+## Timing accuracy round 26
+
+A store in LSU P1 no longer waits while a load that passed queued stores
+is still in P2. In `Proc_8` the `lwzx` at `fff03ecc` passes the queued
+`stw`s; the two `stw`s behind it then held P1 a cycle each, P1 filled,
+and the `lwz` at `fff03864` dispatched a cycle late (`LSU_BUSY`). In
+`Proc_1` the `stwu` behind that `lwz` waited the same way and the CQ
+filled. The manual has no such ordering wait: stores leave the LSU for
+the store queue and loads bypass them (UM 1.1.4.3, A6). The store now
+queues and is marked young: the passing load's fault (`redo` or FP
+fault) removes it with the rest of P1, and no later load passes it while
+that load is in P2, so every store a passing load bypasses is older
+than it.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 25 (dd7afe6) | 620 | 525 | 4,629,935 | 4,135,770 |
+| Young stores queue (63247f3) | 619 | 521 | 4,629,966 | 4,134,249 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 1,997,520 to
+1,986,169 cycles; Whetstone 6,443,526 to 6,442,041.
+
+The w2 iteration now equals the model (521). Per function the core is
+still +5 in `dhry_main` and +1 in `strcpy`, offset by `Proc_7` -2 and
+`Func_1` -3. One of the offsets is the core being faster than the
+manual: the `mtlr r0` at `fff03614` retires two cycles after the
+instruction ahead of it, where completion serialization (UM 6.3.3.2) and
+the 2-cycle `mtspr` (Table 6-2) give three. It enters the special lane
+through `sru_head_next`, in the cycle the entry ahead retires, and
+executes for one cycle. The `mtctr` at `fff03338` and `mtlr` at
+`fff03f60` take three. Open; the fix is to let only `mfspr` enter on
+`sru_head_next`.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 63247f3, 2026-10-07. All pass (Quartus: 0 errors), except the known `test-core-branch-fold`
+REDEFMACRO stop at its built-in w2 build at w1; its w1 program passes (checks=101,519). Dispatch
+rules pass Dhrystone, CoreMark and Whetstone at both widths. Interrupt benches: 15,044 and 382
+checks. Reference: 5 programs and 11 negative controls at both widths; MMU stress 46,141 records
+and 225 interrupts at w1, 41,006 records and 243 interrupts at w2. LSU timing benches: 3,209
+checks, 55 spacings. No bench expectation changed.
+
+## Timing accuracy round 27
+
+An `mtspr` to LR or CTR no longer enters the special lane in the cycle
+the entry ahead retires. It executes after every older instruction
+retires (UM 6.3.3.2) and takes two cycles (Table 6-2), so it retires
+three cycles after the instruction ahead; only `mfspr` (one cycle) may
+enter as its older work completes. The `mtlr r0` at `fff03614` now takes
+three cycles, like the `mtctr` at `fff03338` and the `mtlr` at
+`fff03f60`; `mflr` keeps two.
+
+The dispatch-trace checker enforces this as `TIM-SER-SRU-LATENCY`: an
+`mtspr` or `mfspr` retires at least its Table 6-2 latency plus one cycle
+after the retirement ahead (`mtspr` 2, `mfspr` 1, `mfspr` of a BAT 3).
+The round 26 Dhrystone trace fails it; the new traces pass.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 26 (c6c3133) | 619 | 521 | 4,629,966 | 4,134,249 |
+| `mtspr` at the head (41e0a1f) | 621 | 523 | 4,642,833 | 4,143,790 |
+
+CRCs match at both widths. The model is unchanged at 521, so the w2
+core is now 2 cycles over it: the manual's cost of the `mtlr`, which
+the round 26 total hid.
+
+`Proc_7` and `Func_1` show the core ahead of the model only in the
+front-end (dispatch) column. By retirement the core equals the model
+through both functions: the per-instruction difference is the same on
+entry and exit. The negative front-end figures are attribution: a
+removed `blr` or `beq` takes no completion slot, so its offset drops and
+the next instruction's rises in the caller. On the third `Proc_7` call
+the core also dispatches its first `mr` beside the `addi` at `fff0362c`
+by sending the `addi` to the SRU; the model gives the `addi` the IU and
+dispatches the `mr` a cycle later. UM 6.4.5 lets the SRU add in parallel
+with another integer instruction, so the model's greedy unit choice is
+pessimistic. Making it choose the SRU when the next instruction needs
+the IU drops the model to 509 cycles; that change needs its own review
+and is not taken here.
+
+`dhry_main` +5: by retirement, the first gap is the `li r31,65` at
+`fff03878` behind the removed `ble` at `fff03874`. The model completes
+it with the `cmplwi` in the branch's resolve cycle; the core retires it
+a cycle later. Open: check against Figure 6-5 whether an instruction
+behind a predicted branch may complete in the resolve cycle.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 41e0a1f with the checker of 2400ce6, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1 program passes
+(checks=101,519). Dispatch rules, now with `TIM-SER-SRU-LATENCY`, pass Dhrystone, CoreMark and
+Whetstone at both widths. Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,362 records and 245 interrupts at w1, 40,792 records and 223 interrupts at w2. LSU timing benches:
+3,209 checks, 55 spacings. Bench expectation changed: the synthetic `mtctr` in
+`test_dispatch_trace.py` `test_fetch_stops` now retires three cycles after the `add` ahead
+(UM 6.3.3.2, Table 6-2), not one.
+
+## Timing accuracy round 28
+
+The model's unit choice for an add or compare was pessimistic. It gave
+the IU on every start-cycle tie, so a compare waiting in the IU station
+for a load held the station and the next IU instruction could not
+dispatch (UM 6.3.3: "dispatch of that instruction will stall until the
+first instruction completes execution"). UM 6.4.5 lets the SRU execute
+`addi`, `addis`, `add`, `addo`, `cmpi`, `cmp`, `cmpli` and `cmpl` "in
+parallel with another integer instruction"; Table 6-4 note 1 limits the
+`add` row to `add` and `addo` (no record form), and UM C.2.3 removes the
+adder on the 602 (`--no-sru-add`). The manual names no steering rule,
+so the model now picks the earlier start and, on a tie, the SRU when the
+next non-branch instruction needs the IU (A10). It also admits `addo`,
+which the core already sent to the SRU. The core's own rule (an add or
+compare in DQ0 takes the SRU when DQ1 holds an IU-only instruction,
+round 24) is the same choice.
+
+| | Model, Dhrystone cycles/run | Core w2 | Gap |
+|---|---:|---:|---:|
+| Round 27 (1c76de0) | 521 | 523 | 2 |
+| SRU steering (d6e8347) | 509 | 523 | 14 |
+
+Other model figures: IU on every tie 521, no SRU adder 526, any fetch
+pair (A2) 502, 37-cycle divide 526. The core is unchanged.
+
+Per function by retirement spacing (core minus model, cycles per run,
+round 27 trace): `strcmp` +11, `Proc_7` +2, `dhry_main` +2, `strcpy`
++1, `Func_2` -2, the rest 0. `strcmp`'s inner loop (`lbzu`, `cmpwi`,
+`beq`, `mr`, `lbz`, `addi`, `cmpw`, `beq`) takes 6 cycles in the model
+(the `cmpwi` waits for the `lbzu` in the SRU and the `mr` dispatches
+the next cycle) and alternates 6 and 7 in the core: the `lbz r10,0(r4)`
+behind `mr r4,r8` retires two cycles after the `mr` against one in the
+model, and the core's `cmpw` retires four cycles after its dispatch.
+
+Completion in a predicted branch's resolve cycle (A7). UM 6.6.1.3 bars
+completion of an instruction that follows "an unresolved predicted
+branch"; Figure 6-5 acts on a resolution in its own cycle: branch 1
+resolves in cycle 3 and the BPU predicts branch 5 in cycle 3, and branch
+5 resolves in cycle 5 and the correct-path fetch request goes out in
+cycle 5. A7 stands: work behind a correctly predicted branch may
+complete in the resolve cycle. The core breaks it for a removed branch:
+`bs_young_hold` releases only from the captured CR (`bs_hit`), a cycle
+after the owner's CR arrives, so the `li r31,65` at `fff03878` retires
+a cycle after the `cmplwi` ahead of the removed `ble` instead of beside
+it. Adding the arrival-cycle match (`bs_cap_hit`) to the release fixes
+that instance and passes the width-2 dispatch rules for Dhrystone,
+CoreMark and Whetstone, but saves nothing on Dhrystone (1,991,076 against
+1,991,074 cycles) and 26 cycles on CoreMark (4,143,764). It also puts the
+IU compare result on the CQ1 retire gate, the path the existing comment
+keeps it off. Not taken; it needs a timing review before it lands.
+
+Recorded: `make -C sim check-spec` (251 and 29 tests pass) and
+`perf_model_603e.py` on the round 27 width-2 Dhrystone trace
+(`--mark fff03808`, default and `--fetch any`, `--div 37`,
+`--no-sru-add`), commit d6e8347, 2026-10-07. The `bs_cap_hit`
+experiment: `make -C sim test-dispatch-rules perf-diff DISPATCH_WIDTH=2
+BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe` on d6e8347 plus that
+uncommitted one-line change, 2026-10-07: pass, figures above.
+
+## Timing accuracy round 29
+
+Two core changes; the model is unchanged (509 cycles per run).
+
+Completion in a predicted branch's resolve cycle (A7, UM 6.6.1.3, Figure
+6-5) now lands. `bs_young_hold` releases on the owner's CR result as it
+is offered and matches the prediction (`bs_cap_offer`). The offer ignores
+recovery, which retirement already gates; built from the cancel-masked
+capture, the hold closed a combinational loop through recovery
+acceptance. Timing-phase item: the IU and SRU compare results and the CR
+bit select now reach the CQ1 retire gate (`bs_cap_offer` to
+`bs_young_hold` to the retire gate).
+
+SRU steering in the core now follows the model's tie rule (A10). `strcmp`'s
+`cmpwi` (DQ1, beside the `lbzu` in DQ0) waited in the IU station for the
+load, so the `mr` behind the predicted `beq` could not dispatch until the
+`cmpwi` started (UM 6.3.3). The core only sent a DQ1 add or compare to the
+SRU while the IU station was taken. With both stations free, an add or
+compare in DQ0, or in DQ1 beside another unit's instruction, now takes the
+SRU when the next non-branch instruction needs the IU. The lookahead reads
+the IQ entry behind DQ1 (a new `dq2_o` port) and the fetched words.
+Timing-phase item: the fetched words' decode and pair predecode, from the
+fetch response when the fetch/decode register is empty, now feed dispatch
+through `fd_next_iu`, `c0_sru` and `d1_alt_sru`.
+
+The round 28 note that `lbz` retires two cycles after `mr` against one
+in the model was attribution: the load starts the cycle after the `mr`
+executes and completes two cycles later in both. The model's `mr`
+completes late because it waits on the `cmpwi` ahead of it in order.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 28 (5c9e854) | 509 | 523 | 621 | 4,143,790 | 4,642,833 |
+| A7 and SRU steering (a180a4b) | 509 | 513 | 621 | 4,138,918 | 4,642,833 |
+
+Per function by retirement spacing (core minus model, w2): `strcmp` +11
+to +1; `dhry_main` +3, `strcpy` +1 and `Proc_7` +2 unchanged; `Func_2`
+-2. `Func_2`'s is a real difference, not attribution: `stw r0,20(r1)`
+after `mflr r0` completes two cycles after the `mflr` in the core and
+three in the model, which starts the store only once its data is
+forwarded (A11). Whether a store whose EA is ready may complete in the
+cycle after its data is forwarded needs a manual ruling (UM 6.3.3,
+Table 6-6) before either side changes. In `Proc_7` the removed `blr`'s
+retirement stamp adds 1 to 3 cycles that the next instruction gives
+back; the gap that stays is the `addi r9,r9,2` after `mr r9,r3`, which
+the core retires a cycle after the `mr` in two of the three calls while
+the model completes both together. Not yet diagnosed.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit a180a4b, 2026-10-07. All pass; CoreMark
+CRCs match at both widths. At width 1, `test-core-branch-fold` does not
+build: its width-2 variant redefines `PPC_DISPATCH_WIDTH` (REDEFMACRO),
+as on round 28; the bench, not the RTL. Dispatch rules, width 2: Dhrystone
+1,969,972 cycles, CoreMark 4,138,893, Whetstone 6,443,944. Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`:
+0 errors. No fit was run, so this round makes no timing claim.
 
 Per instruction, the core's retirement spacing minus the model's completion
 spacing, summed per iteration (Dhrystone, width 2, cycles per run), before
@@ -883,7 +1824,7 @@ they are not additive. None needs timing faster than the manual's.
 | 4 | A `bc` waits for its uncommitted CR producer (`drain_branch` 187 per run) | T6-4 `^`: compare CR to the BPU at end of execute; UM 6.4.1.2: predict and dispatch down the predicted path, one level, no completion past it | Done: dispatch past one unresolved `bc`; a miss removes the younger work and redirects fetch on the edge after resolution | 150–190 (got 35 at width 2, 134 at width 1) |
 | 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Partly done: IU + LSU-unit access, unresolved `bc` + DQ1 (25 cycles), a DQ0 branch that does not redirect + DQ1 (5). IU + SRU, LSU + IU and CQ1 rules existed. Open: an SRU-form DQ0 beside a non-SRU integer DQ1 (the SRU takes DQ0); the rest waits on gaps 1 and 2 | 80–150 (after 1–4) |
 | 6 | Closed. Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Found: a store hit held the data cache for four cycles. It now writes and answers in its lookup cycle. The rest of the charge is fetch and branch time | 5 measured |
-| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | Done behind `LSU_BASE_SNOOP` (default off): a D-form load forms its EA in P1 from the result bus, 2 cycles; the path waits for a fit ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) | 1 measured while fetch-bound |
+| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | Done: `LSU_BASE_SNOOP` (default on since 2026-10-06) forms a D-form load's EA in P1 from the result bus, 2 cycles; `LSU_BASE_SNOOP=0` is the named base-wait timing trade, 3 cycles ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) | 1 measured while fetch-bound |
 | 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue; a branch with no SPR write back is retired by the BPU | Partly done behind `ENABLE_BRANCH_REMOVAL`: a plain `b` never enters the IQ; other branches without LR/CTR writes take no CQ entry but still a dispatch slot ([branch removal](#branch-removal-gap-8)). Linking and counting branches keep their entry | 40–100 (got 3 at width 2) |
 | 9 | Integer waits not explained above (flags token, station full, `other` 50 per run) | UM 6.3.3, 6.3.3.2 | Broken down with `+PROFILE` ([above](#dq1-rename-operands-and-base-snooping)): `mflr`/`mtlr` drains 20, CQ full 20, station full 20, flags 7. Moves no longer drain; XER-only writers take no flag token ([round](#serialization-flag-token-and-dq1-branches)) | 20 (SRU completion serialization): got 11.5 |
 | 10 | `bclr` not folded (26 per run, 11 taken) | UM 6.6.1.1: `bclr` resolves when LR is available (shadow LR from `bl`); same timing as `b` | Done: folds and resolves from the shadow LR of an uncommitted linking branch | 30–50 (got 8–10) |
@@ -892,6 +1833,658 @@ CoreMark points the same way with a different weight: loads (175,000 cycles of
 gap per iteration), `bc` (178,000 at width 1, 66,000 at width 2), integer
 (101,000). Its multiplies cost 4.7 cycles against the model's 3 (A8), worth
 17,000 cycles per iteration.
+
+## Timing accuracy round 30
+
+One core change and a new checker rule; the model is unchanged (509
+cycles per run).
+
+`Func_2`'s `stw r0,20(r1)` after `mflr r0` completed 2 cycles after the
+`mflr` in the core and 3 in the model. The core was too fast. UM 6.3.3.2
+and 6.4.5: results of completion-serialized SRU instructions "will not be
+available or forwarded for subsequent instructions until the serializing
+instruction is retired"; UM 6.3.3.1: an instruction waiting on a rename
+tag begins execution once the data is in the rename register; T6-6 and
+UM 6.4.4: a store takes two cycles. A reader therefore executes no
+earlier than the cycle after the retirement, and a store completes no
+earlier than 3 cycles after it, as the model has it (A11). The special
+unit's result woke its readers in its finish cycle, a cycle before it
+retires, so the store in P1 had its data a cycle early.
+
+The wake packet now carries a `late` bit for a special-unit result other
+than a memory access's. Rename does not forward it at dispatch; the IU
+and SRU stations and the LSU's P1 (data and base) take the value and use
+it a cycle later. Timing-phase item: the late bit adds a register per
+station operand and per P1 entry; the P1 data and base snoops and the
+station's same-cycle resolve gain a `!late` term.
+
+The checker gains TIM-SER-RESULT (`sim/spec/timing.json`): a reader of an
+`mfspr`, `mftb`, `mfmsr`, `mfcr`, `mfsr` or `mfsrin` result retires at
+least 2 cycles after it, a load or store using it as base or data at
+least 3. It counts only forms whose operand fields are unambiguous, and
+stops tracking a register at any later instruction that may write it.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 29 (18dab36) | 509 | 513 | 621 | 4,138,918 | 4,642,833 |
+| Serialized result forwarding (446452f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+
+Per function (core minus model, w2): `Func_2` -2 to 0. Width 1 gains 2
+cycles per run: the store now meets its data later, which moves later
+work off a conflict.
+
+`Proc_7` +2 is not in completion. In calls 2 and 3 (from `Proc_1`, behind
+a `bl` the core removes at dispatch) the `bl` takes a dispatch cycle of
+its own, so the `mr r9,r3`/`addi r9,r9,2` pair dispatches a cycle later
+than in the model, where the folded `bl` takes no slot (UM 6.4.1.1) and
+its target reaches dispatch two cycles after its fetch (F6-3). The core
+then completes both at their execution time; the model's `mr` completes
+late beside the `addi` because the two instructions ahead hold both
+completion slots. Whether the `bl` slot or the target fetch sets the core's
+cycle is not yet traced.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 446452f, 2026-10-07. All pass; CoreMark
+CRCs match at both widths. At width 1, `test-core-branch-fold` does not
+build (REDEFMACRO of `PPC_DISPATCH_WIDTH` in its width-2 variant), as on
+rounds 28 and 29. Dispatch rules, width 2: Dhrystone 1,974,063 cycles,
+CoreMark 4,138,977, Whetstone 6,444,552; width 1: 2,265,283, 4,642,762,
+7,259,287. Quartus `quartus_map --analysis_and_elaboration` of
+`quartus/chip` with `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and
+`PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was run, so this round makes no
+timing claim.
+
+## Timing accuracy round 31
+
+One core change, no cycle change; the model is unchanged (509 cycles per
+run). Two causes of the remaining width-2 gap are traced.
+
+The add/compare steering takes the SRU on a tie when the next
+instruction needs the IU, so an IU station held by the add does not
+stall that instruction's dispatch (UM 6.3.3, 6.4.5; model A10). The core's
+lookahead stopped at a branch two entries behind DQ0 unless the queue held
+exactly three. A branch takes no station, so it now reads the entry behind
+the branch, as the model's next non-branch instruction does. In a
+steady-state `Proc_1` call to `Proc_7`, the `addi r5,r5,12` before
+`bl Proc_7` now takes the SRU and the target's `mr r9,r3` dispatches
+beside the `bl`, matching the model's dispatch cycles. Timing-phase item:
+the IU-need term gains a mux over IQ entry 3's unit bits.
+
+`Proc_7` +2 (calls 2 and 3): dispatch now matches the model; the cycle is
+in finish. In the traced iteration the `stw` before the `bl` (LSU), the
+`addi` (SRU) and the `mr` (IU) finish in the same cycle. The CQ has two
+finish ports; the store's result takes port 0 and the SRU's port 1, so the
+`mr` holds the IU a cycle and the dependent `addi r9,r9,2` issues a cycle
+late. The manual gives each unit its own result path into the rename
+registers (UM 6.3), with no limit on finishes per cycle, and the model has
+none. A store writes no rename register, so the fix is a finish path for a
+store (or a third port).
+
+`dhry_main` +3: two cycles are `Func_2`'s return, `mtlr r0` then `blr`.
+UM 6.4.1.1: "An mtspr(LK) followed by a bclr—Fetching is stopped, and the
+branch waits for the mtspr to execute." The model resolves the `blr` the
+cycle after the `mtlr` finishes; the core clears `lr_pending_q` only when
+the `mtlr` retires, so the `blr` resolves a cycle after retirement, and its
+target dispatches 3 cycles after it rather than 2. The fix is to give the
+BPU the `mtlr` value at finish.
+
+Not done: `strcpy` +1, `strcmp` +1, and why round 30 made width 1 two
+cycles faster (both dispatch-rule runs pass at width 1, but the rule that
+covers the change is not yet identified).
+
+The checker's rule coverage count is raised to 41 for round 30's
+TIM-SER-RESULT; `check-spec` failed without it.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 30 (446452f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+| Station lookahead past a branch (b5e542f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit b5e542f, 2026-10-07 (`check-spec` rerun
+after the coverage fix). All pass; CoreMark CRCs match at both widths. At
+width 1, `test-core-branch-fold` does not build (REDEFMACRO of
+`PPC_DISPATCH_WIDTH` in its width-2 variant), as on rounds 28 to 30.
+Dispatch rules, width 2: Dhrystone 1,974,063 cycles, CoreMark 4,138,977,
+Whetstone 6,444,552; width 1: 2,265,283, 4,642,762, 7,259,287. Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
+errors. No fit was run, so this round makes no timing claim.
+
+## Timing accuracy round 32
+
+One core change: `mtlr` feeds the BPU's LR rename register as it finishes
+(4f2f753). Dhrystone width 2 515 → 513, width 1 619 → 617; the model is
+unchanged (509).
+
+UM 6.4.1.1: "An mtspr(LK) followed by a bclr—Fetching is stopped, and the
+branch waits for the mtspr to execute." The BPU holds its own LR rename
+register for this (UM 6.2). The core cleared `lr_pending_q` only when the
+`mtlr` retired, so the `blr` resolved a cycle after retirement. The lane's
+`mtlr` result now carries the value; a `bclr` waiting on it leaves the IQ
+in the `mtlr` finish cycle and redirects fetch the next (the BPU execute
+cycle). Its target dispatches at `mtlr` finish + 3, the model's F6-3
+timing. This removes two of round 31's three `dhry_main` cycles
+(`Func_2`'s `mtlr r0; blr`).
+
+Timing-phase path, taken for accuracy: the lane's result-port handshake
+(`special_result_ready`) and the producer compare now reach `bu_ready` and
+the dispatch decision, and the lane's result value reaches `bu_target`.
+
+Checker: the `mtlr`/`bclr` case moves from TIM-BPU-FETCH-STOP to
+TIM-BPU-LR-DEPENDENCY, now an execute-kind rule: a `bclr` behind an
+`mtspr(LR)` resolves no earlier than the move's finish (a cycle before it
+retires), and a taken target dispatches no earlier than the move's
+retirement + 2. The test case "bclr removed behind mtlr" is replaced by a
+passing trace (resolve the cycle after finish, target at retirement + 2)
+and three failing ones: `bclr` before the `mtlr` executes, target early,
+and target early after retirement.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 31 (b5e542f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+| `mtlr` feeds the BPU LR rename (4f2f753) | 509 | 513 | 617 | 4,136,530 | 4,640,461 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 4f2f753, 2026-10-07. All pass; CoreMark
+CRCs match at both widths. At width 1, `test-core-branch-fold` does not
+build (REDEFMACRO of `PPC_DISPATCH_WIDTH` in its width-2 variant), as on
+rounds 28 to 31. Dispatch rules, width 2: Dhrystone 1,969,140 cycles,
+CoreMark 4,136,505, Whetstone 6,443,917; width 1: 2,260,333, 4,640,436,
+7,258,594. Quartus `quartus_map --analysis_and_elaboration` of
+`quartus/chip` with `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and
+`PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was run, so this round makes no
+timing claim.
+
+## Timing accuracy round 33
+
+One core change and a bench fix; the model is unchanged (509 cycles per
+run). Dhrystone width 2 513 → 512, width 1 617 → 612.
+
+`test-core-branch-fold` builds its width-2 variant with its own
+`PPC_DISPATCH_WIDTH`; it now drops the outer `DISPATCH_WIDTH` define for
+that build, so the bench builds and passes at width 1 (REDEFMACRO since
+round 28).
+
+The completion queue gains a third finish port for stores without
+update. UM 6.3 gives each execution unit its own result path and sets no
+limit on finishes per cycle; the core had two ports, port 0 shared by the
+LSU, the IU and the special unit with the LSU first. A plain store writes
+no register, so the LSU's result for it now finishes on the new port: no
+wake, no value, but it carries the fault fields (`fault`, `data_fault`,
+`page_miss`), and a clean finish retires in its arrival cycle as on port
+0. Port 0 is then free for the IU. In round 31's `Proc_7` trace (calls 2
+and 3, `stw` + `addi` + `mr` finishing together) the `mr` no longer holds
+the IU, and the core's offset from the model is now constant through
+`Proc_7`. `tb_completion` adds a store finishing on the third port beside
+a register result on port 0 (no wake, retires that cycle) and a faulting
+one (retires a cycle later with its cause). Four completion benches
+(`test-completion`, `-cr-bits`, `-cr-fields`, `-flags`) had not built
+since the wake packet's `late` bit (round 30, UNUSEDSIGNAL); they now
+consume it.
+
+Timing-phase item: the store flag selects port 0's source
+(`lsu_port0`) and reaches the IU's and special unit's port-0 grant; the
+CQ's head retire and pair retire gain a third finish term.
+
+Why round 30 made width 1 two cycles faster: no manual rule was
+involved; the gain was this port conflict. Width 1 has no SRU, so the IU
+never takes port 1. In `Func_2`, before round 30 the `stw r0,20(r1)` took
+the `mflr` value at finish, and the LSU's results on port 0 kept the
+`li r9,0` result off the port: it retired 7 cycles after dispatch, and
+the CQ filled for 3 cycles (PERF_CQ_FULL). Round 30 (UM 6.3.3.2, 6.4.5)
+delayed the store's data a cycle, which moved the LSU results off the
+`li`'s cycle; the `li` retired 3 cycles earlier and `Func_2` went 33 → 31
+per run. With the third port, width 1 gains 5 more cycles, and CoreMark's
+width-1 dispatch-rules run drops 66,276 cycles.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 32 (4f2f753) | 509 | 513 | 617 | 4,136,530 | 4,640,461 |
+| Store finish port (faa2568) | 509 | 512 | 612 | 4,136,487 | 4,574,185 |
+
+Not done: `strcpy` +1 and `strcmp` +1 at width 2, and the third
+`dhry_main` cycle.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, `make -C sim test-completion
+test-completion-cr-bits test-completion-cr-fields test-completion-flags
+test-completion-ring test-completion-update test-recovery-state`, and at
+widths 1 and 2 with `VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; `test-fpu-all` at width 2 with the LSU pipe;
+commit faa2568 plus the record, 2026-10-07. All pass, including
+`test-core-branch-fold` at width 1; CoreMark CRCs match at both widths.
+Dispatch rules, width 2: Dhrystone 1,967,636 cycles, CoreMark 4,136,462,
+Whetstone 6,443,806; width 1: 2,245,885, 4,574,160, 7,223,475. Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
+errors. No fit was run, so this round makes no timing claim.
+
+## Timing accuracy round 34
+
+One core change; the model is unchanged (509 cycles per run). Dhrystone
+width 2 stays at 512, width 1 612 → 607.
+
+Width 1 has no SRU, and the IU took the second finish port only beside
+an SRU, so an IU result meeting a load's on port 0 waited a cycle. UM 6.3
+gives each unit its own result path and sets no limit on finishes per
+cycle; the IU now takes port 1 whenever a load holds port 0 and no SRU
+result is offered there, with or without an SRU. Width 2 on the 603e is
+unchanged (the SRU was already present); the 602 variant, which has no
+SRU, gains the same port. Timing-phase item: `iu_port1` and
+`iu_offer_ready` no longer depend on the variant, so the IU's port-1
+grant is live at width 1 and on the 602.
+
+Width-2 residue, diagnosed but not fixed (each is a core cycle beyond
+the model, which the manual supports):
+
+- `strcpy` entry (`bl` at fff0381c). The fetcher took `stb` fff03818
+  alone into its buffer while the IQ was full, then fetched the `bl`
+  alone a cycle later. UM 6.3.1: a vacancy of one takes one instruction,
+  but a branch goes to the BPU and takes no IQ entry, so the model fetches
+  the doubleword `stb`+`bl` together. Keeping a buffered pair whole (and
+  taking a `bl` second word with one IQ entry free) moves the fold a cycle
+  earlier, but the `bl` still occupies an IQ entry and the DQ1 slot
+  (removed at dispatch), so `addi` fff03484 still dispatches a cycle
+  after the `stb`; the cycle needs the `bl` to leave the IQ at fetch
+  (UM 6.3.1, model A3), which the core does not do for linking branches.
+- `strcmp` exit (`beq` fff034e4 mispredicted, refetch at fff034e8). In
+  each loop pass the forward `beq` fff034d0 waits on CR behind the
+  predicted `beq` fff034e4 (UM 6.4.1.1, one level of prediction). The
+  core holds the `mr` fff034d4 fetched beside it in the fetch registers
+  too, so the `lbz` fff034d8 dispatches a cycle late; on the last pass the
+  `cmpw` result, and so the mispredict, is a cycle late. UM 6.4.1.1 stops
+  fetching only; the word already fetched beside the held branch enters
+  the IQ (the model's `stop_f` rule).
+- `dhry_main` fff03870: after `Proc_7`'s `blr` to fff0386c the core
+  fetches fff03870 two cycles after fff0386c; the model one. Not yet
+  traced.
+
+No function is faster than the model in a way the manual forbids:
+`Func_1` (−2 front end, −1 retirement) and `Proc_7` (−2) come from the
+core dispatching ahead after earlier stalls, and `check_dispatch_trace.py`
+passes at both widths.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 33 (b223ca6) | 509 | 512 | 612 | 4,136,487 | 4,574,185 |
+| IU port 1 without SRU (d8bfec5) | 509 | 512 | 607 | 4,136,487 | 4,503,469 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at width 1 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602` and `test-fpu-all`; at width 2 the same set
+without the reference-machine targets and the CoreMark demo (the
+width-2 603e logic is unchanged); commit d8bfec5 plus the record,
+2026-10-07. All pass; CoreMark CRCs match. The width-2 CoreMark demo
+figure in the table was inherited from round 33; rerun fresh in round 35
+(`perf-diff` and the CoreMark demo at width 2, commit 2c61050, whose RTL
+is d8bfec5's, 2026-10-07): 4,136,487 cycles, CRCs match. Dispatch rules, width 1: Dhrystone 2,228,118
+cycles (was 2,245,885), CoreMark 4,503,444 (4,574,160), Whetstone
+7,152,086 (7,223,475); width 2 unchanged at 1,967,636, 4,136,462,
+6,443,806. Quartus `quartus_map --analysis_and_elaboration` of
+`quartus/chip` with `PPC_LSU_PIPE=1` and `PPC_BRANCH_REMOVAL=1` (width
+1): 0 errors. No fit was run, so this round makes no timing claim.
+
+## Timing accuracy round 35
+
+One core change; the model is unchanged (509). Dhrystone width 2
+512 → 511, width 1 stays at 607.
+
+`dhry_main` fff03870, traced: `Proc_7`'s `mr` fff03e70 and `blr`
+fff03e74 arrived as one doubleword while the IQ was full (the core
+trails the model by a cycle there, inherited from earlier code). The
+fetcher handed out the `mr` alone and refetched the `blr` a cycle later,
+so the `blr` folded, and fff0386c was fetched, a cycle late. The round 34
+note had the symptom wrong: fff03870 follows fff0386c by one cycle; the
+pair was late. UM 6.3.1: a branch takes no IQ entry, so the model fetches
+it with the word before it as that word enters the IQ (A2, A3). Empty
+fetch registers now take such a pair (second word a `b` or unconditional
+`bclr`, as `rm1_early` already selects) while the IQ is full; the branch
+folds as the first word enters. Path: `fetch_room2` gains an OR of
+`rm1_early` and `!fd_valid_q`. The remaining cycle at fff03870 is a
+completion-queue stall (`LSU+IU cq`) that follows from the same inherited
+lag.
+
+Not attempted this round (diagnosis as in round 34): the `strcmp` exit
+(the `mr` held beside a CR-held `beq`) and the `strcpy` entry (`bl`
+leaving the IQ at fetch).
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 34 (2c61050) | 509 | 512 | 607 | 4,136,487 | 4,503,469 |
+| Removable-branch pair held whole (fda2a79) | 509 | 511 | 607 | 4,136,487 | 4,503,469 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit fda2a79, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,563
+cycles (was 1,967,636), CoreMark 4,136,462 (unchanged), Whetstone
+6,443,805 (6,443,806); width 1: Dhrystone 2,228,113 (2,228,118), CoreMark
+4,503,444, Whetstone 7,152,086 (unchanged). `test-fpu-all` not rerun (no
+LSU or finish change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
+
+## Timing accuracy round 36
+
+Design only; no RTL change. Neither width-2 residue could be made exact
+and verified in the round's time box, so both are written up here
+instead of landing partially. Figures are round 35's (56d77ef): model
+509, Dhrystone w2 511, w1 607; CoreMark demo w2 4,136,487, w1 4,503,469.
+
+### `strcmp` exit: word beside a CR-held branch
+
+Today the lane-0 `beq` fff034d0 waits on CR behind the predicted `beq`
+fff034e4 (`cr_hold0`), and `fd_push` is low, so the `mr` fff034d4 in
+lane 1 stays in the fetch registers too. UM 6.4.1.1 (seventh case) stops
+fetching only; the model enters the word at fetch (A14) and dispatches
+it no earlier than the branch executes (A15).
+
+Design:
+
+1. Record. When `cr_hold0` is set, `fd1_valid` and the IQ has an entry,
+   push lane 1 and move the branch to a pending record `hb_*`: valid,
+   PC, BO/BI, target, and the anchor (the youngest IQ entry before it,
+   or `fd_anchor` when the IQ empties this cycle, as `rem0_fd` picks).
+   The record is not a prediction: it does not take the single BS
+   record, and `bs_busy` stays the older predicted branch's.
+2. Gate (A15). The entry pushed from lane 1 carries a `behind_hb` bit;
+   it does not dispatch while the record is valid. Nothing else enters:
+   fetch stays stopped (`fetch_hold_q`), as for `fetch_stop`.
+3. Release. When `cr_final` (the cycle `cr_hold0` would drop today), the
+   record resolves with `folds`' condition test. Not taken: clear the
+   record; the entry dispatches the next cycle and fetch resumes at
+   PC + 8. Taken: drop the youngest IQ entry (the lane-1 word; it cannot
+   have dispatched) and request the target on that edge as `rel_fold`
+   does, so the refetch keeps today's timing (UM Figure 6-5). The IQ
+   needs a tail pop for this; it has none today.
+4. Recovery and interrupts. A redirect or recovery older than the record
+   (the predicted `beq` mispredicting, an exception on an older entry)
+   clears the IQ and the record together; the branch refetches from the
+   resume PC. An interrupt resumes at `committed_next_pc_q`, which is the
+   branch's PC once the anchor has retired, so the branch re-executes;
+   the `behind_hb` entry never dispatched. The branch's retirement count
+   goes on the anchor's rb field only when it resolves.
+
+Checks: `check_dispatch_trace.py` A15 already rejects a dispatch of the
+`mr` before the branch executes; `test-core-branch-fold` and
+`test-core-branch-recovery` need a case with the held branch taken and
+an older mispredict in the same cycle. Path: the release adds a compare
+on `hb_*` beside `rel_fold`, and the tail pop adds a decrement to the IQ
+write pointer.
+
+### `strcpy` entry: `bl` leaving the IQ at fetch
+
+The core removes a `bl` at dispatch (`bu_remove`/`d1_remove` with the LR
+shadow, `shadow_set`), so it takes an IQ entry and a dispatch slot. UM
+6.3.1 and 6.4.1.1 remove branches at fetch; model A3 gives a branch no IQ
+entry or dispatch slot. `blsplit.patch` (fetch keeps a buffered pair
+whole; `lk_hold1` holds the `bl` alone in FD) moves the fold a cycle
+earlier but not the `addi` fff03484 dispatch.
+
+Design: remove a `bl` as it is queued, like `plain_b`, and move
+`shadow_set` from dispatch to the carrier:
+
+1. IQ empty after this cycle's dispatch: set the LR shadow at push
+   (unarmed, `shadow_val_q` = PC + 4); it arms on the next allocation, as
+   now.
+2. Otherwise the youngest IQ entry carries an `lk_after` bit, with the
+   value in one pending register; the carrier sets the shadow when it
+   dispatches. One pending `bl` at a time: push removal requires
+   `!shadow_valid_q`, no pending carrier, `!bs_busy` and
+   `!recovery_accepted`, the conditions `bu_remove` uses now.
+3. `lk_iq_q` does not count the removed `bl`; `lk_busy` also covers a
+   pending carrier, so a younger `bcl`/`bclrl` still waits for the `bl`
+   to complete (UM 6.4.1.1 sixth case). `lr_front_q` already takes the
+   `bl`'s PC + 4 at push.
+4. The rb count on the carrier includes the `bl` for retirement and the
+   trace; the reference runner's `lr after removed bl` case and
+   `test-core-interrupt` phase 11 (interrupt between the carrier and the
+   `bl`'s completion) cover LR. An interrupt or exception before the
+   carrier dispatches flushes the bit, and the `bl` refetches from the
+   resume PC; after it, the shadow behaves as today.
+
+Path: `push_remove0/1` gain the `bl` term (an opcode and LK compare);
+`shadow_set` gains the carrier's dispatch.
+
+Recorded: no RTL change; figures inherited from round 35 (commit
+56d77ef, 2026-10-07). This record is commit-only documentation on
+`timing-acc36`, 2026-10-07.
+
+## Timing accuracy round 37
+
+The `strcpy` entry design of round 36, implemented (af57641). The model
+is unchanged (509). Dhrystone width 1 607 → 600; width 2 stays at 511.
+
+A `bl` is removed as it is queued, like a plain `b` (UM 6.3.1, model
+A3): it takes no IQ entry or dispatch slot, and its retirement is
+counted on the next entry pushed. If no IQ entry is left after this
+cycle's dispatch, it sets the LR shadow at push (unarmed, as a
+dispatched `bl` does). Otherwise the youngest IQ entry is its carrier:
+`lkp_q` holds the `bl`, `lkp_pos_q` the carrier's position, and the
+shadow, `lr_disp_q` and the LR/LK pending state are set as the carrier
+dispatches; beside a DQ0 carrier the shadow arms on the DQ1 allocation.
+Conditions: one `bl` at a time (no shadow, no pending `bl`), no LR
+writer queued before it (`lr_iq_q`, and not lane 0 of its pair), no
+branch or prediction record queued before it (`marked_o`, a new IQ
+output), and no misprediction or fix-up pending. A prediction may be
+unresolved: the `bl` is then on its path (`lk_spec_q`), and a
+misprediction recovery drops its shadow instead of keeping it. An
+interrupt or exception before the carrier dispatches clears the IQ and
+the pending `bl`, which refetches; after it, the shadow behaves as
+before. `lk_iq_q` and `lr_iq_q` no longer count the `bl`; `lk_busy` and
+`lr_free` cover the pending one, so a younger `bcl`/`bclrl` still waits
+for it (UM 6.4.1.1 sixth case).
+
+Width 2: the `bl` fff0381c now leaves at fetch, but `addi` fff03484
+still dispatches a cycle after the `stb` fff03818: the CQ has one free
+entry that cycle (`cq1_ready` low), from the inherited lag of the stores
+before it (the model dispatches fff03808 and fff0380c a cycle apart).
+
+Path: `push_remove0/1` gain the `bl` term (opcode and LK, `lr_iq_q`, the
+six-entry `marked_o` OR); `shadow_set`, the shadow value mux and the LR
+dispatch state gain the carrier's pop.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 35 (56d77ef) | 509 | 511 | 607 | 4,136,487 | 4,503,469 |
+| `bl` removed at fetch (af57641) | 509 | 511 | 600 | 4,136,434 | 4,500,094 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit af57641, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match; the reference runner's negative controls
+(including `lr after removed bl`) pass. Dispatch rules, width 2:
+Dhrystone 1,965,521 cycles (was 1,965,563), CoreMark 4,136,403
+(4,136,462), Whetstone 6,443,608 (6,443,805); width 1: Dhrystone
+2,213,186 (2,228,113), CoreMark 4,500,069 (4,503,444), Whetstone
+7,124,977 (7,152,086). `test-fpu-all` not rerun (no FPU change). Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
+errors. No fit was run, so this round makes no timing claim.
+
+## Timing accuracy round 38
+
+A directed test of round 37's speculative `bl` found an LR bug, fixed in
+1966674. No cycle-accuracy change was intended.
+
+Bug: a `bl` removed at fetch on the predicted path of an anchored
+branch still waiting on CR armed its LR shadow on the next entry. LR was
+written as that entry reached the CQ head, although the entry's own
+retirement was held by `bs_hold`. When the branch then mispredicted, the
+recovery dropped the shadow, but LR already held the wrong-path PC + 4.
+The write now also waits for `!bs_hold`. A `bl` completes only after the
+branches before it resolve (UM 6.3.1, 6.6.1.3).
+
+Tests:
+
+- `test-core-branch-fold` program: the bc on a divide, mispredicted
+  both ways, with the wrong path holding a `bl` alone, behind a carrier
+  `addi`, or behind an `mtlr` (that one is not removed at fetch). The
+  correct path reads LR and calls its own `bl`. Without the fix the
+  width-1 run fails with GPR24 0x22b0 (the wrong-path `bl`'s PC + 4)
+  where 0x44 is expected.
+- `test-core-interrupt` phases 13-16: `divw`, `cmpi`, `beq+` (not
+  taken), and the wrong path `bl` at 0x300 (alone) or 0x304 (behind a
+  nop). The IRQ is raised as the shadow is set (13, 14) or once it is
+  armed (15, 16). It must see the committed LR and resume on the correct
+  path, where `mflr` reads it. Phase 15 fails without the fix. The
+  oracle accepts the IRQ at 0x34, after the resolved removed `bc`, which
+  no later retirement counts.
+
+Path: `bs_hold` (CR capture and resolve) now feeds the LR shadow write
+enable.
+
+Width 2: Dhrystone stays at 511, and CoreMark's demo cycles fall by 6.
+Width 1: unchanged.
+
+Not done in the time box: the `strcmp` exit design (round 36) and the
+width-2 `strcpy` entry lag. In the lag, `lwz` fff03808 reports "own
+slot: DQ1 IU+LSU other" for one cycle, then pairs with fff0380c a cycle
+after the model. Its cause is not yet traced.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 37 (af57641) | 509 | 511 | 600 | 4,136,434 | 4,500,094 |
+| LR shadow behind `bs_hold` (1966674) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 1966674, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,521,
+CoreMark 4,136,403, Whetstone 6,443,608; width 1: Dhrystone 2,213,186,
+CoreMark 4,500,069, Whetstone 7,124,977 (all as round 37).
+`test-fpu-all` was not rerun (no FPU change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
+
+## Timing accuracy round 39
+
+The width-2 lag at the `strcpy` call in the Dhrystone loop is fixed.
+At the loop tail, `cmpw` fff03910 in DQ0 carries the removed `bge`
+fff03914, and `lwz` fff03808, the branch target, sits in DQ1. Beside a
+carrier only an IU op could dispatch, so the `lwz` waited a cycle
+("DQ1 IU+LSU other"). UM 6.6.1.2 has no such rule, and a folded branch
+does not hold dispatch (UM 6.4.1.1). A DQ1 access to the LSU now
+dispatches beside a carrier. The carrier's branch starts on that edge,
+so the access enters the unit marked as behind an unresolved branch,
+as it would a cycle later.
+
+Path: `carry_start` (CR finality and the prediction test) now feeds the
+LSU's speculation input, which is registered in the unit.
+
+The pair now dispatches with the model, but the next cycle's `addi`
+fff0380c waits on a full CQ, so retirement does not move: Dhrystone
+w2 stays at 511 and its dispatch-rules run falls by 17 cycles.
+
+Not done: the `strcmp` exit design (round 36) needs an IQ tail pop and
+a held-branch record with its recovery cases; it was not attempted in
+the time box.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 38 (1966674) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+| DQ1 access beside a carrier (4e10507) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 4e10507, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,504
+(was 1,965,521), CoreMark 4,136,403, Whetstone 6,443,608; width 1:
+Dhrystone 2,213,186, CoreMark 4,500,069, Whetstone 7,124,977
+(unchanged). `test-core-branch-fold` at width 2 covers stores and loads
+on both paths of a predicted `bc` at four code offsets, which should put
+some in DQ1 beside a carrier (not instrumented); no bench expectation
+changed. `test-fpu-all` was
+not rerun (no FPU change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
 
 ## Memory system
 

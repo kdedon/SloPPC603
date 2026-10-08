@@ -82,7 +82,7 @@ stores. Offsets are from `0xf0100000`.
 | `0x100` | `PERF_CTRL` | R/W | bit 0: `RUN`, counters advance while set (reset 1); writing bit 1 clears every counter |
 | `0x104` | `PERF_CYCLES` | R | Cycles counted while `RUN` |
 | `0x108` | `PERF_RETIRED` | R | Retired instructions |
-| `0x10c` | `PERF_IQ_FULL` | R | Cycles the fetch-to-decode register held a word the IQ could not take |
+| `0x10c` | `PERF_IQ_FULL` | R | Cycles a fetched word waited because the IQ could not take it |
 | `0x110`–`0x148` | `PERF_SLOT[15]` | R | Cycles by dispatch-slot cause; they sum to `PERF_CYCLES` |
 | `0x150` | `PERF_BRANCHES` | R | Branches dispatched |
 | `0x154` | `PERF_MEMORY` | R | Loads and stores dispatched (each micro-op of a multiple or string) |

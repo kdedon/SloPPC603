@@ -58,7 +58,7 @@ module tb_recovery_state;
     .result_retire_i(1'b0), .wake_sel_i(3'b001), .wake_cand_valid_i({3{result_valid}}),
     .wake_cand_i({3{result_packet}}), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
-    .result1_valid_i(1'b0), .result1_i('0),
+    .result1_valid_i(1'b0), .result1_retire_i(1'b0), .result1_i('0), .result2_valid_i(1'b0), .result2_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
     .retire_valid_o(retire_valid), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
     .retire_o(retire_packet), .retire_tag_o(retire_tag),
@@ -90,6 +90,8 @@ module tb_recovery_state;
     /* verilator lint_on PINCONNECTEMPTY */
     .read_a1_i(5'd0), .read_b1_i(5'd0), .arch_a1_i(32'd0), .arch_b1_i(32'd0),
     .alloc1_i(1'b0), .alloc1_reg_i(5'd0), .alloc1_producer_i('0),
+    /* verilator lint_off PINCONNECTEMPTY */ .alloc2_ready_o(), .alloc2_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */ .alloc2_i(1'b0), .alloc2_reg_i(5'd0), .alloc2_producer_i('0),
     .release1_i(1'b0), .release1_reg_i(5'd0), .release1_tag_i('0), .release1_producer_i('0),
 
     .mapped_o(rename_mapped),

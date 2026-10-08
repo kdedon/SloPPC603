@@ -960,6 +960,7 @@ of its requirements).
 | `TIM-CQ-ALLOC`, `TIM-RENAME-LIMITS` | After a cycle's retirements, at most five instructions in the CQ (UM 6.3.3, 6.6.1.2), five GPR destinations, two for a load with update, and four FPR destinations (UM 6.6) |
 | `TIM-BPU-FETCH-STOP` | The UM 6.4.1.1 cases (`mtlr`/`bclr`, `mtctr`/`bcctr` or `bc(CTR)`, `bc(CTR)`/`bc(CTR)` or `bcctr`, branch(LK)/branch(LK) except `bl`): until the older instruction completes, the waiting branch is not removed at dispatch and nothing younger dispatches. A move to LR or CTR is completion-serialized and its result is not forwarded before it retires (UM 6.3.3.2) |
 | `TIM-BPU-ONE-PREDICTION` | On a mispredicted path, a branch on CR alone is not removed and nothing behind it dispatches (UM 6.4.1.2 one level of prediction, 6.6.1.1, last case of 6.4.1.1) |
+| `TIM-BPU-MISPREDICT` | After a recovery, the first dispatch is at least four cycles after the dispatch of the mispredicted branch's CR producer (compare or record form on the tested field): execute the cycle after dispatch, resolve the cycle after that, fetch, then dispatch (UM 6.4.1.2.1, Figure 6-5) |
 
 Unit tests in `test_dispatch_trace.py` (`check-spec`) make each rule fail on a
 crafted trace. Not checked, because the trace does not show them: renames held

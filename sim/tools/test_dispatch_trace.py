@@ -136,9 +136,31 @@ class DispatchRulesTest(unittest.TestCase):
         st = check_rules(text.split('\n'), 2, words, False)
         self.assertEqual((st['dispatches'], st['removed'], st['retirements']), (3, 1, 2))
         self.assertEqual(parse(text)[1], ([0x400, 0x404], []))
-        for label, pc in (('linking', '00000408'), ('counting', '00000410'), ('not a branch', '0000040c')):
+        # A bl leaves through the shadow LR; a bcl (0x414) does not.
+        check_rules(text.replace('00000404*', '00000408*').split('\n'), 2, words, False)
+        words[0x414] = 0x42800009
+        # A bdnz leaves through the shadow CTR; a bdnzl (0x418), a bdnzlr
+        # (0x41c) and a bcctr (0x420) writing CTR do not.
+        check_rules(text.replace('00000404*', '00000410*').split('\n'), 2, words, False)
+        words.update({0x418: 0x4200fff1, 0x41c: 0x4e000020, 0x420: 0x4e000420})
+        for label, pc in (('linking bc', '00000414'), ('counting bc with LK', '00000418'),
+                          ('counting bclr', '0000041c'), ('counting bcctr', '00000420'),
+                          ('not a branch', '0000040c')):
             with self.subTest(label), self.assertRaises(ValueError):
                 check_rules(text.replace('00000404*', pc + '*').split('\n'), 2, words, False)
+        # A bc on CTR dispatches only once the removed bdnz's older add completes.
+        words[0x424] = 0x4200fff0
+        late = '1 D2 R0 00000400 00000410* |\n2 D0 R1 | 00000400\n3 D1 R0 00000424 |\n4 D0 R1 | 00000424'
+        check_rules(late.split('\n'), 2, words, False)
+        early = '1 D2 R0 00000400 00000410* |\n2 D1 R0 00000424 |\n3 D0 R2 | 00000400 00000424'
+        with self.subTest('bdnz before the removed bdnz completes'), self.assertRaises(ValueError):
+            check_rules(early.split('\n'), 2, words, False)
+        # A bcl dispatches only once the removed bl's older add completes.
+        late = '1 D2 R0 00000400 00000408* |\n2 D0 R1 | 00000400\n3 D1 R0 00000414 |\n4 D0 R1 | 00000414'
+        check_rules(late.split('\n'), 2, words, False)
+        early = '1 D2 R0 00000400 00000408* |\n2 D1 R0 00000414 |\n3 D0 R2 | 00000400 00000414'
+        with self.subTest('bcl before the bl completes'), self.assertRaises(ValueError):
+            check_rules(early.split('\n'), 2, words, False)
         with self.subTest('removed branch retires'), self.assertRaises(ValueError):
             check_rules(text.replace('R1 | 0000040c', 'R1 | 00000404').split('\n'), 2, words, False)
 
@@ -176,11 +198,26 @@ class DispatchRulesTest(unittest.TestCase):
         self.assertEqual(st['fetch_stops'], 1)
         # A move to CTR feeds the branch once it retires.
         run('1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c | 00000800',
-            '4 D0 R1 | 00000818', '5 D1 R0 00000828 |')
+            '6 D0 R1 | 00000818', '7 D1 R0 00000828 |')
         early = ['1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c* | 00000800',
                  '4 D1 R0 00000828 |']
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):
             run(*early)
+        # A bclr resolves the cycle after mtlr finishes, a cycle before it
+        # retires; its target dispatches two cycles after that retirement.
+        words[0x900] = 0x38630001
+        lr = ['1 D1 R0 00000820 |', '2 D1 R0 00000824* |', '3 D0 R1 | 00000820', '5 D1 R0 00000900 |']
+        run(*lr)
+        lr_cases = {
+            'bclr before mtlr executes': lr[:1] + ['2 D1 R0 00000824* |', '4 D0 R1 | 00000820',
+                                                   '6 D1 R0 00000900 |'],
+            'bclr target early': lr[:3] + ['4 D1 R0 00000900 |'],
+            'bclr target early after retirement': ['1 D1 R0 00000820 |', '3 D1 R1 00000824* | 00000820',
+                                                   '4 D1 R0 00000900 |'],
+        }
+        for label, lines in lr_cases.items():
+            with self.subTest(label), self.assertRaisesRegex(ValueError, 'TIM-BPU-LR-DEPENDENCY'):
+                run(*lines)
         cases = {
             'branch(LK) behind branch(LK)': ('1 D1 R0 00000804 |', '2 D1 R0 00000808 |',
                                              '3 D1 R0 00000828 |'),
@@ -192,7 +229,6 @@ class DispatchRulesTest(unittest.TestCase):
                                            '3 D1 R0 0000081c* |'),
             'bcctr target before mtctr retires': ('1 D1 R0 00000818 |', '2 D1 R0 0000081c |',
                                                   '3 D1 R0 00000828 |'),
-            'bclr removed behind mtlr': ('1 D1 R0 00000800 |', '2 D1 R0 00000820 |', '3 D1 R0 00000824* |'),
         }
         for label, lines in cases.items():
             with self.subTest(label), self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):
@@ -210,6 +246,57 @@ class DispatchRulesTest(unittest.TestCase):
             check_rules(past, 1, words, False)
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-ONE-PREDICTION'):
             check_rules([stop[0], '2 D1 R0 00000904* |', '4 D0 R0 | !0'] + stop[3:], 1, words, False)
+        # The predicted beq removed at dispatch: '*1' locates it.
+        words[0x8fc] = 0x38630001
+        removed = ['0 D1 R0 000008fc |', '1 D1 R0 00000900* |', '2 D1 R0 00000904 |',
+                   '3 D0 R1 | 000008fc', '4 D0 R0 | !1*1', '5 D1 R0 00000910 |', '6 D0 R1 | 00000910']
+        st = check_rules(removed, 1, words, False)
+        self.assertEqual(st['wrong_path_branches'], 1)
+        with self.assertRaisesRegex(ValueError, 'TIM-BPU-ONE-PREDICTION'):
+            check_rules(removed[:3] + ['3 D1 R1 00000908 | 000008fc', '4 D0 R0 | !2*2'] + removed[5:],
+                        1, words, False)
+
+    def test_mispredict_redirect(self):
+        # 0x900 cmpwi; 0x904 beq predicted not taken, taken to 0x914; 0x908 addi on the wrong path.
+        words = {0x900: 0x2c030000, 0x904: 0x41820010, 0x908: 0x38630001, 0x914: 0x38630001}
+        lines = ['1 D1 R0 00000900 |', '2 D1 R0 00000904* |', '3 D1 R0 00000908 |',
+                 '4 D0 R1 | 00000900 !1*1', '5 D1 R0 00000914 |', '6 D0 R1 | 00000914']
+        st = check_rules(lines, 1, words, False)
+        self.assertEqual((st['redirects'], st['redirects_at_floor']), (1, 1))
+        early = [lines[0], '2 D2 R0 00000904* 00000908 |', '3 D0 R1 | 00000900 !1*1',
+                 '4 D1 R0 00000914 |', '5 D0 R1 | 00000914']
+        with self.assertRaisesRegex(ValueError, 'TIM-BPU-MISPREDICT'):
+            check_rules(early, 2, words, False)
+
+    def test_sru_move_latency(self):
+        # 0x900 addi; 0x904 mtlr r0 (2 cycles); 0x908 mflr r3 (1 cycle).
+        words = {0x900: 0x38630001, 0x904: 0x7c0803a6, 0x908: 0x7c6802a6}
+        lines = ['1 D2 R0 00000900 00000904 |', '2 D1 R0 00000908 |', '3 D0 R1 | 00000900',
+                 '6 D0 R1 | 00000904', '8 D0 R1 | 00000908']
+        self.assertEqual(check_rules(lines, 2, words, True)['retirements'], 3)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-SRU-LATENCY'):
+            check_rules(lines[:3] + ['5 D0 R1 | 00000904'] + lines[4:], 2, words, True)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-SRU-LATENCY'):
+            check_rules(lines[:4] + ['7 D0 R1 | 00000908'], 2, words, True)
+
+    def test_serial_result(self):
+        # 0x900 mflr r0; 0x904 stw r0,20(r1); 0x908 ori r4,r0,1.
+        words = {0x900: 0x7c0802a6, 0x904: 0x90010014, 0x908: 0x60040001}
+        head = ['1 D2 R0 00000900 00000904 |', '2 D1 R0 00000908 |', '3 D0 R1 | 00000900']
+        self.assertEqual(check_rules(head + ['6 D0 R1 | 00000904', '7 D0 R1 | 00000908'],
+                                     2, words, True)['retirements'], 3)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-RESULT'):
+            check_rules(head + ['5 D0 R1 | 00000904', '7 D0 R1 | 00000908'], 2, words, True)
+        # An integer reader retires two cycles after the move.
+        words[0x904] = 0x60a50000  # ori r5,r5,0
+        self.assertEqual(check_rules(head + ['4 D0 R1 | 00000904', '5 D0 R1 | 00000908'],
+                                     2, words, True)['retirements'], 3)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-RESULT'):
+            check_rules(head + ['4 D0 R2 | 00000904 00000908'], 2, words, True)
+        # A younger write of r0 ends the wait: lwz r0,0(r3).
+        words[0x904] = 0x80030000
+        self.assertEqual(check_rules(head[:2] + ['3 D0 R2 | 00000900 00000904', '4 D0 R1 | 00000908'],
+                                     2, words, True)['retirements'], 3)
 
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})

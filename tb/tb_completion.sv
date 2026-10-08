@@ -12,8 +12,14 @@ module tb_completion;
   completion_tag_t alloc_tag;
   logic result_valid = 1'b0, result_ready;
   result_packet_t result_packet = '0;
+  logic result2_valid = 1'b0;
+  result_packet_t result2_packet = '0;
+  logic alloc_store = 1'b0;
   logic wake_valid;
   wake_packet_t wake;
+  // The completion queue never sets the late bit.
+  logic _unused_wake_late;
+  assign _unused_wake_late = wake.late;
   logic retire_valid, retire_ready = 1'b0;
   retire_packet_t retired;
   completion_tag_t retired_tag;
@@ -44,7 +50,7 @@ module tb_completion;
     .alloc_tag_o(alloc_tag), .result_retire_i(1'b0), .wake_sel_i(3'b001), .wake_cand_valid_i({3{result_valid}}),
     .wake_cand_i({3{result_packet}}), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
-    .result1_valid_i(1'b0), .result1_i('0),
+    .result1_valid_i(1'b0), .result1_retire_i(1'b0), .result1_i('0), .result2_valid_i(result2_valid), .result2_i(result2_packet),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
     .retire_valid_o(retire_valid), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(retire_ready), .retire_hold_i(1'b0), .retire_o(retired),
     .retire_tag_o(retired_tag),
@@ -71,7 +77,7 @@ module tb_completion;
     packet.insn = 32'h3860_0000 | 32'(number);
     packet.illegal = illegal;
     // Deliberately set this on fault allocation to verify CQ side-effect masking.
-    packet.gpr_write = 1'b1;
+    packet.gpr_write = !alloc_store;
     packet.gpr = 5'(number % 32);
     packet.tag = rename_tag_t'((number + 2) % GPR_RENAME_DEPTH);
     packet.value = 32'hbad0_0000;
@@ -283,6 +289,55 @@ module tb_completion;
     retire_one(49, tags[0], 32'h4049, 1'b0);
     check_head(50, tags[1], 32'b0, 1'b1);
     retire_one(50, tags[1], 32'b0, 1'b1);
+
+    // A store finishes on the third port beside a register result on the
+    // first: no wake, and it retires in its arrival cycle. A faulting one
+    // retires a cycle later with its cause.
+    alloc_store = 1'b1;
+    allocate(60, 1'b0, tags[0]);
+    alloc_store = 1'b0;
+    allocate(61, 1'b0, tags[1]);
+    alloc_store = 1'b1;
+    allocate(62, 1'b0, tags[2]);
+    alloc_store = 1'b0;
+    @(negedge clk);
+    result2_packet = '0;
+    result2_packet.producer = tags[0];
+    result2_valid = 1'b1;
+    result_packet = '0;
+    result_packet.producer = tags[1];
+    result_packet.value = 32'h6161;
+    result_valid = 1'b1;
+    #1;
+    require(wake_valid && wake.producer == tags[1] && wake.value == 32'h6161,
+            "first port wakes beside a third-port finish");
+    require(retire_valid && retired_tag == tags[0] && !retired.gpr_write && !retired.illegal &&
+            retired.data_fault == DATA_OK, "third-port store retires in its finish cycle");
+    retire_ready = 1'b1;
+    @(posedge clk);
+    #1;
+    retire_ready = 1'b0;
+    result_valid = 1'b0;
+    result2_valid = 1'b0;
+    retire_one(61, tags[1], 32'h6161, 1'b0);
+    @(negedge clk);
+    result2_packet = '0;
+    result2_packet.producer = tags[2];
+    result2_packet.data_fault = DATA_DSI_PROTECTION;
+    result2_valid = 1'b1;
+    #1;
+    require(!retire_valid && !wake_valid, "a faulting third-port finish waits a cycle");
+    @(posedge clk);
+    #1;
+    result2_valid = 1'b0;
+    require(retire_valid && retired_tag == tags[2] &&
+            retired.data_fault == DATA_DSI_PROTECTION && !retired.illegal,
+            "third-port fault recorded");
+    retire_ready = 1'b1;
+    @(posedge clk);
+    #1;
+    retire_ready = 1'b0;
+    require(cq_empty, "third-port entries retired");
 
     // The first reset edge clears ownership, finish state and all generation
     // counters. Handshakes offered while reset is held have no effect.

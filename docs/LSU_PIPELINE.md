@@ -222,8 +222,10 @@ in its reservation station. Here:
 
 ## Base snooping
 
-Parameter `LSU_BASE_WAIT` (macro `PPC_LSU_BASE_WAIT`, default 1) makes P1 the
-LSU's reservation station for a D-form load's base (UM 6.3.3, 6.3.3.1):
+With `LSU_BASE_SNOOP` off, parameter `LSU_BASE_WAIT` (macro
+`PPC_LSU_BASE_WAIT`, default 1) makes P1 the LSU's reservation station for a
+D-form load's base (UM 6.3.3, 6.3.3.1). This is a named timing trade, one
+cycle slower than Table 6-6:
 
 - A plain, non-update D-form integer load in DQ0 whose base is not yet
   produced dispatches; P1 keeps the base's rename tag and the displacement.
@@ -241,7 +243,8 @@ dispatches behind it.
 
 Recorded: `make -C sim test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-update test-core-memory-edges test-core-fpu test-core-le test-lsu-update-edges test-core-dual test-dispatch-rules`, at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` (`DEMO_FW_DIR=<main checkout>/toolchain/build/demo` for the last), commit 103325b, 2026-10-04. All pass except `test-lsu-update-edges` with the unit, a bench fault ([Faulting update forms](#faulting-update-forms-2026-10-04)).
 
-Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 0) forms a
+Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 1 since
+2026-10-06) forms a
 D-form load's EA in P1, as the 603e's LSU does from operands its station
 snooped (UM 6.3.3.1):
 
@@ -259,8 +262,9 @@ snooped (UM 6.3.3.1):
 A load or add producing the next load's base then costs Table 6-6's load
 latency 2 instead of 3. The cost is one cycle holding the result bus, the
 32-bit adder and the request address, which feeds the router's micro-TLB
-and the cache index: hence off by default until a fit shows it meets the
-clock target. Stores, indexed and update forms, DQ1 accesses and
+and the cache index. It is on by default because the manual's timing comes
+first; `+define+PPC_LSU_BASE_SNOOP=0` selects the base wait if a fit cannot
+carry it. Stores, indexed and update forms, DQ1 accesses and
 little-endian mode keep the dispatch adder.
 
 ## Cached path
@@ -327,9 +331,11 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
   cycle, retired one cycle apart with two GPR write ports, two with one.
 - `lwz` then `stw` of its result: the store retires 2 cycles after the
   load.
-- `lwz` or `addi` then `lwz` using the result as its base: 3 cycles apart,
-  one more than Table 6-6; 2 with `LSU_BASE_SNOOP`
-  ([Base snooping](#base-snooping)).
+- `lwz` or `addi` then `lwz` using the result as its base: 2 cycles apart
+  (Table 6-6); 3 with the base wait (`LSU_BASE_SNOOP` off,
+  [Base snooping](#base-snooping)).
+  `test-core-lsu-timing` checks the base wait, `test-core-lsu-timing-snoop`
+  the default.
 
 Through the router and data cache of the cached top (`test-core-dcache`
 and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
@@ -403,10 +409,8 @@ the chip needs a fresh fit and timing report before the default changes.
    store queue needs a fit: the micro-TLB check feeds P1's pop and the
    queue's write shares the request mux, and the FPU's store-data lookup
    (P1 tag to pending entry to formatter) now feeds the queue's write.
-3. A base written by a load or add in the access's dispatch cycle costs
-   one cycle more than Table 6-6's load latency 2 unless `LSU_BASE_SNOOP`
-   is set ([Base snooping](#base-snooping)). Making it the default needs a
-   fit; if the result bus to micro-TLB path fails, compare the base's page
+3. `LSU_BASE_SNOOP` is the default ([Base snooping](#base-snooping)) and
+   needs a fit; if the result bus to micro-TLB path fails, compare the base's page
    bits directly and add only the page offset in that cycle, falling back a
    cycle when the sum carries out of the page. Stores, indexed and update
    forms and DQ1 accesses still form the EA at dispatch.

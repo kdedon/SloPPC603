@@ -37,7 +37,7 @@ module tb_completion_update;
     .result_retire_i(1'b0), .wake_sel_i(3'b001), .wake_cand_valid_i({3{rv}}),
     .wake_cand_i({3{result}}), .result_valid_i(rv), .result_ready_o(rr), .result_i(result),
     .finish_accept_o(fv), .wake_valid_o(wv), .wake_o(wake),
-    .result1_valid_i(1'b0), .result1_i('0),
+    .result1_valid_i(1'b0), .result1_retire_i(1'b0), .result1_i('0), .result2_valid_i(1'b0), .result2_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
     .retire_valid_o(tv), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(tr), .retire_hold_i(1'b0), .retire_o(retired), .retire_tag_o(rt),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0),

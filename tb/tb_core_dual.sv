@@ -157,7 +157,8 @@ module tb_core_dual #(
       32'h24: return add(8, 4, 5);
       32'h28: return addi(9, 8, 1);
       32'h2c: return addi(21, 0, 1);
-      // C: add + mullw need the IU twice: DQ1 waits.
+      // C: add + mullw pair, the add in the SRU (UM 6.4.5); without the
+      // SRU both need the IU and DQ1 waits.
       32'h30: return SYNC;
       32'h34: return add(10, 4, 5);
       32'h38: return mullw(11, 4, 7);
@@ -313,6 +314,11 @@ module tb_core_dual #(
     int younger;
     logic got;
     younger = older + 4;
+    // An undispatched instruction reads as cycle -1.
+    if (dcycle.exists(younger) == 0) begin
+      dcycle[younger] = -1;
+      dslot[younger] = -1;
+    end
     got = (dcycle[younger] == dcycle[older]) && (dslot[younger] == 1);
     if (got != paired)
       $fatal(1, "%s: %08x at cycle %0d, %08x at cycle %0d slot %0d", what, older,
@@ -331,6 +337,9 @@ module tb_core_dual #(
              younger, rcycle[younger], rslot[younger]);
     $display("  %-34s %08x@%0d %08x@%0d", what, 32'(older), rcycle[older], 32'(younger),
              rcycle[younger]);
+  endfunction
+  function automatic logic dispatched(input int pc);
+    return (dcycle.exists(pc) != 0) && (dcycle[pc] != -1);
   endfunction
   task automatic finish_run();
     logic [31:0] expected [32];
@@ -362,7 +371,7 @@ module tb_core_dual #(
       $display("dispatch:");
       expect_pair(32'h14, 1'b1, "add + add (IU + SRU)");
       expect_pair(32'h24, 1'b1, "add + dependent addi");
-      expect_pair(32'h34, 1'b0, "add + mullw (same unit)");
+      expect_pair(32'h34, dut.HAS_SRU, "add + mullw (add to the SRU)");
       expect_pair(32'h44, 1'b1, "lwz + dependent add");
       // Without the unit the lwz waits for the lane, and the add, the IU
       // station holding the dependent add, goes ahead to the SRU.
@@ -374,15 +383,27 @@ module tb_core_dual #(
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b0, "cmpw in DQ1, then folded b");
       // A removed b is never dispatched.
-      if (dut.BRANCH_REMOVAL && dcycle.exists(32'h6c) != 0) $fatal(1, "a plain b was dispatched");
+      if (dut.BRANCH_REMOVAL && (dcycle.exists(32'h6c) != 0) && (dcycle[32'h6c] != -1))
+        $fatal(1, "a plain b was dispatched");
       // Pairing needs the add fetched into DQ1 by then.
-      expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
+      // A predicted bc leaves the IQ as it is queued when an older entry
+      // stays queued to carry its prediction (UM 6.4.1.1); the cmpw before
+      // this one dispatches as the bc is queued.
+      if (!dut.BS_ANCHOR) expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "divwu + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
-      expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
-      expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
-      expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
-      expect_pair(32'h110, 1'b1, "resolved bc + addi");
+      if (dut.BS_ANCHOR) begin
+        if (dispatched(32'he4)) $fatal(1, "a predicted bc was dispatched");
+      end else expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
+      // A resolved bc without LR or CTR writes is removed as it is queued.
+      if (!dut.BRANCH_REMOVAL) expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
+      else if ((dcycle.exists(32'hf4) != 0) && (dcycle[32'hf4] != -1))
+        $fatal(1, "a resolved bc was dispatched");
+      if (dut.BS_ANCHOR) begin
+        if (dispatched(32'h100)) $fatal(1, "a mispredicted removed bc was dispatched");
+      end else expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
+      if (!dut.BRANCH_REMOVAL || ((dcycle.exists(32'h110) != 0) && (dcycle[32'h110] != -1)))
+        expect_pair(32'h110, 1'b1, "resolved bc + addi");
       if (dut.HAS_SRU && !(dcycle[32'h128] <= dcycle[32'h120] + 2))
         $fatal(1, "DQ0 addi waited for the IU station");
       $display("  %-34s or@%0d addi@%0d divw retired@%0d", "DQ0 addi to the SRU",

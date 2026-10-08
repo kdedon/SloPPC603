@@ -53,7 +53,7 @@ module tb_insert_execution;
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0),
     .iu_done_i(result_valid && result_ready),
     .iu_producer_i(result.producer), .iu_value_i(result.value), .lsu_done_i(1'b0), .lsu_producer_i('0),
-    .lsu_value_i(32'b0),
+    .lsu_value_i(32'b0), .fwd_done_i(1'b0), .fwd_producer_i('0), .fwd_value_i(32'b0),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
 

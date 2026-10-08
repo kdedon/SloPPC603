@@ -5,7 +5,8 @@
 // the surviving CQ prefix, oldest first. Lane 1 is the younger dispatch slot:
 // its lookups see the map before this cycle's allocations, it allocates only
 // beside lane 0 and takes the second free slot, and it wins a same-register
-// map update.
+// map update. Port 2 takes the third free slot, only beside ports 0 and 1,
+// and is the youngest.
 module ppc_rename (
   input logic clk_i, rst_ni,
   input logic [4:0] read_a_i, read_b_i,
@@ -39,6 +40,11 @@ module ppc_rename (
   input ppc_pkg::completion_tag_t alloc1_producer_i,
   input logic alloc1_value_valid_i,
   input logic [31:0] alloc1_value_i,
+  output logic alloc2_ready_o,
+  output ppc_pkg::rename_tag_t alloc2_tag_o,
+  input logic alloc2_i,
+  input logic [4:0] alloc2_reg_i,
+  input ppc_pkg::completion_tag_t alloc2_producer_i,
   input logic wake_valid_i,
   input ppc_pkg::wake_packet_t wake_i,
   input logic wake1_valid_i,
@@ -70,7 +76,7 @@ module ppc_rename (
   logic [31:0] map_valid;
   rename_tag_t map_tag [32];
   logic wake_match, wake1_match, release_match, release1_match, release2_match;
-  logic alloc_fire, alloc1_fire;
+  logic alloc_fire, alloc1_fire, alloc2_fire;
 
   assign wake_match = wake_valid_i && int'(wake_i.tag) < GPR_RENAME_DEPTH &&
                       valid[wake_i.tag] && owners[wake_i.tag] == wake_i.producer;
@@ -87,6 +93,7 @@ module ppc_rename (
                           owners[release2_tag_i] == release2_producer_i;
   assign alloc_fire = alloc_i && alloc_ready_o;
   assign alloc1_fire = alloc1_i && alloc1_ready_o;
+  assign alloc2_fire = alloc2_i && alloc2_ready_o;
 
   function automatic operand_t read_operand(input logic [4:0] reg_index,
                                              input logic [31:0] arch_value);
@@ -107,13 +114,14 @@ module ppc_rename (
       // wake also kills the reader.
       if (!ready[operand.tag] && wake_i.producer == operand.producer)
         operand.value = wake_i.value;
-      if (wake_match && wake_i.tag == operand.tag &&
+      // A late wake is not forwarded; the reader takes it from the bus.
+      if (wake_match && !wake_i.late && wake_i.tag == operand.tag &&
           wake_i.producer == operand.producer)
         operand.ready = 1'b1;
       if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer)
         operand.value = wake1_i.value;
-      if (wake1_match && wake1_i.tag == operand.tag &&
+      if (wake1_match && !wake1_i.late && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer)
         operand.ready = 1'b1;
     end
@@ -128,15 +136,21 @@ module ppc_rename (
   assign read_b1_o = read_operand(read_b1_i, arch_b1_i);
   assign read_c1_o = read_operand(read_c1_i, arch_c1_i);
 
-  // Lowest and second-lowest free slots; both come from the valid flops.
+  // The three lowest free slots, all from the valid flops.
   always_comb begin
-    logic found, found1;
+    logic found, found1, found2;
     found = 1'b0;
     found1 = 1'b0;
+    found2 = 1'b0;
     alloc_tag_o = '0;
     alloc1_tag_o = '0;
+    alloc2_tag_o = '0;
     for (int i = 0; i < GPR_RENAME_DEPTH; i++) begin
       if (!valid[i]) begin
+        if (found1 && !found2) begin
+          found2 = 1'b1;
+          alloc2_tag_o = rename_tag_t'(i);
+        end
         if (found && !found1) begin
           found1 = 1'b1;
           alloc1_tag_o = rename_tag_t'(i);
@@ -149,6 +163,7 @@ module ppc_rename (
     end
     alloc_ready_o = found && rst_ni && !recovery_i;
     alloc1_ready_o = found1 && rst_ni && !recovery_i;
+    alloc2_ready_o = found2 && rst_ni && !recovery_i;
   end
 
   // Payload writes ignore recovery; valid/ready/owner gate every read, so
@@ -165,13 +180,15 @@ module ppc_rename (
   always_ff @(posedge clk_i) begin
     if (alloc_fire) owners[alloc_tag_o] <= alloc_producer_i;
     if (alloc1_fire) owners[alloc1_tag_o] <= alloc1_producer_i;
+    if (alloc2_fire) owners[alloc2_tag_o] <= alloc2_producer_i;
   end
 
   // synthesis translate_off
   for (genvar slot = 0; slot < GPR_RENAME_DEPTH; slot++) begin : owner_invariants
     assert property (@(posedge clk_i) disable iff (!rst_ni)
       !(alloc_fire && alloc_tag_o == rename_tag_t'(slot)) &&
-      !(alloc1_fire && alloc1_tag_o == rename_tag_t'(slot))
+      !(alloc1_fire && alloc1_tag_o == rename_tag_t'(slot)) &&
+      !(alloc2_fire && alloc2_tag_o == rename_tag_t'(slot))
       |=> $stable(owners[slot]));
   end
   always @(posedge clk_i) begin
@@ -183,9 +200,18 @@ module ppc_rename (
         assert (alloc_i && alloc1_ready_o && !recovery_i &&
                 !valid[alloc1_tag_o] && alloc1_tag_o != alloc_tag_o)
           else $error("lane 1 rename allocation needs lane 0 and a second free slot");
+      if (alloc2_i)
+        assert (alloc_i && alloc1_i && alloc2_ready_o && !recovery_i &&
+                !valid[alloc2_tag_o] && alloc2_tag_o != alloc1_tag_o &&
+                alloc2_tag_o != alloc_tag_o)
+          else $error("rename port 2 needs ports 0 and 1 and a third free slot");
       if (release_i && release1_i)
         assert (release_tag_i != release1_tag_i)
           else $error("both rename releases name one slot");
+      // A retiring writer owns its slot; a miss leaks the slot.
+      assert ((!release_i || release_match) && (!release1_i || release1_match) &&
+              (!release2_i || release2_match))
+        else $error("rename release names a slot its retiring writer does not own");
       for (int reg_index = 0; reg_index < 32; reg_index++) begin
         if (map_valid[reg_index])
           assert (int'(map_tag[reg_index]) < GPR_RENAME_DEPTH &&
@@ -217,7 +243,7 @@ module ppc_rename (
     end else if (recovery_i) begin
       // Rebuild membership and mappings from the survivors; owners persist.
       // synthesis translate_off
-      assert (!alloc_i && !alloc1_i)
+      assert (!alloc_i && !alloc1_i && !alloc2_i)
         else $error("rename allocation attempted on accepted recovery");
       // synthesis translate_on
       valid <= '0;
@@ -307,6 +333,12 @@ module ppc_rename (
         ready[alloc1_tag_o] <= alloc1_value_valid_i;
         map_valid[alloc1_reg_i] <= 1'b1;
         map_tag[alloc1_reg_i] <= alloc1_tag_o;
+      end
+      if (alloc2_fire) begin
+        valid[alloc2_tag_o] <= 1'b1;
+        ready[alloc2_tag_o] <= 1'b0;
+        map_valid[alloc2_reg_i] <= 1'b1;
+        map_tag[alloc2_reg_i] <= alloc2_tag_o;
       end
     end
   end

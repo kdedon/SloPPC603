@@ -31,26 +31,42 @@ ASSUMPTIONS = {
           "completion cycle (F6-5: bc resolves in the add's writeback cycle).",
     "A5": "bc on CTR after a bc on CTR waits one cycle after the first resolves; the "
           "manual says 'until the first branch is completed' (UM 6.4.1.1).",
-    "A6": "No store-to-load address conflicts and no cache-port conflict between "
-          "store-queue writes and loads (addresses are not in the trace).",
+    "A6": "A load overlapping an older store reads the cache the cycle after the store "
+          "writes it, which is the cycle after the store completes: loads pass stores "
+          "only 'when free of data dependencies' and stores wait in the store queue "
+          "for completion (UM 1.1.4.3); the manual documents no store-to-load "
+          "forwarding. Addresses are not in the trace, so only D-form accesses whose "
+          "bases derive from one register through addi, mr and update forms are "
+          "compared; no cache-port conflict between store-queue writes and loads.",
     "A7": "Completion of an instruction behind a correctly predicted branch may occur "
           "in the branch's resolve cycle (UM 6.6.1.3).",
-    "A8": "Multiply takes 1 + significant bytes of the multiplier (T6-4 lists 2,3 for "
-          "mulli; the rule is the project's inference); mullw/mulhw without operand "
-          "values use --mul cycles.",
+    "A8": "Multiply takes 1 + the bytes holding the multiplier as a signed value (T6-4 "
+          "lists 2,3 for mulli but no operand mapping; the rule is the project's "
+          "inference, TIM-U02); mullw/mulhw without operand values use --mul cycles.",
     "A9": "A unit's reservation station accepts the next instruction in the cycle the "
           "previous one starts executing (UM 6.3.3: 'stall until the first instruction "
           "completes execution' read as leaving the station).",
-    "A10": "The SRU executes add/addi/addis/cmp-class beside the IU (UM 1.1.2.2.3 lists "
-           "the SRU adder as a 603e enhancement; UM 6.4.5).",
+    "A10": "The SRU executes addi, addis, add, addo, cmpi, cmp, cmpli and cmpl beside the "
+           "IU (UM 6.4.5; T6-4 note 1 excludes add.; UM 1.1.2.2.3 lists the SRU adder as a "
+           "603e enhancement, and the 602 lacks it, UM C.2.3). The manual names no steering "
+           "rule; an add or compare takes the unit that starts it first, and on a tie the "
+           "SRU when the next non-branch instruction needs the IU, else the IU. UM 6.4.5 "
+           "runs it 'in parallel with another integer instruction', and an IU station "
+           "held by it would stall that instruction's dispatch (UM 6.3.3).",
     "A11": "A completion-serialized instruction starts the cycle after every older "
            "instruction has completed, and its GPR result is forwarded the cycle after "
            "it completes (UM 6.3.3.2, 1.1.4.4).",
     "A12": "mfspr/mtspr (not BATs), mfcr, mtcrf, mcrf and CR logicals are "
            "completion-serialized SRU work (UM 6.3.3.2 first bullet; T6-2/T6-3 cycles).",
     "A13": "The single CR rename (UM 6.3.3.1) is not a dispatch condition (UM 6.6.1.2 "
-           "lists only GPR and FPR renames) and is not modelled; holding a CR writer's "
-           "finish until the previous one completes (--core cr-rename) adds 1 cycle.",
+           "lists only GPR and FPR renames); a CR writer finishes, writing the rename, "
+           "no earlier than the cycle after the previous CR writer completes.",
+    "A14": "A held branch (UM 6.4.1.1 'Fetching is stopped') stops fetch after its own "
+           "fetch: the word fetched beside it stays, the next fetch is the cycle after "
+           "the branch executes.",
+    "A15": "An instruction after a branch dispatches no earlier than the branch executes: "
+           "a held branch is not yet predicted, and the 603e executes through one level "
+           "of prediction only (UM 6.4.1.1 seventh case, 6.4.1.2).",
 }
 
 GPR_LIMIT = 5   # UM 6.3.3.1: five GPR renames
@@ -236,7 +252,7 @@ class Insn:
             self.dst = {rd}
             self.src = {ra} | ({rb} if xo9 not in (104, 200, 202, 232, 234) else set())
             self.kind = "int"
-            if xo9 == 266 and not rc and not (w & 0x400):  # add: IU & SRU (footnote 1)
+            if xo9 == 266 and not rc:                      # add, addo: IU & SRU (T6-4 note 1)
                 self.unit, self.kind = "ADD", "add"
             elif xo9 in (11, 75, 235):                     # mulhwu, mulhw, mullw (A8)
                 self.lat, self.kind = mul_default, "mul"
@@ -255,12 +271,23 @@ class Insn:
     div_cycles = 20
 
 
+def access_bytes(word):
+    """Bytes a D-form load or store accesses, or 0."""
+    op = word >> 26
+    if op == 46 or op == 47:
+        return 4 * (32 - ((word >> 21) & 31))
+    return {32: 4, 33: 4, 34: 1, 35: 1, 36: 4, 37: 4, 38: 1, 39: 1, 40: 2, 41: 2, 42: 2,
+            43: 2, 44: 2, 45: 2, 48: 4, 49: 4, 50: 8, 51: 8, 52: 4, 53: 4, 54: 8,
+            55: 8}.get(op, 0)
+
+
 def significant_bytes(v):
+    """Fewest bytes holding v as a signed value (MULTIPLY_TIMING.md rB classes)."""
     v &= 0xFFFFFFFF
     if v & 0x80000000:
         v = ~v & 0xFFFFFFFF
     n = 1
-    while v >> (8 * n) and n < 4:
+    while v >> (8 * n - 1) and n < 4:
         n += 1
     return n
 
@@ -285,8 +312,6 @@ CORE_RULES = {
     "late-retire": "an instruction completes two cycles after it finishes, not one",
     "miss-late": "the correct path after a misprediction dispatches four cycles after "
                  "resolution, not two",
-    "cr-rename": "603e reading of UM 6.3.3.1 (one CR rename): a CR writer finishes only "
-                 "after the previous CR writer completes",
     "cq-same": "a CQ entry freed by completion takes a dispatch in the same cycle "
                "(the model's default is the next cycle)",
 }
@@ -308,8 +333,50 @@ def schedule(stream, fetch_any=False, core=frozenset()):
     fetch_hist = []                           # (F, pc) of every instruction, in order
     nb_hist = []                              # non-branch records, in order
     ser_until = 0                             # dispatch-serialized retire + 1
-    cr_free = 0                               # cr-token: next CR writer dispatch
+    cr_free = 0                               # previous CR writer completion + 1
+    stop_f, stop_until = -1, 0                # A14: fetch of a held branch, restart
+    branch_x = 0                              # A15: execute cycle of the last branch
     cq_late = 0 if "cq-same" in core else 1   # entry busy through its completion cycle
+    sym, fresh = {}, [0]                      # GPR as (root, offset) for A6
+    stores = []                               # (root, lo, hi, completion) of recent stores
+
+    def gpr_sym(g):
+        if g not in sym:
+            fresh[0] += 1
+            sym[g] = (fresh[0], 0)
+        return sym[g]
+
+    def track(ins, word):
+        """The access's symbolic EA and its wait on older stores (A6)."""
+        ra = (word >> 16) & 31
+        n = access_bytes(word)
+        ea, wait = None, 0
+        if n:
+            root, off = gpr_sym(ra) if ra else (0, 0)
+            ea = (root, (off + sext(word & 0xFFFF, 16)) & 0xFFFFFFFF)
+            lo, hi = ea[1], ea[1] + n
+            if ins.load:
+                wait = max([sc + 1 for r, slo, shi, sc in stores
+                            if r == root and slo < hi and lo < shi], default=0)
+        return ea, wait
+
+    def written(ins, word, ea, c):
+        """Record a store and the GPR values this instruction writes."""
+        op, rd, ra, rb = word >> 26, (word >> 21) & 31, (word >> 16) & 31, (word >> 11) & 31
+        if ins.store and ea is not None:
+            stores.append((ea[0], ea[1], ea[1] + access_bytes(word), c))
+            del stores[:-8]
+        for g in ins.dst:
+            if op == 14 and ra and g == rd:                      # addi
+                root, off = gpr_sym(ra)
+                sym[g] = (root, (off + sext(word & 0xFFFF, 16)) & 0xFFFFFFFF)
+            elif op == 31 and (word >> 1) & 0x3FF == 444 and rd == rb and g == ra:   # mr
+                sym[g] = gpr_sym(rd)
+            elif ea is not None and g == ra and ra != rd:        # update form
+                sym[g] = ea
+            else:
+                fresh[0] += 1
+                sym[g] = (fresh[0], 0)
 
     def dispatch_cycle(ins, d, units):
         """First cycle >= d with a slot, a free unit, a CQ entry and renames."""
@@ -333,12 +400,22 @@ def schedule(stream, fetch_any=False, core=frozenset()):
                 d += 1
                 continue
             return d, avail
-    for pc, word, npc in stream:
+    def next_unit(i):
+        """Unit of the next non-branch instruction (branches leave the IQ at fetch)."""
+        for p, w, _ in stream[i + 1:i + 1 + IQ_LIMIT]:
+            u = Insn(p, w, ARGS.mul).unit
+            if u != "BPU":
+                return u
+        return None
+
+    for idx, (pc, word, npc) in enumerate(stream):
         ins = Insn(pc, word, ARGS.mul)
         r = {"pc": pc, "ins": ins}
         # Fetch: UM 6.3.2.2 hit returns next cycle; 6.3.1 two per cycle, IQ of six.
         f = max(redirect, fetch_hist[-1][0] if fetch_hist else 0)
         while True:
+            if f != stop_f and f < stop_until:
+                f = stop_until                     # UM 6.4.1.1, A14
             ok = True
             if fetch_hist and fetch_hist[-1][0] == f:
                 first = len(fetch_hist) < 2 or fetch_hist[-2][0] != f
@@ -358,6 +435,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         if ins.unit == "BPU":
             # UM 6.4.1: BPU decode/execute the cycle after fetch (F6-3: br 2F 3E).
             x = max(f + 1, last_x + 1)
+            x0 = x
             if "branch-slot" in core:
                 prev = nb_hist[-1] if nb_hist else None
                 d, _ = dispatch_cycle(ins, max(f + 1, prev["D"] if prev else 0, ser_until),
@@ -371,13 +449,15 @@ def schedule(stream, fetch_any=False, core=frozenset()):
             x = max(x, need)                       # no prediction on LR/CTR (UM 6.4.1.2)
             cr_avail = max([cr_prod.get(c, 0) for c in ins.crs], default=0)
             resolve = x
+            if ins.crs and pending_pred > x:
+                x = pending_pred                   # UM 6.4.1.1, 6.6.1.1: behind a prediction
             if ins.crs and cr_avail > x:
-                if pending_pred > x:               # one level of prediction (UM 6.4.1.2)
-                    x = pending_pred
-                if cr_avail > x:
                     resolve = cr_avail             # predicted, resolves later (A4)
             last_x = x
+            branch_x = x
             r.update(X=x, R=resolve)
+            if x > x0:                             # held: fetch stops (UM 6.4.1.1, A14)
+                stop_f, stop_until = f, x + 1
             if resolve > x:
                 pending_pred = resolve
                 pred = predict_taken(ins)
@@ -408,7 +488,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         redirect = 0
         prev = nb_hist[-1] if nb_hist else None
         # Dispatch: UM 6.3.3, 6.6.1.2.
-        d = max(f + 1, prev["D"] if prev else 0, ser_until)
+        d = max(f + 1, prev["D"] if prev else 0, ser_until, branch_x)   # A15
         if ins.dserial and prev:
             d = max(d, max(q["C"] for q in nb_hist[-CQ_LIMIT:]) + 1)
         if "cr-token" in core and ins.crd:
@@ -421,21 +501,28 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         d, avail = dispatch_cycle(ins, d, units)
         # Execute: operands from rename/forwarding (UM 6.3.3.1).
         ready = max([gpr_prod.get(g, 0) for g in ins.src], default=0)
+        ea, st_wait = track(ins, word)
+        ready = max(ready, st_wait)               # A6: cache read after the store's write
         ready = max(ready, max([cr_prod.get(c, 0) for c in ins.crs], default=0))
         if ins.lr_r:
             ready = max(ready, lr_ready)
         if ins.ctr_r:
             ready = max(ready, ctr_ready)
         best = None
-        if "cr-rename" in core and ins.crd:
-            ready = max(ready, cr_free - ins.lat + 1)
+        sru_s = None
+        if ins.crd:
+            ready = max(ready, cr_free - ins.lat + 1)   # UM 6.3.3.1: one CR rename, A13
         for u in avail:
             s = max(d + 1, ready, unit_free[u])
             if ins.serial and prev:
                 s = max(s, prev["C"] + 1)          # A11
+            if u == "SRU":
+                sru_s = s
             if best is None or s < best[0]:
                 best = (s, u)
         s, u = best
+        if u == "IU" and sru_s == s and next_unit(idx) == "IU":
+            u = "SRU"                              # A10: leave the IU to the next one
         fin = s + ins.lat - 1
         unit_start[u] = s
         unit_free[u] = s + 1 if u in ("LSU", "FPU") else fin + 1   # T6-6 2:1; UM 6.4.2
@@ -453,6 +540,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
                     continue
             break
         r.update(D=d, S=s, E=fin, C=c, unit=u)
+        written(ins, word, ea, c)
         avail_at = c + 1 if ins.serial else fin + 1
         for g in ins.dst:
             gpr_prod[g] = avail_at
@@ -474,14 +562,68 @@ def schedule(stream, fetch_any=False, core=frozenset()):
 TRACE_RE = re.compile(r"retire (\d+) cycle (\d+) pc ([0-9a-f]{8}) insn ([0-9a-f]{8})")
 
 
-def read_trace(path):
-    recs = []
+def read_trace(path, dump=None):
+    """(cycle, pc, word) per retirement. Branches removed by the core
+    (BRANCH_REMOVAL) count as retirements but print no line; with the
+    disassembly they are restored from the gap in retirement numbers."""
+    recs, words, last = [], read_words(dump), None
     with open(path) as fh:
         for line in fh:
             m = TRACE_RE.match(line)
-            if m:
-                recs.append((int(m.group(2)), int(m.group(3), 16), int(m.group(4), 16)))
+            if not m:
+                continue
+            n, cyc, pc = int(m.group(1)), int(m.group(2)), int(m.group(3), 16)
+            if last is not None and n > last + 1:
+                if not words:
+                    sys.exit("removed branches in the trace: pass --dump")
+                recs.extend((cyc, b, words[b]) for b in removed_path(recs[-1], n - last - 1,
+                                                                     pc, words))
+            recs.append((cyc, pc, int(m.group(4), 16)))
+            last = n
     return recs
+
+
+def branch_targets(pc, word):
+    """Possible next PCs of a branch whose target is in the word."""
+    op = word >> 26
+    if op == 18:
+        return [(0 if word & 2 else pc) + sext(word & 0x3FFFFFC, 26) & 0xFFFFFFFF]
+    if op == 16:
+        return [pc + 4, (0 if word & 2 else pc) + sext(word & 0xFFFC, 16) & 0xFFFFFFFF]
+    return [pc + 4]
+
+
+def removed_path(prev, count, nxt, words):
+    """The count removed branches between retired record prev and PC nxt."""
+    _, ppc, pword = prev
+    def walk(starts, left):
+        for b in starts:
+            w = words.get(b)
+            if w is None or Insn(b, w, 3).unit != "BPU":
+                continue
+            if left == 1:
+                return [b]
+            rest = walk(branch_targets(b, w), left - 1)
+            if rest:
+                return [b] + rest
+        return None
+    starts = branch_targets(ppc, pword) if Insn(ppc, pword, 3).unit == "BPU" else [ppc + 4]
+    path = walk(starts, count)
+    if path is None:
+        sys.exit(f"cannot place {count} removed branches after {ppc:08x} before {nxt:08x}")
+    return path
+
+
+def read_words(path):
+    words = {}
+    if not path:
+        return words
+    with open(path) as fh:
+        for line in fh:
+            m = re.match(r"([0-9a-f]{8}):\s+((?:[0-9a-f]{2} ){4})", line)
+            if m:
+                words[int(m.group(1), 16)] = int(m.group(2).replace(" ", ""), 16)
+    return words
 
 
 def read_dump(path):
@@ -519,7 +661,7 @@ def main():
             print(f"{k}: {v}")
         return
     Insn.div_cycles = ARGS.div
-    recs = read_trace(ARGS.trace)
+    recs = read_trace(ARGS.trace, ARGS.dump)
     if len(recs) < 3:
         sys.exit("trace has no retirements")
     stream = [(pc, w, recs[i + 1][1]) for i, (_, pc, w) in enumerate(recs[:-1])]

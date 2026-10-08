@@ -67,12 +67,20 @@ module tb_special_watchdog;
   ppc_pkg::completion_tag_t commit_tag_i;
   logic branch_retire_i, branch_retire_lk_i, branch_retire_ctr_i;
   logic [31:0] branch_retire_pc_i;
+  logic shadow_lr_write_i;
+  logic [31:0] shadow_lr_i;
+  logic shadow_ctr_write_i;
+  logic [31:0] shadow_ctr_i;
   logic dispatch_overlap_i;
   assign dispatch_overlap_i = 1'b0;
   assign branch_retire_i = 1'b0;
   assign branch_retire_lk_i = 1'b0;
   assign branch_retire_ctr_i = 1'b0;
   assign branch_retire_pc_i = '0;
+  assign shadow_lr_write_i = 1'b0;
+  assign shadow_lr_i = '0;
+  assign shadow_ctr_write_i = 1'b0;
+  assign shadow_ctr_i = '0;
   logic result_ready_i;
   logic dmem_req_ready_i;
   logic dmem_rsp_valid_i;
@@ -174,6 +182,7 @@ module tb_special_watchdog;
   logic [4:0] mem_dst_o;
   logic retire_hold_o;
   logic result_select_o;
+  logic result_late_o;
   /* verilator lint_on UNUSEDSIGNAL */
   logic dispatch_adopt_i = 1'b0;  // the pipelined load/store unit is absent here
   ppc_special #(

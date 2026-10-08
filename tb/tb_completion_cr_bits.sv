@@ -18,6 +18,9 @@ module tb_completion_cr_bits;
   result_packet_t result_packet;
   logic wake_valid;
   wake_packet_t wake;
+  // The completion queue never sets the late bit.
+  logic _unused_wake_late;
+  assign _unused_wake_late = wake.late;
   logic retire_valid, retire_ready;
   retire_packet_t retired;
   completion_tag_t retired_tag;
@@ -54,7 +57,7 @@ module tb_completion_cr_bits;
     .result_retire_i(1'b0), .wake_sel_i(3'b001), .wake_cand_valid_i({3{result_valid}}),
     .wake_cand_i({3{result_packet}}), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
-    .result1_valid_i(1'b0), .result1_i('0),
+    .result1_valid_i(1'b0), .result1_retire_i(1'b0), .result1_i('0), .result2_valid_i(1'b0), .result2_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
     .retire_valid_o(retire_valid), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
     .retire_o(retired), .retire_tag_o(retired_tag),

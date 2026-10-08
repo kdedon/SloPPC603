@@ -51,12 +51,21 @@ module ppc_completion #(
   output ppc_pkg::wake_packet_t wake_o,
   // Second finish port, for a unit whose results never fault.
   input logic result1_valid_i,
+  // As result_retire_i, for the second port.
+  input logic result1_retire_i,
   // Its fault fields are only checked.
   /* verilator lint_off UNUSEDSIGNAL */
   input ppc_pkg::result_packet_t result1_i,
   /* verilator lint_on UNUSEDSIGNAL */
   output logic wake1_valid_o,
   output ppc_pkg::wake_packet_t wake1_o,
+  // Third finish port, for results that write no register (plain stores):
+  // no wake, and a clean finish retires in its arrival cycle. Only the
+  // producer and fault fields are read.
+  input logic result2_valid_i,
+  /* verilator lint_off UNUSEDSIGNAL */
+  input ppc_pkg::result_packet_t result2_i,
+  /* verilator lint_on UNUSEDSIGNAL */
   output logic retire_valid_o,
   // The head finished on an earlier cycle.
   output logic retire_settled_o,
@@ -89,6 +98,7 @@ module ppc_completion #(
   import ppc_pkg::*;
   localparam int COUNT_WIDTH = $clog2(CQ_DEPTH + 1);
   localparam bit PIVOT = ENABLE_PIVOT_RECOVERY || ENABLE_BRANCH_PIVOT;
+  localparam result_packet_t NO_RESULT = '0;
 
   retire_packet_t packets_q [CQ_DEPTH];
   logic [CQ_GENERATION_WIDTH-1:0] generations_q [CQ_DEPTH];
@@ -98,6 +108,7 @@ module ppc_completion #(
   logic [COUNT_WIDTH-1:0] count_q;
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
+  logic finish2_accept, result2_fault, head_now2, head1_now2;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
@@ -141,6 +152,54 @@ module ppc_completion #(
     n.cr_delta = p.write_cr_field ? ({r.cr0, 28'b0} >> (p.cr_field * 4)) : 32'b0;
     n.xer_delta = {p.write_ov_so && r.so, p.write_ov_so && r.ov, p.write_ca && r.ca, 29'b0};
     return n;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+
+  // An entry after a faulting finish; it retires a cycle later.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic retire_packet_t faulted(input retire_packet_t p,
+                                             input result_packet_t r);
+    retire_packet_t n;
+    n = p;
+    n.value = '0;
+    n.update_value = '0;
+    n.illegal = r.fault;
+    // A typed page result can be a resumable exception or a diagnostic.
+    // Both preserve the response-bound cause and capsule at retirement.
+    // Transport faults and DSI carry no data-miss capsule.
+    n.data_fault = (r.fault && (r.data_fault != DATA_PAGE_MISS) &&
+                    (r.data_fault != DATA_PAGE_CHANGED)) ? DATA_OK : r.data_fault;
+    n.page_miss = ((r.data_fault == DATA_PAGE_MISS) || (r.data_fault == DATA_PAGE_CHANGED)) ?
+                    r.page_miss :
+                  ((p.fetch_fault == FETCH_PAGE_MISS) && r.fault) ? p.page_miss : '0;
+    n.gpr_write = 1'b0;
+    n.update_write = 1'b0;
+    if (!p.update_owned)
+      n.update_gpr = '0;
+    // A typed fault still returns the flag token it owns (stwcx.).
+    n.needs_flags = !r.fault && p.needs_flags;
+    n.write_xer = 1'b0;
+    n.write_ca = 1'b0;
+    n.write_ov_so = 1'b0;
+    n.write_cr_field = 1'b0;
+    n.cr_field = '0;
+    n.write_cr_fields = 1'b0;
+    n.cr_mask = '0;
+    n.write_cr_bit = 1'b0;
+    n.cr_bit = '0;
+    n.cr_delta = '0;
+    n.xer_delta = '0;
+    return n;
+  endfunction
+
+  function automatic logic is_fault(input result_packet_t r);
+    return r.fault || (r.data_fault == DATA_DSI_PROTECTION) ||
+      (r.data_fault == DATA_DSI_EXTERNAL) ||
+      (r.data_fault == DATA_DSI_DIRECT_STORE) ||
+      (r.data_fault == DATA_ALIGNMENT_DIRECT_STORE) ||
+      (r.data_fault == DATA_MACHINE_CHECK) ||
+      (ENABLE_TLB_MISS_EXCEPTIONS &&
+       ((r.data_fault == DATA_PAGE_MISS) || (r.data_fault == DATA_PAGE_CHANGED)));
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
 
@@ -370,17 +429,17 @@ module ppc_completion #(
     wake1_o.producer = result1_i.producer;
     wake1_o.tag = packets_q[result1_i.producer.index].tag;
     wake1_o.value = result1_i.value;
+    wake1_o.late = 1'b0;
+    finish2_accept = result2_valid_i &&
+      (result2_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+      active_q[result2_i.producer.index] && !done_q[result2_i.producer.index] &&
+      (generations_q[result2_i.producer.index] == result2_i.producer.generation) &&
+      !redirect_kill_o[result2_i.producer.index];
   end
   // A faulting result changes the entry's fault fields; it retires a cycle
   // later from the stored packet.
-  assign result_fault = result_i.fault || (result_i.data_fault == DATA_DSI_PROTECTION) ||
-    (result_i.data_fault == DATA_DSI_EXTERNAL) ||
-    (result_i.data_fault == DATA_DSI_DIRECT_STORE) ||
-    (result_i.data_fault == DATA_ALIGNMENT_DIRECT_STORE) ||
-    (result_i.data_fault == DATA_MACHINE_CHECK) ||
-    (ENABLE_TLB_MISS_EXCEPTIONS &&
-     ((result_i.data_fault == DATA_PAGE_MISS) ||
-      (result_i.data_fault == DATA_PAGE_CHANGED)));
+  assign result_fault = is_fault(result_i);
+  assign result2_fault = is_fault(result2_i);
   assign result_clean = finish_accept && result_retire_i && !result_fault;
   assign retire_settled_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
   assign head_o = packets_q[head_q];
@@ -392,15 +451,18 @@ module ppc_completion #(
   always_comb begin
     // Finishing this cycle (finish_accept implies active and not done).
     head_now0 = result_clean && (result_i.producer.index == head_q);
-    head_now1 = finish1_accept && (result1_i.producer.index == head_q);
+    head_now1 = finish1_accept && result1_retire_i && (result1_i.producer.index == head_q);
     head1_now0 = result_clean && (result_i.producer.index == head1_q);
-    head1_now1 = finish1_accept && (result1_i.producer.index == head1_q);
+    head1_now1 = finish1_accept && result1_retire_i && (result1_i.producer.index == head1_q);
+    head_now2 = finish2_accept && !result2_fault && (result2_i.producer.index == head_q);
+    head1_now2 = finish2_accept && !result2_fault && (result2_i.producer.index == head1_q);
     retire_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
-                                          (head_now0 || head_now1));
+                                          (head_now0 || head_now1 || head_now2));
     retire_o = '0;
     if (retire_valid_o)
       retire_o = head_now0 ? finished(packets_q[head_q], result_i) :
-                 head_now1 ? finished1(packets_q[head_q], result1_i) : packets_q[head_q];
+                 head_now1 ? finished1(packets_q[head_q], result1_i) :
+                 head_now2 ? finished(packets_q[head_q], NO_RESULT) : packets_q[head_q];
     // The tag comes from registered state so that holds keyed on it stay off
     // the finish path; it matters only with retire_valid_o.
     retire_tag_o = '0;
@@ -410,13 +472,13 @@ module ppc_completion #(
     end
     retire1_valid_o = ENABLE_PAIR_RETIRE && retire_valid_o &&
                       (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
-                      (done_q[head1_q] || head1_now0 || head1_now1) &&
+                      (done_q[head1_q] || head1_now0 || head1_now1 || head1_now2) &&
                       pair_ok(packets_q[head_q], packets_q[head1_q]);
     retire1_o = '0;
     if (retire1_valid_o)
       retire1_o = head1_now0 ? finished(packets_q[head1_q], result_i) :
                   head1_now1 ? finished1(packets_q[head1_q], result1_i) :
-                  packets_q[head1_q];
+                  head1_now2 ? finished(packets_q[head1_q], NO_RESULT) : packets_q[head1_q];
     retire1_tag_o = '0;
     if ((count_q > COUNT_WIDTH'(1)) && active_q[head1_q]) begin
       retire1_tag_o.index = head1_q;
@@ -443,6 +505,19 @@ module ppc_completion #(
               !packets_q[result1_i.producer.index].write_xer &&
               !packets_q[result1_i.producer.index].update_write)
         else $error("second finish port took a result it does not record");
+  always @(posedge clk_i)
+    if (rst_ni && finish2_accept)
+      assert (!packets_q[result2_i.producer.index].gpr_write &&
+              !packets_q[result2_i.producer.index].update_write &&
+              !packets_q[result2_i.producer.index].write_cr_field &&
+              !packets_q[result2_i.producer.index].write_cr_fields &&
+              !packets_q[result2_i.producer.index].write_cr_bit &&
+              !packets_q[result2_i.producer.index].write_xer &&
+              !packets_q[result2_i.producer.index].write_ca &&
+              !packets_q[result2_i.producer.index].write_ov_so &&
+              !(result_valid_i && (result_i.producer == result2_i.producer)) &&
+              !(result1_valid_i && (result1_i.producer == result2_i.producer)))
+        else $error("third finish port took a register result or a shared producer");
   // synthesis translate_on
 
   // Rename reconstruction consumes post-commit survivors in oldest-first
@@ -548,56 +623,21 @@ module ppc_completion #(
         end
       end
       if (finish_accept) begin
-        packets_q[result_i.producer.index].value <= result_i.value;
-        packets_q[result_i.producer.index].update_value <=
-          packets_q[result_i.producer.index].update_write ?
-            result_i.update_value : 32'b0;
-        if (result_fault) begin
-          packets_q[result_i.producer.index].value <= '0;
-          packets_q[result_i.producer.index].update_value <= '0;
-          packets_q[result_i.producer.index].illegal <= result_i.fault;
-          // A typed page result can be a resumable exception or a diagnostic.
-          // Both preserve the response-bound cause and capsule at retirement.
-          // Transport faults and DSI carry no data-miss capsule.
-          packets_q[result_i.producer.index].data_fault <=
-            (result_i.fault &&
-             (result_i.data_fault != DATA_PAGE_MISS) &&
-             (result_i.data_fault != DATA_PAGE_CHANGED)) ?
-              DATA_OK : result_i.data_fault;
-          packets_q[result_i.producer.index].page_miss <=
-            ((result_i.data_fault == DATA_PAGE_MISS) ||
-             (result_i.data_fault == DATA_PAGE_CHANGED)) ?
-                result_i.page_miss :
-            ((packets_q[result_i.producer.index].fetch_fault == FETCH_PAGE_MISS) &&
-             result_i.fault) ? packets_q[result_i.producer.index].page_miss : '0;
-          packets_q[result_i.producer.index].gpr_write <= 1'b0;
-          packets_q[result_i.producer.index].update_write <= 1'b0;
-          if (!packets_q[result_i.producer.index].update_owned)
-            packets_q[result_i.producer.index].update_gpr <= '0;
-          // A typed fault still returns the flag token it owns (stwcx.).
-          packets_q[result_i.producer.index].needs_flags <=
-            !result_i.fault && packets_q[result_i.producer.index].needs_flags;
-          packets_q[result_i.producer.index].write_xer <= 1'b0;
-          packets_q[result_i.producer.index].write_ca <= 1'b0;
-          packets_q[result_i.producer.index].write_ov_so <= 1'b0;
-          packets_q[result_i.producer.index].write_cr_field <= 1'b0;
-          packets_q[result_i.producer.index].cr_field <= '0;
-          packets_q[result_i.producer.index].write_cr_fields <= 1'b0;
-          packets_q[result_i.producer.index].cr_mask <= '0;
-          packets_q[result_i.producer.index].write_cr_bit <= 1'b0;
-          packets_q[result_i.producer.index].cr_bit <= '0;
-          packets_q[result_i.producer.index].cr_delta <= '0;
-          packets_q[result_i.producer.index].xer_delta <= '0;
-        end else begin
-          packets_q[result_i.producer.index] <=
-            finished(packets_q[result_i.producer.index], result_i);
-        end
+        packets_q[result_i.producer.index] <= result_fault ?
+          faulted(packets_q[result_i.producer.index], result_i) :
+          finished(packets_q[result_i.producer.index], result_i);
         done_q[result_i.producer.index] <= 1'b1;
       end
       if (finish1_accept) begin
         packets_q[result1_i.producer.index] <=
           finished1(packets_q[result1_i.producer.index], result1_i);
         done_q[result1_i.producer.index] <= 1'b1;
+      end
+      if (finish2_accept) begin
+        packets_q[result2_i.producer.index] <= result2_fault ?
+          faulted(packets_q[result2_i.producer.index], result2_i) :
+          finished(packets_q[result2_i.producer.index], NO_RESULT);
+        done_q[result2_i.producer.index] <= 1'b1;
       end
     end
   end

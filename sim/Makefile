@@ -21,6 +21,14 @@ endif
 ifdef BRANCH_REMOVAL
 export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_BRANCH_REMOVAL=$(BRANCH_REMOVAL)
 endif
+# FETCH_DECODE_REG=0 or 1 sets ppc_core's FETCH_DECODE_REG default.
+ifdef FETCH_DECODE_REG
+export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_FETCH_DECODE_REG=$(FETCH_DECODE_REG)
+endif
+# MISPREDICT_FETCH_NOW=0 or 1 sets ppc_core's MISPREDICT_FETCH_NOW default.
+ifdef MISPREDICT_FETCH_NOW
+export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_MISPREDICT_FETCH_NOW=$(MISPREDICT_FETCH_NOW)
+endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)
@@ -603,14 +611,15 @@ test-core-branch-recovery: build-control-memory
 
 # Folded bclr and bcctr: LR/CTR hazards, mispredictions both ways, linking
 # forms; again with two-word fetch and dispatch, where folded branches pair
-# from DQ1.
+# from DQ1. The second build sets its own width, so it drops any outer
+# DISPATCH_WIDTH define.
 .PHONY: test-core-branch-fold
 test: test-core-branch-fold
 test-core-branch-fold: build-control-memory
 	python3 tools/control_memory_program.py --branch-fold --output $(BUILD_DIR)/branch-fold
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
 	mkdir -p $(BUILD_DIR)/control-memory-w2
-	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_DISPATCH_WIDTH=2 -GFETCH_WIDTH=2 --top-module tb_core_control_memory --Mdir $(BUILD_DIR)/control-memory-w2 $(RTL) ../tb/tb_core_control_memory.sv
+	PPC_VERILATOR_FLAGS='$(filter-out +define+PPC_DISPATCH_WIDTH=%,$(PPC_VERILATOR_FLAGS))' $(VERILATOR) --binary --timing --assert -Wall +define+PPC_DISPATCH_WIDTH=2 -GFETCH_WIDTH=2 --top-module tb_core_control_memory --Mdir $(BUILD_DIR)/control-memory-w2 $(RTL) ../tb/tb_core_control_memory.sv
 	./$(BUILD_DIR)/control-memory-w2/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
 
 .PHONY: test-core-compare test-compare-execution
@@ -2108,11 +2117,12 @@ test-reference-le: reference-checkout
 	python3 cosim/run_le_reference.py --build-dir $(BUILD_DIR)/reference-le --rtl $(BUILD_DIR)/reference-le/rtl/Vtb_core_le --reference $(REFERENCE_DIR)
 
 # The same program with the pipelined LSU over a memory taking one access per
-# cycle; adds the Table 6-6 integer load/store rows.
+# cycle; adds the Table 6-6 integer load/store rows. Runs the base-wait
+# option (LSU_BASE_SNOOP off); the -snoop target runs the default.
 .PHONY: test-core-lsu-timing
 test-core-lsu-timing:
 	mkdir -p $(BUILD_DIR)/core-lsu-timing
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=0 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
@@ -2125,8 +2135,8 @@ test-core-fpu-machine-check-lsu:
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GMACHINE_CHECK=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-mc/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --machine-check
 	./$(BUILD_DIR)/core-fpu-mc/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
-# The same with LSU_BASE_SNOOP: a load's base produced by a load or add
-# costs Table 6-6's latency, and a misaligned snooped EA traps.
+# The same with LSU_BASE_SNOOP (the default): a load's base produced by a
+# load or add costs Table 6-6's latency, and a misaligned snooped EA traps.
 .PHONY: test-core-lsu-timing-snoop
 test-core-lsu-timing-snoop:
 	mkdir -p $(BUILD_DIR)/core-lsu-timing-snoop

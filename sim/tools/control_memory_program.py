@@ -506,6 +506,14 @@ def make_branch_fold():
         p.label(t('outer'));e('mflr',24);e('b',t('inner'),0,1);e('mtlr',24);e('bclr',20,0,0)
         p.label(t('inner'));nops(pad);e('addi',21,21,1);e('bclr',20,0,0)
         p.label(t('next'))
+        # LR of a bl that leaves before dispatch: read at the target, by a
+        # return at once, and by a bl reached from a return.
+        e('b',t('m1'),0,1);e('b',t('m2'),0,0)
+        p.label(t('m1'));e('mflr',28);e('stw',28,1,16*pad+8);e('bclr',20,0,0)
+        p.label(t('m2'));e('b',t('m3'),0,1);e('b',t('m4'),0,1);e('b',t('m5'),0,0)
+        p.label(t('m3'));e('bclr',20,0,0)
+        p.label(t('m4'));e('mflr',29);e('add',22,22,29);e('bclr',20,0,0)
+        p.label(t('m5'))
     # A bc whose compare waits on a divide or a load dispatches on its
     # prediction, right and wrong, forward and backward, with and without
     # y and LK. Younger stores, loads, a compare with a second CR branch, a
@@ -603,6 +611,30 @@ def make_branch_fold():
                     for _ in range(5):e('illegal')
                 for _ in range(4):e('poison')
                 p.label(t('z'))
+    # A bl removed at fetch on the predicted path of a bc waiting on a
+    # divide, with and without a carrier before it, sets LR only if that
+    # path survives; so does one behind an mtlr, removed as it dispatches. Mispredicted both ways; the correct path reads LR and
+    # calls its own bl.
+    for pad in range(4):
+        for k,(bo,eq,carrier) in enumerate([(13,0,1),(13,0,0),(12,1,1),(12,1,0),(13,0,2),(12,1,2)]):
+            t=lambda name:f'l{name}{pad}{k}'
+            nops(pad)
+            e('addi',6,0,100+pad);e('addi',3,0,0x40+4*k);e('mtlr',3);nops(3)
+            e('divw',8,6,7,0,0);e('cmpi',0,8,(100+pad)//7+(0 if eq else 1))
+            e('bc',bo,2,t('w' if bo&1 else 'r'),0,0)
+            if bo&1:
+                e('mflr',24);e('stw',24,1,64+24*pad+4*k)
+                e('b',t('g'),0,1);e('b',t('d'),0,0)
+                p.label(t('w'))
+            if carrier==1:e('addi',20,20,1)
+            if carrier==2:e('mtlr',6)
+            e('b',t('f'),0,1);e('illegal')
+            p.label(t('f'));e('mflr',26);e('addi',21,21,4);nops(2);e('illegal')
+            if not bo&1:
+                p.label(t('r'));e('mflr',24);e('stw',24,1,64+24*pad+4*k)
+                e('b',t('g'),0,1);e('b',t('d'),0,0)
+            p.label(t('g'));e('mflr',25);e('add',22,22,25);e('bclr',20,0,0)
+            p.label(t('d'));e('mflr',27);e('stw',27,1,160+24*pad+4*k)
     # A leaf called in a loop: the return folds once the bl retires.
     e('addi',5,0,8);e('mtctr',5)
     p.label('loop');e('b','body',0,1);e('add',22,22,21);e('bc',16,0,'loop',0,0)

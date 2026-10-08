@@ -10,10 +10,16 @@
 //   push lanes ─► [5] [4] [3] [2] [DQ1] [DQ0] ─► dispatch
 module ppc_iq #(
   parameter int WIDTH = 32,
-  parameter int DEPTH = 6
+  parameter int DEPTH = 6,
+  // Low bits of an entry that rec_write_i rewrites in the youngest survivor.
+  parameter int REC_W = 1,
+  // Bit of an entry that fold_write_i sets in the youngest survivor.
+  parameter int FOLD_BIT = 0
 ) (
   input logic clk_i, rst_ni,
   input logic clear_i,
+  // Empties the queue on the edge without hiding this cycle's entries.
+  input logic flush_i,
   // Lane 1 pushes only with lane 0, lane 0 needs push_ready_o and lane 1
   // push2_ready_o.
   input logic [1:0] push_valid_i,
@@ -21,9 +27,19 @@ module ppc_iq #(
   input logic [WIDTH-1:0] push0_data_i, push1_data_i,
   // pop_i[1] pops DQ1 with DQ0.
   input logic [1:0] pop_i,
+  // Needs a survivor of this cycle's pops.
+  input logic rec_write_i,
+  input logic [REC_W-1:0] rec_i,
+  input logic fold_write_i,
   output logic [1:0] valid_o,
   output logic [WIDTH-1:0] dq0_o, dq1_o,
-  output logic [$clog2(DEPTH + 1)-1:0] count_o
+  // The entry behind DQ1, valid while count_o exceeds 2.
+  output logic [WIDTH-1:0] dq2_o,
+  // The entry behind that, valid while count_o exceeds 3.
+  output logic [WIDTH-1:0] dq3_o,
+  output logic [$clog2(DEPTH + 1)-1:0] count_o,
+  // An entry holds a record (bit REC_W - 1) or sets bit FOLD_BIT - 1.
+  output logic marked_o
 );
   localparam int COUNT_WIDTH = $clog2(DEPTH + 1);
   // Registers, not block RAM: DQ0/DQ1 feed dispatch directly.
@@ -37,7 +53,14 @@ module ppc_iq #(
   assign valid_o[1] = !clear_i && (count > COUNT_WIDTH'(1));
   assign dq0_o = entries[0];
   assign dq1_o = entries[1];
+  assign dq2_o = entries[2];
+  assign dq3_o = entries[3];
   assign count_o = count;
+  always_comb begin
+    marked_o = 1'b0;
+    for (int i = 0; i < DEPTH; i++)
+      if (COUNT_WIDTH'(i) < count) marked_o |= entries[i][REC_W-1] || entries[i][FOLD_BIT-1];
+  end
   assign push0 = push_valid_i[0] && push_ready_o;
   assign push1 = push0 && push_valid_i[1] && push2_ready_o;
   assign pop0 = pop_i[0] && valid_o[0];
@@ -58,10 +81,14 @@ module ppc_iq #(
       end else if (COUNT_WIDTH'(i) == survivors + 1'b1) begin
         entries[i] <= push1_data_i;
       end
+      if (rec_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
+        entries[i][REC_W-1:0] <= rec_i;
+      if (fold_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
+        entries[i][FOLD_BIT] <= 1'b1;
     end
   end
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || clear_i) count <= '0;
+    if (!rst_ni || clear_i || flush_i) count <= '0;
     else count <= survivors + COUNT_WIDTH'(push0) + COUNT_WIDTH'(push1);
   end
 endmodule

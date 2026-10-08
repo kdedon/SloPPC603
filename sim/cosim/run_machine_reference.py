@@ -80,16 +80,29 @@ def negative_controls(runner, image, runner_args, prefix, le=False):
     cases = {'gpr': ('mutate=1000:r1', 'state after'), 'msr': ('mutate=1500:msr', 'state after'),
              'cr': ('mutate=2000:cr', 'state after'), 'store': ('mutate=5000:st', 'store byte'),
              'late store': ('mutate=5000:stlate', 'store byte'),
-             'drop': ('drop=3000', 'pc:')}
+             # A drop beside removed branches shows as a removed non-branch.
+             'drop': ('drop=3000', ('pc:', 'removed instruction')),
+             'lr after removed bl': ('mutate=1000:lrbl', 'state after'),
+             'ctr after removed bdnz': ('mutate=1000:ctrbd', 'state after'),
+             # Only a bc writes CTR when removed: not a bdnzl, bdnzlr or counting bcctr.
+             'removed bdnzl': ('removable=42000001', 'is not a branch'),
+             'removed bdnzlr': ('removable=4e000020', 'is not a branch'),
+             'removed counting bcctr': ('removable=4e000420', 'is not a branch')}
     if le:
         cases['store address'] = ('mutate=5000:staddr', 'store byte')
     # Without a store queue no write follows a younger store.
     if ' deferred_bytes=0 ' in clean.stdout:
         del cases['late store']
+    # Without branch removal no bl retires through the shadow LR.
+    if ' removed_bl=0 ' in clean.stdout:
+        del cases['lr after removed bl']
+    if ' removed_bdnz=0 ' in clean.stdout:
+        del cases['ctr after removed bdnz']
     for label, (option, expect) in cases.items():
         run = subprocess.run([str(runner), str(image), str(prefix), *runner_args, f'records={records}',
                               option], capture_output=True, text=True)
-        if run.returncode == 0 or expect not in run.stderr:
+        expect = (expect,) if isinstance(expect, str) else expect
+        if run.returncode == 0 or not any(e in run.stderr for e in expect):
             raise RuntimeError(f'negative control ({label}) was not detected\n{run.stderr[-2000:]}')
     print(f'PASS reference machine negative controls: {len(cases)} mutations over {records} records',
           flush=True)
