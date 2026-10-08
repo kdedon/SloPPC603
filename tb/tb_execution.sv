@@ -87,6 +87,7 @@ module tb_execution;
     dp_entry.b = dp_b;
   end
   ppc_dispatch dispatch_dut (
+    .fwd_done_i(1'b0), .fwd_producer_i('0), .fwd_value_i('0),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(dp_valid), .dispatch_ready_o(dp_ready),
     .entry_i(dp_entry),
@@ -112,6 +113,7 @@ module tb_execution;
   issue_packet_t ln_issue;
   result_packet_t ln_result;
   ppc_dispatch linked_dut (
+    .fwd_done_i(1'b0), .fwd_producer_i('0), .fwd_value_i('0),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(ln_valid), .dispatch_ready_o(ln_ready),
     .entry_i(ln_entry), .wake_valid_i(1'b0), .wake_i('0), .wake1_valid_i(1'b0), .wake1_i('0),

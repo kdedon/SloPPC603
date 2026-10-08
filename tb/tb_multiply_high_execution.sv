@@ -41,6 +41,7 @@ module tb_multiply_high_execution;
     b: dispatch_b
   };
   ppc_dispatch station (
+    .fwd_done_i(1'b0), .fwd_producer_i('0), .fwd_value_i('0),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
     .entry_i(dispatch_entry),
