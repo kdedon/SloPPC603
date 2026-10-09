@@ -451,7 +451,7 @@ module ppc_core #(
   logic lsu_store_error, store_tea_q;
   logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid, result1_offer;
   wake_packet_t wake1, cq_wake1;
-  logic sru_cancel, sru_idle, d1_sru, d1_alt_sru, d1_station_ready;
+  logic sru_cancel, sru_idle, d1_sru, d1_alt_sru, d1_alt_ok, d1_station_ready;
   // Read only inside the SRU, which width 1 omits.
   /* verilator lint_off UNUSEDSIGNAL */
   logic sru_issue_valid, sru_issue_ready, sru_rs_cancel;
@@ -502,7 +502,7 @@ module ppc_core #(
   uop_t dq1_uop, d1_lane_uop;
   iq_pair_t dq1_pair;
   // Unit classes: c0_* for DQ0, d1_* for DQ1.
-  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_move, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
+  logic c0_sru, c0_sru_ok, c0_sru_d1, c0_iu, c0_branch, c0_lane, c0_move, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch, d1_bc, d1_cr_final, d1_bc_taken, d1_bc_now, d1_bc_spec;
   logic [31:0] d1_bc_target;
@@ -2695,7 +2695,7 @@ module ppc_core #(
      (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready) &&
       (!unit_update || alloc_ready)) ||
      // Only a GPR result needs a rename slot (UM 6.6.1.2).
-     (normal_uop && (alloc_ready || (!dispatch_pre.gpr_write && !recovery_accepted)) && (rs_ready || bu_finished || c0_sru || bu_remove) && flags_ready &&
+     (normal_uop && (alloc_ready || (!dispatch_pre.gpr_write && !recovery_accepted)) && (rs_ready || bu_finished || c0_sru_ok || bu_remove) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained &&
@@ -2955,8 +2955,21 @@ module ppc_core #(
     ((dq2_unit != UNIT_BPU) ? needs_iu(dq2_unit, dq2_sru) : after2_iu) : fd_next_iu;
   assign after0_iu = iq_valid1 ?
     ((dq1_pair.unit != UNIT_BPU) ? needs_iu(dq1_pair.unit, dq1_pair.sru) : after1_iu) : fd_next_iu;
-  assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready &&
-    (!rs_ready || (d1_iu && !dq1_pair.sru) || after0_iu);
+  assign c0_sru_ok = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready;
+  assign c0_sru = c0_sru_ok && (!rs_ready || (d1_iu && !dq1_pair.sru) || after0_iu);
+  // The lookahead decides only which free station DQ0 takes: whether DQ0
+  // dispatches reads c0_sru_ok, and beside an IU operation in DQ1 the
+  // lookahead is DQ1 itself.
+  assign c0_sru_d1 = c0_sru_ok && (!rs_ready || !dq1_pair.sru);
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      assert ((rs_ready || c0_sru) == (rs_ready || c0_sru_ok))
+        else $error("DQ0 station readiness depends on the lookahead");
+      if (d1_iu)
+        assert (c0_sru_d1 == c0_sru) else $error("DQ0 SRU choice beside DQ1 differs");
+    end
+  // synthesis translate_on
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   // An LR or CTR move is completion-serialized, not dispatch-serialized, so
@@ -3032,7 +3045,7 @@ module ppc_core #(
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
   assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
     ((c0_iu || c0_branch) && d1_lsu) ||
-    (c0_iu && (d1_sru || (c0_sru && d1_iu) || d1_mem || d1_fp)) ||
+    (c0_iu && (d1_sru || (c0_sru_d1 && d1_iu) || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
     (c0_move && d1_iu) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
@@ -3040,9 +3053,10 @@ module ppc_core #(
   // Beside an IU operation in DQ0, a DQ1 integer operation goes to the SRU;
   // beside another unit's, an add or compare does while the IU station is
   // taken.
-  assign d1_alt_sru = d1_sru && (c0_lane || c0_branch || c0_fp || c0_fp_mem) &&
-    (!rs_ready || after1_iu) && sru_rs_ready;
-  assign d1_station_ready = c0_sru ? rs_ready : c0_iu ? sru_rs_ready : (rs_ready || d1_alt_sru);
+  assign d1_alt_ok = d1_sru && (c0_lane || c0_branch || c0_fp || c0_fp_mem) && sru_rs_ready;
+  assign d1_alt_sru = d1_alt_ok && (!rs_ready || after1_iu);
+  // Read only beside an IU operation in DQ1.
+  assign d1_station_ready = c0_sru_d1 ? rs_ready : c0_iu ? sru_rs_ready : (rs_ready || d1_alt_ok);
   assign d1_iu_ready = d1_station_ready && (!special_busy || special_mem_overlap || sru_in_lane) &&
     !(special_mem_dst_valid &&
       ((!dq1_uop.zero_a && (dq1_uop.src_a == special_mem_dst)) ||
