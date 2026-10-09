@@ -131,7 +131,9 @@ module ppc_icache_managed #(
 
   always_comb begin
     fetch_rsp_valid_o = 1'b0;
-    fetch_rsp_insn_o = '0;
+    // The words are zero between fetches; reset need not clear them.
+    fetch_rsp_insn_o = !fetch_outstanding_q ? '0 :
+      use_bypass ? (33*FETCH_WIDTH-1)'(bypass_rsp_insn_i) : cache_rsp_insn;
     fetch_rsp_error_o = 1'b0;
     cache_rsp_ready = 1'b0;
     bypass_rsp_ready_o = 1'b0;
@@ -139,12 +141,10 @@ module ppc_icache_managed #(
       if (!use_bypass) begin
         // A locked miss is consumed here and read uncached.
         fetch_rsp_valid_o = cache_rsp_valid && !cache_rsp_bypass;
-        fetch_rsp_insn_o = cache_rsp_insn;
         fetch_rsp_error_o = cache_rsp_error;
         cache_rsp_ready = fetch_rsp_ready_i || cache_rsp_bypass;
       end else begin
         fetch_rsp_valid_o = bypass_rsp_valid_i;
-        fetch_rsp_insn_o = (33*FETCH_WIDTH-1)'(bypass_rsp_insn_i);
         fetch_rsp_error_o = bypass_rsp_error_i;
         bypass_rsp_ready_o = fetch_rsp_ready_i;
       end

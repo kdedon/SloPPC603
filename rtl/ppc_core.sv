@@ -650,9 +650,9 @@ module ppc_core #(
     .stop_i(fault_pending || frontend_fence || power_stop || (fetch_hold_q && !frontend_clear)),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q || fstop_q || rel_fold),
-    .redirect_target_i(rel_fold ? fold_target : frontend_target),
+    .redirect_target_i(rel_fold ? rel_target : frontend_target),
     .early_i(early_q || bs_now || rel_fold), .early_ok_i(bs_now || early_ok || rel_fold),
-    .early_target_i(bs_now ? bs_alt_q : rel_fold ? fold_target : early_target_q),
+    .early_target_i(bs_now ? bs_alt_q : rel_fold ? rel_target : early_target_q),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
@@ -694,8 +694,9 @@ module ppc_core #(
                                       iq_push_ready;
   assign fd_split_q = fd_push && fd_push_ok_q && fd1_valid_q && hold1_cr;
   // A bypassed packet is taken whole: what the IQ refuses is registered.
-  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && !rel_fold &&
-    (fd_bypass || (!cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
+  // rel_fold implies fd_valid_q, which bypass excludes.
+  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q &&
+    (fd_bypass || (!rel_fold && !cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
   // Two words are taken only if the IQ holds them behind the FD words, or
   // one entry is free and the second word is a b or an unconditional bclr,
   // which is removed as it is queued. If it is not removed after all, the
@@ -977,12 +978,16 @@ module ppc_core #(
   assign iq_push1 = iq_push0 && fd1_valid && !fold_predict && !cr_hold1;
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
-  assign fold_target = (fold_insn[31:26] == 6'd19) ?
-    {(fold_insn[10] ? ctr_arch : lr_fold[31:2]), 2'b00} :
-    (fold_insn[1] ? 32'b0 : fold_pc) +
-    ((fold_insn[31:26] == 6'd18) ?
-      {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
-      {{16{fold_insn[15]}}, fold_insn[15:2], 2'b00});
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic [31:0] branch_target(logic [31:0] insn, logic [31:0] pc,
+                                                logic [31:2] ctr_v, logic [31:2] lr_v);
+    return (insn[31:26] == 6'd19) ? {(insn[10] ? ctr_v : lr_v), 2'b00} :
+      (insn[1] ? 32'b0 : pc) +
+      ((insn[31:26] == 6'd18) ? {{6{insn[25]}}, insn[25:2], 2'b00} :
+                                {{16{insn[15]}}, insn[15:2], 2'b00});
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign fold_target = branch_target(fold_insn, fold_pc, ctr_arch, lr_fold);
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       fold_q <= 1'b0;
@@ -996,8 +1001,19 @@ module ppc_core #(
   // A held branch predicted taken as it is released requests its target on
   // that edge (UM Figure 6-5: fetched the cycle after the compare executes).
   // A held word is registered, so the push condition avoids the bypass.
-  assign rel_fold = held_q && fd_valid_q && fd_push && fd_push_ok_q && fold_predict &&
+  // With fd_valid_q the first word is fd_packet_q, so the release terms read
+  // it directly rather than through the bypass.
+  fetch_packet_t held_word;
+  logic held_push, held_predict;
+  logic [31:0] rel_target;
+  assign held_word = iabr_check(fd_packet_q, iabr);
+  assign held_push = !fold_q && !fstop_q &&
+    !(cr_branch(held_word, ctr_fe_ok, ctr_one) && cr_unres);
+  assign held_predict = folds(held_word, trace_mode, lr_ok, ctr_free, cr_final, cr_now, ctr_one) &&
+    !waits(held_word, lr_ok, lk_free, ctr_free, ctr_fe_ok);
+  assign rel_fold = held_q && fd_valid_q && held_push && fd_push_ok_q && held_predict &&
                     !frontend_clear && !early_q;
+  assign rel_target = branch_target(fd_packet_q.insn, fd_packet_q.pc, ctr_arch, lr_fold);
   always_ff @(posedge clk_i) begin
     if (!rst_ni) held_q <= 1'b0;
     else held_q <= (cr_hold0 || fd_split) && !frontend_clear && !fold_q && !fstop_q;

@@ -1066,7 +1066,11 @@ module ppc_bat_memory_router #(
     end
 
     imem_rsp_valid = 1'b0;
+    // The words matter only with imem_rsp_valid; a fault returns zero.
     imem_rsp_insn = pimem_rsp_insn_i;
+    if ((i_state_q == LANE_RESPONSE) ? ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q) :
+                                       state_q == ROUTE_IFETCH_FAULT_RESPONSE)
+      imem_rsp_insn = '0;
     imem_rsp_fault_o = FETCH_OK;
     imem_rsp_esa_o = ESA_DENIED;
     pimem_rsp_ready_o = 1'b0;
@@ -1081,14 +1085,12 @@ module ppc_bat_memory_router #(
         imem_rsp_esa_o = HAS_602 ? i_esa_q : ESA_DENIED;
         // A refetch that succeeds still reports the first TEA.
         if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q)) begin
-          imem_rsp_insn = '0;
           imem_rsp_fault_o = i_refetch_q && pimem_rsp_error_i ? FETCH_TEA_REPEAT :
                                                                 FETCH_MACHINE_CHECK;
         end
       end
     end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
       imem_rsp_valid = 1'b1;
-      imem_rsp_insn = '0;
       imem_rsp_fault_o = fetch_fault_q;
     end
 
