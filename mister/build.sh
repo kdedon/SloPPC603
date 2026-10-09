@@ -165,6 +165,15 @@ if [[ -f "${out}/ppc603e.fit.summary" ]]; then
   grep -E "Logic utilization|Total registers|Total block memory bits|Total RAM Blocks|Total DSP Blocks|Total PLLs" \
     "${out}/ppc603e.fit.summary" || true
 fi
+if [[ -f "${out}/ppc603e.fit.rpt" ]]; then
+  # Where the router padded for hold: the largest source/destination clock
+  # pairs and nodes. Named "error:" so ci/step.sh copies them into a failure
+  # annotation.
+  awk '/Estimated Delay Added for Hold Timing Summary/ {s=1; n=0} s && /^; / && n++ < 12 {print} s && /^$/ {s=0}' \
+    "${out}/ppc603e.fit.rpt" | sed 's/^/hold delay error: /' || true
+  awk '/Estimated Delay Added for Hold Timing Details/ {s=1; n=0} s && /^; / && n++ < 16 {print} s && /^$/ {s=0}' \
+    "${out}/ppc603e.fit.rpt" | sed 's/^/hold delay error: /' | cut -c1-260 || true
+fi
 if [[ -f "${out}/ppc603e.sta.summary" ]]; then
   # One line per corner, analysis and clock: worst slack.
   awk -F' : ' '/^Type/ {type=$2} /^Slack/ {print type ": " $2}' "${out}/ppc603e.sta.summary"
