@@ -54,6 +54,9 @@ module tb_ppc_fpu_shell;
     completion_tag_t status_tag;
 
 `ifdef FPU_COMPACT
+    logic result_live_o;
+    always @(posedge clk_i)
+      if (result_valid_o && !result_live_o) $error("FPU result valid without its live form");
     ppc_fpu_compact dut (.*);
 `else
     ppc_fpu dut (.*);

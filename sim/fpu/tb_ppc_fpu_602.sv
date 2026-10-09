@@ -53,6 +53,9 @@ module tb_ppc_fpu_602;
     int checks;
 
 `ifdef FPU_COMPACT
+    logic result_live_o;
+    always @(posedge clk_i)
+      if (result_valid_o && !result_live_o) $error("FPU result valid without its live form");
     ppc_fpu_compact #(.CPU_602(1'b1)) dut (.*);
 `else
     ppc_fpu #(.CPU_602(1'b1)) dut (.*);
