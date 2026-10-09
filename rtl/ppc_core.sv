@@ -3904,6 +3904,9 @@ module ppc_core #(
           else $error("FP head index disagrees with the retire tag");
       if (fp_replay_req_q)
         assert (fp_head) else $error("FP replay request without the FP head");
+      if (fp_pending && fp_head_match)
+        assert (!(special_cancel && (special_producer == fp_tags_q[0])))
+          else $error("FP head result from a cancelled lane op");
       if (recovery_accepted)
         assert (!fp_commit) else $error("FP retirement during recovery");
       if (fp_push)

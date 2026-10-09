@@ -20,6 +20,8 @@ module ppc_fpu_compact #(
     output logic issue1_ready_o,
     input ppc_fpu_pkg::ppc_fpu_issue_t issue1_i,
     output logic result_valid_o,
+    // result_valid_o without the abort, which reaches only an aborted op.
+    output logic result_live_o,
     output ppc_fpu_pkg::ppc_fpu_result_t result_o,
     output logic result1_valid_o,
     output ppc_fpu_pkg::ppc_fpu_result_t result1_o,
@@ -444,7 +446,8 @@ module ppc_fpu_compact #(
   end
 
   assign head_live = busy_q && phase_q == PH_DONE;
-  assign result_valid_o = rst_ni && !kill_all_i && !abort_match && head_live;
+  assign result_live_o = rst_ni && !kill_all_i && head_live;
+  assign result_valid_o = result_live_o && !abort_match;
   assign result_o = head_result;
   assign result1_valid_o = 1'b0;
   assign result1_o = '0;

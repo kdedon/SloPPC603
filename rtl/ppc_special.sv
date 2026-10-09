@@ -226,6 +226,8 @@ module ppc_special #(
   // rA and rB of an overlapped FP load or store, which issues through this
   // port as it dispatches into the lane.
   input logic [31:0] fp_issue_a_i, fp_issue_b_i,
+  // Without the COMPACT unit's abort of this lane's own op, which keeps a
+  // recovery's cancel off the pipelined FP head's retirement.
   output logic fp_result_valid_o,
   output ppc_fpu_pkg::ppc_fpu_result_t fp_result_o,
   // An overlapped FP load holds the lane: younger FP work waits so FPU
@@ -451,6 +453,7 @@ module ppc_special #(
   logic [31:0] insn_q;
   logic [63:0] fpu_data_q;
   logic fpu_issue_valid, fpu_issue_sel, fpu_issue_ready, fpu_result_valid, fpu_result_take;
+  logic fpu_result_live;
   logic fpu_sticky_hold, fpu_sticky_waited_q;
   logic fpu_commit_valid, fpu_commit_ready, fpu_abort_valid;
   logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
@@ -2294,7 +2297,7 @@ module ppc_special #(
      ((state_q == S_HOLD) && commit_match));
   assign fpu_abort_valid = ENABLE_FPU && rst_ni && cancel_i && fpu_issued_q;
   assign fp_issue_ready_o = ENABLE_FPU && fpu_issue_ready && !fpu_issue_valid;
-  assign fp_result_valid_o = ENABLE_FPU && fpu_result_valid;
+  assign fp_result_valid_o = ENABLE_FPU && fpu_result_live;
   assign fp_result_o = fpu_result;
   always_comb begin
     fpu_issue = '0;
@@ -2378,7 +2381,8 @@ module ppc_special #(
         .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
         .issue_i(fpu_issue_sel ? fpu_issue : fp_issue),
         .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
-        .result_valid_o(fpu_result_valid), .result_o(fpu_result),
+        .result_valid_o(fpu_result_valid), .result_live_o(fpu_result_live),
+        .result_o(fpu_result),
         .result1_valid_o(), .result1_o(),
         .commit_valid_i(fpu_commit_valid || fp_commit_valid_i),
         .commit_tag_i(fpu_commit_valid ? producer_q : fp_commit_tag_i),
@@ -2427,12 +2431,16 @@ module ppc_special #(
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
         .forward_data_o(), .forward1_data_o()
       );
+      assign fpu_result_live = fpu_result_valid;
     end
     /* verilator lint_on PINCONNECTEMPTY */
     // synthesis translate_off
     always @(posedge clk_i) begin
       if (rst_ni && fpu_result_take)
         assert (fpu_result.tag == producer_q) else $error("FPU result tag mismatch");
+      if (rst_ni && (fpu_result_live != fpu_result_valid))
+        assert (fpu_abort_valid && (fpu_result.tag == producer_q))
+          else $error("FPU result masked by other than the lane's abort");
       if (rst_ni && fpu_result_take && fpu_result.cr_write && !fpu_exception)
         assert (uop_q.write_cr_field && (fpu_result.cr_field == uop_q.cr_field))
           else $error("FPU CR field disagrees with the allocation");
@@ -2466,6 +2474,7 @@ module ppc_special #(
                                fpu_port_store_ready, fp_store_tag_i};
     assign fpu_issue_ready = 1'b0;
     assign fpu_result_valid = 1'b0;
+    assign fpu_result_live = 1'b0;
     assign fpu_result = '0;
     assign fpu_commit_ready = 1'b0;
     assign fpu_mem_req_valid = 1'b0;
