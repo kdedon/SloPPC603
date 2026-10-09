@@ -113,7 +113,7 @@ module ppc_completion #(
   logic [COUNT_WIDTH-1:0] count_q;
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
-  logic finish2_accept, result2_fault, head_now2, head1_now2, head_mem0;
+  logic finish2_accept, result2_fault, head_now2, head1_now2, head_mem0, head_killed;
   retire_packet_t finish0_packet, finish1_packet, finish2_packet;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
@@ -377,8 +377,15 @@ module ppc_completion #(
           (ring_age(CQ_INDEX_WIDTH'(s), head_q) >= retained))
         redirect_candidate_kill[s] = 1'b1;
     end
-    // The head has age 0 and the next entry age 1.
-    kill_head = (count_q != '0) && (retained == '0);
+    // The head has age 0 and the next entry age 1. The head is removed by a
+    // recovery that removes all, or by one that drops a pivot at the head.
+    kill_head = (count_q != '0) && (redirect_all_i ||
+      (PIVOT && !redirect_keep_pivot_i && (redirect_pivot_i.index == head_q) &&
+       active_q[head_q] && (redirect_pivot_i.generation == generations_q[head_q])));
+    // synthesis translate_off
+    if (rst_ni && PIVOT && (kill_head != ((count_q != '0) && (retained == '0))))
+      $error("head removal disagrees with the retained count");
+    // synthesis translate_on
     kill_head1 = (count_q > COUNT_WIDTH'(1)) && (retained <= COUNT_WIDTH'(1));
 
     if (!PIVOT) begin
@@ -401,6 +408,7 @@ module ppc_completion #(
       redirect_accepted_o = 1'b0;
 
     redirect_kill_o = redirect_accepted_o ? redirect_candidate_kill : '0;
+    head_killed = redirect_accepted_o && (PIVOT ? kill_head : active_q[head_q]);
     for (int i = 0; i < CQ_DEPTH; i++)
       redirect_kill_generation_o[i] = generations_q[i];
   end
@@ -506,7 +514,7 @@ module ppc_completion #(
                                           (head_now0 || head_now1 || head_now2));
     head_mem0 = result_lsu_valid_i && (result_i.producer.index == head_q) && !done_q[head_q] &&
                 (generations_q[head_q] == result_i.producer.generation) &&
-                !redirect_kill_o[head_q] && !result_fault;
+                !head_killed && !result_fault;
     retire_mem_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
                                               (head_mem0 || head_now2));
     retire_o = '0;
