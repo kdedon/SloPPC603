@@ -343,18 +343,20 @@ module ppc_icache #(
       end else begin
         unique case (state_q)
           IC_IDLE: begin
+            // The response word registers load whenever a request could be
+            // accepted; without the request they are never read.
+            if (!rsp_valid_q || fetch_rsp_ready_i) begin
+              rsp_way_q <= (fetch_addr_i[1:0] == 2'b00) ? lookup_hit_way : '0;
+              rsp_word_q <= lookup_word[1:0];
+              rsp_insn_q <= 32'b0;
+            end
             if (accept) begin
               rsp_bypass_q <= 1'b0;
               if (fetch_addr_i[1:0] != 2'b00) begin
-                rsp_way_q <= '0;
-                rsp_insn_q <= 32'b0;
                 rsp_error_q <= 1'b1;
                 rsp_valid_q <= 1'b1;
                 protocol_error_q <= 1'b1;
               end else if (lookup_hit) begin
-                rsp_way_q <= lookup_hit_way;
-                rsp_word_q <= lookup_word[1:0];
-                rsp_insn_q <= 32'b0;
                 rsp_error_q <= 1'b0;
                 rsp_valid_q <= 1'b1;
                 hit_q <= 1'b1;
@@ -363,8 +365,6 @@ module ppc_icache #(
                 upd_set_q <= lookup_set;
                 upd_way_q <= lookup_way;
               end else if (lock_i) begin
-                rsp_way_q <= '0;
-                rsp_insn_q <= 32'b0;
                 rsp_error_q <= 1'b0;
                 rsp_bypass_q <= 1'b1;
                 rsp_valid_q <= 1'b1;
