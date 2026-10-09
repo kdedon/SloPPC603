@@ -2477,9 +2477,13 @@ module ppc_core #(
   // The SRU has its own result bus (UM 6.3.3): a special result that meets
   // a load's on the first port takes the second when the SRU pipe leaves it
   // free.
-  logic special_port1;
-  assign special_port1 = ENABLE_LSU_PIPE && special_result_select && special_result_valid &&
-                         special_port1_ok && lsu_port0 && !sru_result_offer;
+  // special_port1_sel steers the second port's payload without the result's
+  // valid, which a recovery's cancel reaches late: with it set, no other
+  // unit's result is valid on that port.
+  logic special_port1, special_port1_sel;
+  assign special_port1_sel = ENABLE_LSU_PIPE && special_result_select && lsu_port0 &&
+                             !sru_result_offer;
+  assign special_port1 = special_port1_sel && special_result_valid && special_port1_ok;
   assign special_result_ready = special_result_valid &&
                                 ((result_ready && !lsu_port0) || special_port1);
   // An IU result that meets a load's on the first port takes the second
@@ -2492,8 +2496,13 @@ module ppc_core #(
                     !special_result_select && !sru_result_offer;
   // The port selects on offers so a recovery's cancel stays out of the
   // second result's identity and value.
-  assign result1 = sru_result_offer ? sru_result : special_port1 ? special_result : iu_result;
+  assign result1 = sru_result_offer ? sru_result : special_port1_sel ? special_result : iu_result;
   assign result1_offer = sru_result_offer || iu_result_offer || special_port1;
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && special_port1_sel)
+      assert (!sru_result_valid && !iu_port1) else $error("second port steered off a valid result");
+  // synthesis translate_on
   // A completion-serialized result is forwarded only once it retires (UM
   // 6.3.3.2, 6.4.5); it retires the cycle after it finishes.
   // Each wake value where it is not late, without the late special result's
@@ -2506,7 +2515,7 @@ module ppc_core #(
     wake = cq_wake;
     wake.late = !lsu_port0 && special_result_select && special_late;
     wake1 = cq_wake1;
-    wake1.late = special_port1 && special_late;
+    wake1.late = special_port1_sel && special_late;
   end
   assign iu_result_ready = (result_ready && !special_result_select && !lsu_port0) ||
                            iu_port1;
@@ -3659,7 +3668,7 @@ module ppc_core #(
     .wake_valid_o(wake_valid), .wake_o(cq_wake),
     .result1_valid_i(sru_result_valid || iu_port1 || special_port1), .result1_i(result1),
     // Special results retire a cycle after they finish on either port.
-    .result1_retire_i(!special_port1),
+    .result1_retire_i(!special_port1_sel),
     .wake1_valid_o(wake1_valid), .wake1_o(cq_wake1),
     .result2_valid_i(lsu_result_valid && lsu_result_store), .result2_i(lsu_result),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
@@ -3790,9 +3799,10 @@ module ppc_core #(
       if ((i < int'(fp_count_q)) && !fp_safe_q[i]) fp_unsafe_pending = 1'b1;
     end
   end
-  // FP entries allocate finished.
+  // FP entries allocate finished. An FP tag holds its completion slot until
+  // it retires or a recovery empties both queues, so the index decides.
   assign fp_head = ENABLE_FPU && fp_pending && cq_retire_settled &&
-    (retire_producer == fp_tags_q[0]);
+    (cq_head == fp_tags_q[0].index);
   assign fp_head_match = fp_result_valid && (fp_result.tag == fp_tags_q[0]);
   assign fp_head_ok = fp_head_match &&
     (fp_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION);
@@ -3809,8 +3819,9 @@ module ppc_core #(
     else if (fp_head && fp_sticky_hold) fp_sticky_waited_q <= 1'b1;
   end
   // Registered: the FPU result depends on the recovery the replay starts.
-  // The blocked head cannot change before that recovery.
-  assign fp_replay = fp_replay_req_q && fp_head && !halted_o && !bs_redirect_q &&
+  // The blocked head cannot change before that recovery, so the request
+  // implies fp_head.
+  assign fp_replay = fp_replay_req_q && !halted_o && !bs_redirect_q &&
     (!special_busy || special_fp_store_cancellable);
   assign fp_commit = commit && fp_head;
   logic late_align_q;
@@ -3888,6 +3899,11 @@ module ppc_core #(
           else $error("released FP load raced an FP dispatch or recovery");
       if (fp_replay)
         assert (recovery_accepted) else $error("FP replay recovery was not accepted");
+      if (fp_pending && cq_retire_settled)
+        assert (fp_head == (retire_producer == fp_tags_q[0]))
+          else $error("FP head index disagrees with the retire tag");
+      if (fp_replay_req_q)
+        assert (fp_head) else $error("FP replay request without the FP head");
       if (recovery_accepted)
         assert (!fp_commit) else $error("FP retirement during recovery");
       if (fp_push)

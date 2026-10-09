@@ -303,21 +303,23 @@ module ppc_lsu_pipe #(
   // A waiting head's EA from the base written this cycle; both sums are
   // formed while the tags compare.
   localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
-  logic head_base0, head_base1, head_base_ready, head_fast;
+  logic head_match0, head_match1, head_base0, head_base1, head_base_ready, head_fast;
   logic [31:0] head_ea, base_sum0, base_sum1;
-  assign head_base0 = BASE_SNOOP && wake_valid_i && !wake_i.late &&
-                      (wake_i.tag == p1_head.base_tag) &&
-                      (wake_i.producer == p1_head.base_producer);
-  assign head_base1 = BASE_SNOOP && wake1_valid_i && !wake1_i.late &&
-                      (wake1_i.tag == p1_head.base_tag) &&
-                      (wake1_i.producer == p1_head.base_producer);
+  assign head_match0 = BASE_SNOOP && !wake_i.late && (wake_i.tag == p1_head.base_tag) &&
+                       (wake_i.producer == p1_head.base_producer);
+  assign head_match1 = BASE_SNOOP && !wake1_i.late && (wake1_i.tag == p1_head.base_tag) &&
+                       (wake1_i.producer == p1_head.base_producer);
+  assign head_base0 = wake_valid_i && head_match0;
+  assign head_base1 = wake1_valid_i && head_match1;
   assign base_sum0 = wake_early_value_i + p1_head.offset;
   assign base_sum1 = wake1_early_value_i + p1_head.offset;
   assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
   // A waiting head is neither fast nor offered until its base arrives, so its
-  // registered EA stands in.
-  assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :
-                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 : p1_head.ea;
+  // registered EA stands in. The sum is selected on the tag compare alone:
+  // the wake's valid, which a recovery's cancel reaches late, matters only
+  // through head_base_ready.
+  assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_match0) ? base_sum0 :
+                   (BASE_SNOOP && p1_head.base_wait && head_match1) ? base_sum1 : p1_head.ea;
   assign head_fast = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.fast :
     (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
      !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
@@ -893,6 +895,9 @@ module ppc_lsu_pipe #(
     if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && !head_base0 && !head_base1 &&
         (p1_check || offer))
       assert (0) else $error("waiting head checked or offered without its base");
+  always @(posedge clk_i)
+    if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && head_base1 && head_match0)
+      assert (head_base0) else $error("waiting head's base selected from an invalid wake");
   // +LSU_STATS reports store-queue use at the end of simulation.
   int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,
       stat_redo = 0, stat_cancelled = 0;
