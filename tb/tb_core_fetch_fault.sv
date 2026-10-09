@@ -24,7 +24,7 @@ module tb_core_fetch_fault #(
   int idelay,ddelay,cycles=0,checks=0,phase=0,selected=1;
   int faults=0,requests=0,store_retires=0,retires=0,held_fault=0;
   int retire_stalls=0,response_stalls=0,fault_responses=0;
-  int full_iq_cycles=0,full_iq_credit_blocks=0;
+  int full_iq_cycles=0,full_iq_credit_blocks=0,removed=0;
   logic done=0;
   logic [31:0] model_pc=0, saved_pc=0,saved_srr1=0,resume_pc=0;
   logic [31:0] regs[32];
@@ -222,7 +222,7 @@ module tb_core_fetch_fault #(
       ipending<=0;dpending<=0;captured_word<=0;captured_fault<=FETCH_OK;
       idelay<=0;ddelay<=0;cycles=0;faults=0;requests=0;store_retires=0;
       retires=0;held_fault=0;retire_stalls=0;response_stalls=0;fault_responses=0;
-      full_iq_cycles=0;full_iq_credit_blocks=0;
+      full_iq_cycles=0;full_iq_credit_blocks=0;removed=0;
       model_pc=0;saved_pc=0;saved_srr1=0;resume_pc=0;done=0;
       for(int r=0;r<32;r++) regs[r]=0;
     end else begin
@@ -260,6 +260,12 @@ module tb_core_fetch_fault #(
         if(retired.fetch_fault != FETCH_OK) held_fault++;
       end
       if(tv && tr && !done) begin
+        // A removed branch retires in the BPU without a packet (UM 6.3.1).
+        for(int k=0;k<int'(retired.removed_branches);k++) begin
+          check(fault_at(model_pc) == FETCH_OK && instruction(model_pc) == 32'h480000bc,
+                "removed branch identity");
+          model_pc='h100;removed++;
+        end
         expected_fault=fault_at(model_pc);
         check(retired.pc == model_pc,"ordered retirement PC");
         check(retired.insn == payload(model_pc,expected_fault),"fault payload identity or normal word");
@@ -340,9 +346,9 @@ module tb_core_fetch_fault #(
               "older store pressure filled IQ and blocked new fetch offers");
       if(phase == 1) check(regs[6] == 42 && regs[27] == 42,"RFI retries fault PC successfully");
     end
-    $display("PASS typed fetch enabled=%0d phase=%0d cause=%0d faults=%0d retires=%0d older-stores=%0d full-IQ=%0d credit-blocks=%0d response-stalls=%0d",
+    $display("PASS typed fetch enabled=%0d phase=%0d cause=%0d faults=%0d retires=%0d older-stores=%0d full-IQ=%0d credit-blocks=%0d response-stalls=%0d removed-branches=%0d",
              ENABLE_SUPERVISOR_EXCEPTIONS,phase,selected,faults,retires,requests,
-             full_iq_cycles,full_iq_credit_blocks,response_stalls);
+             full_iq_cycles,full_iq_credit_blocks,response_stalls,removed);
   endtask
   initial begin
     if(ENABLE_SUPERVISOR_EXCEPTIONS) begin
