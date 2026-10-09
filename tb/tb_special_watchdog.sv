@@ -73,6 +73,8 @@ module tb_special_watchdog;
   logic [31:0] shadow_ctr_i;
   logic dispatch_overlap_i;
   assign dispatch_overlap_i = 1'b0;
+  logic dispatch_overlap_ready_i;
+  assign dispatch_overlap_ready_i = 1'b0;
   assign branch_retire_i = 1'b0;
   assign branch_retire_lk_i = 1'b0;
   assign branch_retire_ctr_i = 1'b0;

@@ -304,7 +304,7 @@ module ppc_core #(
   wake_packet_t wake, cq_wake;
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
-  logic special_result_valid, special_result_ready, special_ready, special_busy;
+  logic special_result_valid, special_result_ready, special_ready, special_busy, special_overlap;
   logic special_port1_ok, special_late;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
@@ -417,7 +417,7 @@ module ppc_core #(
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
   logic ctr_rel, ctr_rel_taken;
-  logic [31:0] ctr_rel_target;
+  logic [31:0] ctr_rel_target /* synthesis keep */;
   logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q, rel_fold, held_q;
   logic early_bs_late, early_bu, fe_clear;
   logic [31:0] early_target_q, bs_alt_q;
@@ -451,7 +451,7 @@ module ppc_core #(
   logic lsu_store_error, store_tea_q;
   logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid, result1_offer;
   wake_packet_t wake1, cq_wake1;
-  logic sru_cancel, sru_idle, d1_sru, d1_alt_sru, d1_station_ready;
+  logic sru_cancel, sru_idle, d1_sru, d1_alt_sru, d1_alt_ok, d1_station_ready;
   // Read only inside the SRU, which width 1 omits.
   /* verilator lint_off UNUSEDSIGNAL */
   logic sru_issue_valid, sru_issue_ready, sru_rs_cancel;
@@ -502,7 +502,7 @@ module ppc_core #(
   uop_t dq1_uop, d1_lane_uop;
   iq_pair_t dq1_pair;
   // Unit classes: c0_* for DQ0, d1_* for DQ1.
-  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_move, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
+  logic c0_sru, c0_sru_ok, c0_sru_d1, c0_iu, c0_branch, c0_lane, c0_move, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch, d1_bc, d1_cr_final, d1_bc_taken, d1_bc_now, d1_bc_spec;
   logic [31:0] d1_bc_target;
@@ -609,7 +609,7 @@ module ppc_core #(
       $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
   end
   // A 2-wide response is {pair, word at pc + 4, word at pc}.
-  logic imem_rsp_pair, fetch_pair;
+  logic imem_rsp_pair, fetch_pair, fetch_pair_offer;
   logic [31:0] imem_rsp_insn1, fetched_insn1;
   generate
   if (FETCH_WIDTH == 2) begin : g_rsp_pair
@@ -660,7 +660,8 @@ module ppc_core #(
     .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready),
     .packet_ready2_i(fetch_ready2), .packet_room2_i(fetch_room2), .packet_o(fetched),
-    .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)
+    .packet_pair_o(fetch_pair), .packet_pair_offer_o(fetch_pair_offer),
+    .packet_insn1_o(fetched_insn1)
   );
   // Fetch-to-decode registers: the fetched words, PC, fault and page-miss
   // context. They clear with the IQ. The second word is always FETCH_OK at
@@ -670,14 +671,23 @@ module ppc_core #(
   fetch_packet_t fd_packet_q, fd_packet;
   page_miss_t fd_miss_q, fd_miss;
   logic fd_valid_q, fd1_valid_q, fd_valid, fd1_valid, fd_bypass;
-  logic fd_push_ok, fd_push_ok_q, fd_split_q, hold1_cr, fetch_ready2, fetch_room2;
+  logic fd_push_ok, fd_push_ok_q, fd_split_q, hold1_cr, fetch_ready2, fetch_room2, fetch_open;
   // Read only by the second decoder.
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] fd1_insn_q, fd1_insn;
   /* verilator lint_on UNUSEDSIGNAL */
   assign fd_bypass = !FETCH_DECODE_REG && !fd_valid_q;
   assign fd_valid = fd_bypass ? fetch_valid : fd_valid_q;
-  assign fd1_valid = fd_bypass ? fetch_valid && fetch_pair : fd1_valid_q;
+  // While bypassed, fetch_ready is fetch_open: decode's hold terms stay out
+  // of the second word's valid.
+  assign fd1_valid = fd_bypass ? fetch_valid && fetch_pair_offer && fetch_room2 && fetch_open :
+                                 fd1_valid_q;
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && fd_bypass)
+      assert (fd1_valid == (fetch_valid && fetch_pair))
+        else $error("bypassed second-word valid differs from the fetch pair");
+  // synthesis translate_on
   assign fd_packet = fd_bypass ? fetched : fd_packet_q;
   assign fd1_insn = fd_bypass ? fetched_insn1 : fd1_insn_q;
   assign fd_miss = fd_bypass ? fetch_miss : fd_miss_q;
@@ -695,7 +705,8 @@ module ppc_core #(
   assign fd_split_q = fd_push && fd_push_ok_q && fd1_valid_q && hold1_cr;
   // A bypassed packet is taken whole: what the IQ refuses is registered.
   // rel_fold implies fd_valid_q, which bypass excludes.
-  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q &&
+  assign fetch_open = !frontend_clear && !fold_q && !fstop_q;
+  assign fetch_ready = fetch_open &&
     (fd_bypass || (!rel_fold && !cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
   // Two words are taken only if the IQ holds them behind the FD words, or
   // one entry is free and the second word is a b or an unconditional bclr,
@@ -2364,9 +2375,8 @@ module ppc_core #(
     .clk_i, .rst_ni, .dispatch_valid_i(sp_dispatch_valid),
     .dispatch_ready_o(special_ready), .uop_i(sp_uop),
     .dispatch_align_i(dispatch_align && !sru_issue_go && !adopt_go && !lane_dq1),
-    .dispatch_overlap_i(!sru_issue_go &&
-                        (adopt_go || dispatch_mem_plain || dispatch_fp_mem_plain ||
-                         (lane_dq1 && !special_busy))),
+    .dispatch_overlap_i(!sru_issue_go && special_overlap),
+    .dispatch_overlap_ready_i(special_overlap),
     .dispatch_adopt_i(adopt_go && lsu_adopt_response),
     .producer_i(sp_producer), .pc_i(sp_pc), .insn_i(sp_insn),
     .branch_retire_i((commit && retire_o.branch) || branch_retire1),
@@ -2578,6 +2588,10 @@ module ppc_core #(
   // special unit's own redirect, issued with the CQ empty, or an FP replay,
   // which may remove only an overlapped FP store that has not committed.
   // A mispredicted branch may remove an access the lane adopted.
+  // A held move issues only to the idle unit, so its term stays out of the
+  // unit's readiness.
+  assign special_overlap = adopt_go || dispatch_mem_plain || dispatch_fp_mem_plain ||
+                           (lane_dq1 && !special_busy);
   assign special_cancel = (ENABLE_TEST_REDIRECT || ENABLE_FPU || ENABLE_BRANCH_SPEC) &&
                           special_kill;
   // synthesis translate_off
@@ -2685,7 +2699,7 @@ module ppc_core #(
      (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready) &&
       (!unit_update || alloc_ready)) ||
      // Only a GPR result needs a rename slot (UM 6.6.1.2).
-     (normal_uop && (alloc_ready || (!dispatch_pre.gpr_write && !recovery_accepted)) && (rs_ready || bu_finished || c0_sru || bu_remove) && flags_ready &&
+     (normal_uop && (alloc_ready || (!dispatch_pre.gpr_write && !recovery_accepted)) && (rs_ready || bu_finished || c0_sru_ok || bu_remove) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained &&
@@ -2925,9 +2939,19 @@ module ppc_core #(
   assign dq2_sru = iq_dq2[BREC_W + 1 + $bits(iq_pair_t) - 3];
   assign dq3_unit = unit_class_e'(iq_dq3[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
   assign dq3_sru = iq_dq3[BREC_W + 1 + $bits(iq_pair_t) - 3];
+  // The unit class formed from the decoded word, without the pair record.
   assign fd_next_iu = fd_valid &&
-    ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
-     (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)));
+    (bpu_unit(push_uop, queued.fault != FETCH_OK) ?
+       fd1_valid && iu_only(push_uop1, queued1.insn, queued1.fault != FETCH_OK) :
+       iu_only(push_uop, queued.insn, queued.fault != FETCH_OK));
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni)
+      assert (fd_next_iu == (fd_valid &&
+        ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
+         (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)))))
+        else $error("lookahead unit class differs from the pair predecode");
+  // synthesis translate_on
   // A branch in the queue takes no unit station; the lookahead passes it.
   assign after2_iu = (iq_count > IQ_COUNT_WIDTH'(3)) ?
     ((dq3_unit != UNIT_BPU) && needs_iu(dq3_unit, dq3_sru)) : fd_next_iu;
@@ -2935,8 +2959,21 @@ module ppc_core #(
     ((dq2_unit != UNIT_BPU) ? needs_iu(dq2_unit, dq2_sru) : after2_iu) : fd_next_iu;
   assign after0_iu = iq_valid1 ?
     ((dq1_pair.unit != UNIT_BPU) ? needs_iu(dq1_pair.unit, dq1_pair.sru) : after1_iu) : fd_next_iu;
-  assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready &&
-    (!rs_ready || (d1_iu && !dq1_pair.sru) || after0_iu);
+  assign c0_sru_ok = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready;
+  assign c0_sru = c0_sru_ok && (!rs_ready || (d1_iu && !dq1_pair.sru) || after0_iu);
+  // The lookahead decides only which free station DQ0 takes: whether DQ0
+  // dispatches reads c0_sru_ok, and beside an IU operation in DQ1 the
+  // lookahead is DQ1 itself.
+  assign c0_sru_d1 = c0_sru_ok && (!rs_ready || !dq1_pair.sru);
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      assert ((rs_ready || c0_sru) == (rs_ready || c0_sru_ok))
+        else $error("DQ0 station readiness depends on the lookahead");
+      if (d1_iu)
+        assert (c0_sru_d1 == c0_sru) else $error("DQ0 SRU choice beside DQ1 differs");
+    end
+  // synthesis translate_on
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   // An LR or CTR move is completion-serialized, not dispatch-serialized, so
@@ -3012,7 +3049,7 @@ module ppc_core #(
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
   assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
     ((c0_iu || c0_branch) && d1_lsu) ||
-    (c0_iu && (d1_sru || (c0_sru && d1_iu) || d1_mem || d1_fp)) ||
+    (c0_iu && (d1_sru || (c0_sru_d1 && d1_iu) || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
     (c0_move && d1_iu) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
@@ -3020,9 +3057,10 @@ module ppc_core #(
   // Beside an IU operation in DQ0, a DQ1 integer operation goes to the SRU;
   // beside another unit's, an add or compare does while the IU station is
   // taken.
-  assign d1_alt_sru = d1_sru && (c0_lane || c0_branch || c0_fp || c0_fp_mem) &&
-    (!rs_ready || after1_iu) && sru_rs_ready;
-  assign d1_station_ready = c0_sru ? rs_ready : c0_iu ? sru_rs_ready : (rs_ready || d1_alt_sru);
+  assign d1_alt_ok = d1_sru && (c0_lane || c0_branch || c0_fp || c0_fp_mem) && sru_rs_ready;
+  assign d1_alt_sru = d1_alt_ok && (!rs_ready || after1_iu);
+  // Read only beside an IU operation in DQ1.
+  assign d1_station_ready = c0_sru_d1 ? rs_ready : c0_iu ? sru_rs_ready : (rs_ready || d1_alt_ok);
   assign d1_iu_ready = d1_station_ready && (!special_busy || special_mem_overlap || sru_in_lane) &&
     !(special_mem_dst_valid &&
       ((!dq1_uop.zero_a && (dq1_uop.src_a == special_mem_dst)) ||

@@ -33,6 +33,7 @@ module tb_special_lint #(
   wire tlb_fill_idle_i = '0;
   wire dispatch_valid_i = '0;
   wire dispatch_overlap_i = '0;
+  wire dispatch_overlap_ready_i = '0;
   ppc_pkg::uop_t uop_i;
   assign uop_i = '0;
   logic dispatch_align_i;

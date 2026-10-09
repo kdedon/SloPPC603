@@ -968,6 +968,25 @@ package ppc_pkg;
     // rA, rB, rS equal a GPR the preceding instruction writes.
     logic [2:0] dep_prev;
   } iq_pair_t;
+  /* verilator lint_off UNUSEDSIGNAL */  // each reads only some fields
+  // An add or compare the SRU may execute (UM 6.4.5).
+  function automatic logic sru_opcode(logic [31:0] insn);
+    return (insn[31:26] == 6'd14) || (insn[31:26] == 6'd15) ||
+           (insn[31:26] == 6'd11) || (insn[31:26] == 6'd10) ||
+           ((insn[31:26] == 6'd31) && !insn[0] &&
+            ((insn[9:1] == 9'd266) || (insn[10:1] == 10'd0) || (insn[10:1] == 10'd32)));
+  endfunction
+  // pair_predecode's unit is UNIT_IU and sru is clear.
+  function automatic logic iu_only(uop_t u, logic [31:0] insn, logic fault);
+    return !u.illegal && !fault && (u.special_op == SPECIAL_NONE) && !sru_opcode(insn);
+  endfunction
+  // pair_predecode's unit is UNIT_BPU.
+  function automatic logic bpu_unit(uop_t u, logic fault);
+    return !u.illegal && !fault &&
+      ((u.special_op == SPECIAL_B) || (u.special_op == SPECIAL_BC) ||
+       (u.special_op == SPECIAL_BCLR) || (u.special_op == SPECIAL_BCCTR));
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   // Everything but dep_prev, which needs the preceding instruction.
   /* verilator lint_off UNUSEDSIGNAL */
   function automatic iq_pair_t pair_predecode(uop_t u, logic [31:0] insn, logic fault);
@@ -991,11 +1010,7 @@ package ppc_pkg;
     else if (plain_mem || fp_mem) p.unit = UNIT_LSU;
     else p.unit = UNIT_SPECIAL;
     p.serial = p.unit == UNIT_SPECIAL;
-    p.sru = (p.unit == UNIT_IU) &&
-      ((insn[31:26] == 6'd14) || (insn[31:26] == 6'd15) ||
-       (insn[31:26] == 6'd11) || (insn[31:26] == 6'd10) ||
-       ((insn[31:26] == 6'd31) && !insn[0] &&
-        ((insn[9:1] == 9'd266) || (insn[10:1] == 10'd0) || (insn[10:1] == 10'd32))));
+    p.sru = (p.unit == UNIT_IU) && sru_opcode(insn);
     p.reads[3] = branch && (u.special_op != SPECIAL_B) && !u.branch_bo[4];
     p.reads[2] = u.read_ca || u.read_so;
     p.reads[1] = u.special_op == SPECIAL_BCLR;
