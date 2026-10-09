@@ -1633,10 +1633,10 @@ lint-tgpr:
 
 test-regfile-tgpr:
 	mkdir -p $(BUILD_DIR)/regfile-tgpr-enabled
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_tgpr --Mdir $(BUILD_DIR)/regfile-tgpr-enabled ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_tgpr.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_tgpr --Mdir $(BUILD_DIR)/regfile-tgpr-enabled ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_tgpr.sv
 	./$(BUILD_DIR)/regfile-tgpr-enabled/Vtb_regfile_tgpr $(SIM_ARGS)
 	mkdir -p $(BUILD_DIR)/regfile-tgpr-disabled
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_tgpr "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-tgpr-disabled ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_tgpr.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_tgpr "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-tgpr-disabled ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_tgpr.sv
 	./$(BUILD_DIR)/regfile-tgpr-disabled/Vtb_regfile_tgpr $(SIM_ARGS)
 
 # Rename with two allocations and releases per cycle against a model.
@@ -1651,16 +1651,16 @@ test-rename-pair:
 test: test-regfile-gpr-ports
 test-regfile-gpr-ports:
 	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-tgpr
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports --Mdir $(BUILD_DIR)/regfile-gpr-ports-tgpr ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports --Mdir $(BUILD_DIR)/regfile-gpr-ports-tgpr ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
 	./$(BUILD_DIR)/regfile-gpr-ports-tgpr/Vtb_regfile_gpr_ports $(SIM_ARGS)
 	mkdir -p $(BUILD_DIR)/regfile-gpr-ports
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
 	./$(BUILD_DIR)/regfile-gpr-ports/Vtb_regfile_gpr_ports $(SIM_ARGS)
 	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-single
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
 	./$(BUILD_DIR)/regfile-gpr-ports-single/Vtb_regfile_gpr_ports $(SIM_ARGS)
 	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-single-plain
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single-plain ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single-plain ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
 	./$(BUILD_DIR)/regfile-gpr-ports-single-plain/Vtb_regfile_gpr_ports $(SIM_ARGS)
 
 test-core-tgpr:
