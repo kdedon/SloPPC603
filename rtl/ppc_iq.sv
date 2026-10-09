@@ -70,24 +70,49 @@ module ppc_iq #(
   assign pop1 = pop0 && pop_i[1] && valid_o[1];
   assign survivors = count - COUNT_WIDTH'(pop0) - COUNT_WIDTH'(pop1);
 
+  // Each entry's source for every pop count is decided from the registered
+  // count; the pops only select among the three, so they stay off the
+  // count arithmetic.
+  typedef enum logic [2:0] {SRC_HOLD, SRC_UP1, SRC_UP2, SRC_PUSH0, SRC_PUSH1} src_e;
+  src_e src [DEPTH];
+  src_e cand [DEPTH][3];
+  logic [2:0] tail [DEPTH];
+  logic [COUNT_WIDTH-1:0] left [3];
+  logic [DEPTH-1:0] at_tail, rec_at, fold_at;
+  always_comb begin
+    for (int k = 0; k < 3; k++) left[k] = count - COUNT_WIDTH'(k);
+    for (int i = 0; i < DEPTH; i++) begin
+      for (int k = 0; k < 3; k++) begin
+        cand[i][k] = SRC_HOLD;
+        if (COUNT_WIDTH'(i) < left[k]) begin
+          if (k == 2 && i + 2 < DEPTH) cand[i][k] = SRC_UP2;
+          else if (k == 1 && i + 1 < DEPTH) cand[i][k] = SRC_UP1;
+        end else if ((COUNT_WIDTH'(i) == left[k]) && !first1) begin
+          cand[i][k] = SRC_PUSH0;
+        end else if (COUNT_WIDTH'(i) == left[k] + COUNT_WIDTH'(!first1)) begin
+          cand[i][k] = SRC_PUSH1;
+        end
+        tail[i][k] = COUNT_WIDTH'(i) + 1'b1 == left[k];
+      end
+      src[i] = pop1 ? cand[i][2] : pop0 ? cand[i][1] : cand[i][0];
+      at_tail[i] = pop1 ? tail[i][2] : pop0 ? tail[i][1] : tail[i][0];
+      rec_at[i] = at_tail[i] && rec_write_i;
+      fold_at[i] = at_tail[i] && fold_write_i;
+    end
+  end
+
   // Payload is unreset: only entries below count are read.
   always_ff @(posedge clk_i) begin
     for (int i = 0; i < DEPTH; i++) begin
-      if (COUNT_WIDTH'(i) < survivors) begin
-        if (pop1) begin
-          if (i + 2 < DEPTH) entries[i] <= entries[i + 2];
-        end else if (pop0) begin
-          if (i + 1 < DEPTH) entries[i] <= entries[i + 1];
-        end
-      end else if ((COUNT_WIDTH'(i) == survivors) && !first1) begin
-        entries[i] <= push0_data_i;
-      end else if (COUNT_WIDTH'(i) == survivors + COUNT_WIDTH'(!first1)) begin
-        entries[i] <= push1_data_i;
-      end
-      if (rec_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
-        entries[i][REC_W-1:0] <= rec_i;
-      if (fold_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
-        entries[i][FOLD_BIT] <= 1'b1;
+      case (src[i])
+        SRC_UP1: if (i + 1 < DEPTH) entries[i] <= entries[i + 1];
+        SRC_UP2: if (i + 2 < DEPTH) entries[i] <= entries[i + 2];
+        SRC_PUSH0: entries[i] <= push0_data_i;
+        SRC_PUSH1: entries[i] <= push1_data_i;
+        default: ;
+      endcase
+      if (rec_at[i]) entries[i][REC_W-1:0] <= rec_i;
+      if (fold_at[i]) entries[i][FOLD_BIT] <= 1'b1;
     end
   end
   always_ff @(posedge clk_i) begin

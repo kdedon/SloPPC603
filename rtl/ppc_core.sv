@@ -2935,9 +2935,19 @@ module ppc_core #(
   assign dq2_sru = iq_dq2[BREC_W + 1 + $bits(iq_pair_t) - 3];
   assign dq3_unit = unit_class_e'(iq_dq3[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
   assign dq3_sru = iq_dq3[BREC_W + 1 + $bits(iq_pair_t) - 3];
+  // The unit class formed from the decoded word, without the pair record.
   assign fd_next_iu = fd_valid &&
-    ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
-     (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)));
+    (bpu_unit(push_uop, queued.fault != FETCH_OK) ?
+       fd1_valid && iu_only(push_uop1, queued1.insn, queued1.fault != FETCH_OK) :
+       iu_only(push_uop, queued.insn, queued.fault != FETCH_OK));
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni)
+      assert (fd_next_iu == (fd_valid &&
+        ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
+         (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)))))
+        else $error("lookahead unit class differs from the pair predecode");
+  // synthesis translate_on
   // A branch in the queue takes no unit station; the lookahead passes it.
   assign after2_iu = (iq_count > IQ_COUNT_WIDTH'(3)) ?
     ((dq3_unit != UNIT_BPU) && needs_iu(dq3_unit, dq3_sru)) : fd_next_iu;
