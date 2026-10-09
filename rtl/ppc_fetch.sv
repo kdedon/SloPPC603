@@ -50,6 +50,9 @@ module ppc_fetch #(
   output ppc_pkg::fetch_packet_t packet_o,
   // packet_o is followed by the word at pc + 4.
   output logic packet_pair_o,
+  // packet_pair_o before packet_ready2_i: packet_pair_o is it and
+  // packet_ready2_i.
+  output logic packet_pair_offer_o,
   output logic [31:0] packet_insn1_o
 );
   import ppc_pkg::*;
@@ -62,7 +65,7 @@ module ppc_fetch #(
   logic buf_valid, buf_pair;
   logic [31:0] buf_pc, buf_insn, buf_insn1;
   ppc_pkg::esa_enable_t buf_esa;
-  logic consume, live, to_buf, replay, offer, accept, pair, pair_next, early_sel, fast;
+  logic consume, live, to_buf, replay, offer, accept, pair, pair_offer, pair_next, early_sel, fast;
   logic pending_d, request_held_d, redirect_pending_d;
   logic [31:0] pc_d;
 
@@ -83,8 +86,9 @@ module ppc_fetch #(
   // A held offer remains stable even if the slot indication changes. An
   // announced redirect that does not arrive costs one offer cycle.
   assign req_valid_o = rst_ni && (request_held || (offer && !early_i) || fast);
-  assign pair = (FETCH_WIDTH == 2) && live && !redirect_i && packet_ready2_i &&
-                rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
+  assign pair_offer = (FETCH_WIDTH == 2) && live && !redirect_i &&
+                      rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
+  assign pair = pair_offer && packet_ready2_i;
   // Equals pair whenever redirect_i is low. On a redirect edge only a held
   // request (never pending) or the early target is offered, and pc_plus4/8
   // are reloaded before a pending request uses them again.
@@ -98,6 +102,7 @@ module ppc_fetch #(
   // packet.
   assign packet_valid_o = buf_valid || live;
   assign packet_pair_o = buf_valid ? buf_pair && packet_ready2_i : pair;
+  assign packet_pair_offer_o = buf_valid ? buf_pair : pair_offer;
   assign packet_insn1_o = buf_valid ? buf_insn1 : rsp_insn1_i;
   always_comb begin
     if (buf_valid) begin

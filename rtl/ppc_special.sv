@@ -110,6 +110,9 @@ module ppc_special #(
   // A plain load or store, or its alignment exception: it needs no
   // commit-time action unless it faults.
   input logic dispatch_overlap_i,
+  // dispatch_overlap_i for dispatch_ready_o: it may differ only while the
+  // unit is idle.
+  input logic dispatch_overlap_ready_i,
   // A plain access handed over from the pipelined unit with its response
   // already waiting at the port.
   input logic dispatch_adopt_i,
@@ -758,7 +761,7 @@ module ppc_special #(
   // The next plain access may dispatch on the releasing result edge.
   assign dispatch_ready_o = !cancel_i && ((state_q == S_IDLE) ||
     ((state_q == S_MEM_RESULT) && mem_released && result_ready_i &&
-     dispatch_overlap_i));
+     dispatch_overlap_ready_i));
   assign commit_match = commit_i && (commit_tag_i == producer_q);
   assign result_fire = result_valid_o && result_ready_i;
   assign request_fire = dmem_req_valid_o && dmem_req_ready_i;
@@ -2088,6 +2091,9 @@ module ppc_special #(
       assert (result_select_d[{request_fire, response_fire}] ==
               result_select(state_d, overlap_d))
         else $error("precomputed result select diverged");
+      if (state_q != S_IDLE)
+        assert (dispatch_overlap_ready_i == dispatch_overlap_i)
+          else $error("dispatch overlap terms differ while the unit is busy");
       if (fetch_page_miss_opcode && ((state_q == S_EXEC) || (state_q == S_HOLD)))
         assert (fetch_miss_eligible == miss_eligible)
           else $error("registered fetch-miss eligibility went stale");

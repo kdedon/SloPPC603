@@ -304,7 +304,7 @@ module ppc_core #(
   wake_packet_t wake, cq_wake;
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
-  logic special_result_valid, special_result_ready, special_ready, special_busy;
+  logic special_result_valid, special_result_ready, special_ready, special_busy, special_overlap;
   logic special_port1_ok, special_late;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
@@ -417,7 +417,7 @@ module ppc_core #(
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
   logic ctr_rel, ctr_rel_taken;
-  logic [31:0] ctr_rel_target;
+  logic [31:0] ctr_rel_target /* synthesis keep */;
   logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q, rel_fold, held_q;
   logic early_bs_late, early_bu, fe_clear;
   logic [31:0] early_target_q, bs_alt_q;
@@ -609,7 +609,7 @@ module ppc_core #(
       $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
   end
   // A 2-wide response is {pair, word at pc + 4, word at pc}.
-  logic imem_rsp_pair, fetch_pair;
+  logic imem_rsp_pair, fetch_pair, fetch_pair_offer;
   logic [31:0] imem_rsp_insn1, fetched_insn1;
   generate
   if (FETCH_WIDTH == 2) begin : g_rsp_pair
@@ -660,7 +660,8 @@ module ppc_core #(
     .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready),
     .packet_ready2_i(fetch_ready2), .packet_room2_i(fetch_room2), .packet_o(fetched),
-    .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)
+    .packet_pair_o(fetch_pair), .packet_pair_offer_o(fetch_pair_offer),
+    .packet_insn1_o(fetched_insn1)
   );
   // Fetch-to-decode registers: the fetched words, PC, fault and page-miss
   // context. They clear with the IQ. The second word is always FETCH_OK at
@@ -670,14 +671,23 @@ module ppc_core #(
   fetch_packet_t fd_packet_q, fd_packet;
   page_miss_t fd_miss_q, fd_miss;
   logic fd_valid_q, fd1_valid_q, fd_valid, fd1_valid, fd_bypass;
-  logic fd_push_ok, fd_push_ok_q, fd_split_q, hold1_cr, fetch_ready2, fetch_room2;
+  logic fd_push_ok, fd_push_ok_q, fd_split_q, hold1_cr, fetch_ready2, fetch_room2, fetch_open;
   // Read only by the second decoder.
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] fd1_insn_q, fd1_insn;
   /* verilator lint_on UNUSEDSIGNAL */
   assign fd_bypass = !FETCH_DECODE_REG && !fd_valid_q;
   assign fd_valid = fd_bypass ? fetch_valid : fd_valid_q;
-  assign fd1_valid = fd_bypass ? fetch_valid && fetch_pair : fd1_valid_q;
+  // While bypassed, fetch_ready is fetch_open: decode's hold terms stay out
+  // of the second word's valid.
+  assign fd1_valid = fd_bypass ? fetch_valid && fetch_pair_offer && fetch_room2 && fetch_open :
+                                 fd1_valid_q;
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && fd_bypass)
+      assert (fd1_valid == (fetch_valid && fetch_pair))
+        else $error("bypassed second-word valid differs from the fetch pair");
+  // synthesis translate_on
   assign fd_packet = fd_bypass ? fetched : fd_packet_q;
   assign fd1_insn = fd_bypass ? fetched_insn1 : fd1_insn_q;
   assign fd_miss = fd_bypass ? fetch_miss : fd_miss_q;
@@ -695,7 +705,8 @@ module ppc_core #(
   assign fd_split_q = fd_push && fd_push_ok_q && fd1_valid_q && hold1_cr;
   // A bypassed packet is taken whole: what the IQ refuses is registered.
   // rel_fold implies fd_valid_q, which bypass excludes.
-  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q &&
+  assign fetch_open = !frontend_clear && !fold_q && !fstop_q;
+  assign fetch_ready = fetch_open &&
     (fd_bypass || (!rel_fold && !cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
   // Two words are taken only if the IQ holds them behind the FD words, or
   // one entry is free and the second word is a b or an unconditional bclr,
@@ -2360,9 +2371,8 @@ module ppc_core #(
     .clk_i, .rst_ni, .dispatch_valid_i(sp_dispatch_valid),
     .dispatch_ready_o(special_ready), .uop_i(sp_uop),
     .dispatch_align_i(dispatch_align && !sru_issue_go && !adopt_go && !lane_dq1),
-    .dispatch_overlap_i(!sru_issue_go &&
-                        (adopt_go || dispatch_mem_plain || dispatch_fp_mem_plain ||
-                         (lane_dq1 && !special_busy))),
+    .dispatch_overlap_i(!sru_issue_go && special_overlap),
+    .dispatch_overlap_ready_i(special_overlap),
     .dispatch_adopt_i(adopt_go && lsu_adopt_response),
     .producer_i(sp_producer), .pc_i(sp_pc), .insn_i(sp_insn),
     .branch_retire_i((commit && retire_o.branch) || branch_retire1),
@@ -2574,6 +2584,10 @@ module ppc_core #(
   // special unit's own redirect, issued with the CQ empty, or an FP replay,
   // which may remove only an overlapped FP store that has not committed.
   // A mispredicted branch may remove an access the lane adopted.
+  // A held move issues only to the idle unit, so its term stays out of the
+  // unit's readiness.
+  assign special_overlap = adopt_go || dispatch_mem_plain || dispatch_fp_mem_plain ||
+                           (lane_dq1 && !special_busy);
   assign special_cancel = (ENABLE_TEST_REDIRECT || ENABLE_FPU || ENABLE_BRANCH_SPEC) &&
                           special_kill;
   // synthesis translate_off
