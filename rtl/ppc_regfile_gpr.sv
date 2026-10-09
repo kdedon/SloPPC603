@@ -12,7 +12,10 @@
 // undefined at reset.
 module ppc_regfile_gpr #(
   parameter bit ENABLE_TGPR = 1'b0,
-  parameter bit DUAL_WRITE = 1'b1
+  parameter bit DUAL_WRITE = 1'b1,
+  // Read ports whose address comes straight from a register, in port order
+  // rA, rB, rS, rA1, rB1, rS1 from bit 0; their copies may be block RAM.
+  parameter logic [5:0] REGISTERED_READS = 6'b0
 ) (
   input logic clk_i, rst_ni,
   input logic tgpr_i,
@@ -71,7 +74,7 @@ module ppc_regfile_gpr #(
   generate
     for (bank = 0; bank < BANKS; bank = bank + 1) begin : g_bank
       for (port = 0; port < READS; port = port + 1) begin : g_copy
-        ppc_regfile_gpr_copy ram (
+        ppc_regfile_gpr_copy #(.BLOCK(REGISTERED_READS[port])) ram (
           .clk_i, .we_i(array_write[bank]), .waddr_i(array_reg[bank]),
           .wdata_i(array_value[bank]), .raddr_i(read_reg[port]),
           .rdata_o(bank_value[bank][port])
@@ -109,10 +112,11 @@ module ppc_regfile_gpr #(
   generate if (DUAL_WRITE) begin : g_view_lvt
     always_comb
       for (int i = 0; i < 32; i++)
-        gpr[i] = g_lvt.lvt_q[i] ? g_bank[1].g_copy[0].ram.mem[i] : g_bank[0].g_copy[0].ram.mem[i];
+        gpr[i] = g_lvt.lvt_q[i] ? g_bank[1].g_copy[0].ram.view[i] :
+                                  g_bank[0].g_copy[0].ram.view[i];
   end else begin : g_view_single
     always_comb
-      for (int i = 0; i < 32; i++) gpr[i] = g_bank[0].g_copy[0].ram.mem[i];
+      for (int i = 0; i < 32; i++) gpr[i] = g_bank[0].g_copy[0].ram.view[i];
   end endgenerate
 
   always @(posedge clk_i) begin

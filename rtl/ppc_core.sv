@@ -2154,8 +2154,12 @@ module ppc_core #(
       assert (!retire1_o.update_write) else $error("update form retired from CQ[1]");
   end
   // synthesis translate_on
-  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_GPR_WRITE)) regfile (
-    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
+  // rA, rB and DQ1's sources are IQ entry fields. A fetch fault reads rA
+  // and rB of its raw payload; its dispatch uses no operand.
+  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_GPR_WRITE),
+                    .REGISTERED_READS(6'b111011)) regfile (
+    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(iq_uop.src_a),
+    .read_b_i(iq_uop.src_b),
     .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
     .read_c_o(arch_c),
     // Second dispatch slot's sources.
