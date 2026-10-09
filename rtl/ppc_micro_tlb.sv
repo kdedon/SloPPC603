@@ -26,6 +26,11 @@ module ppc_micro_tlb #(
   // Second lookup: a store to this page would hit.
   input  logic [19:0] check_page_i,
   output logic check_hit_o,
+  // Third lookup: a store to this page, with its translation.
+  input  logic [19:0] store_page_i,
+  output logic store_hit_o,
+  output logic [19:0] store_rpn_o,
+  output logic [3:0] store_wimg_o,
   input  logic fill_i,
   input  logic [19:0] fill_page_i,
   input  logic [19:0] fill_rpn_i,
@@ -44,7 +49,7 @@ module ppc_micro_tlb #(
   logic [ENTRIES-1:0][$clog2(TLB_SETS)-1:0] set_q;
   logic [1:0] hit_esa;
   logic [INDEX_W-1:0] next_q, victim;
-  logic [ENTRIES-1:0] match, permitted, fill_match;
+  logic [ENTRIES-1:0] match, permitted, fill_match, store_match;
   logic fill_matched;
   int chosen;
 
@@ -66,6 +71,17 @@ module ppc_micro_tlb #(
     check_hit_o = 1'b0;
     for (int i = 0; i < ENTRIES; i++)
       if (valid_q[i] && write_ok_q[i] && page_q[i] == check_page_i) check_hit_o = 1'b1;
+  end
+  always_comb begin
+    store_hit_o = 1'b0;
+    store_rpn_o = '0;
+    store_wimg_o = '0;
+    for (int i = 0; i < ENTRIES; i++) begin
+      store_match[i] = valid_q[i] && page_q[i] == store_page_i;
+      if (store_match[i] && write_ok_q[i]) store_hit_o = 1'b1;
+      store_rpn_o = store_rpn_o | ({20{store_match[i]}} & rpn_q[i]);
+      store_wimg_o = store_wimg_o | ({4{store_match[i]}} & wimg_q[i]);
+    end
   end
   assign hit_esa_o = ppc_pkg::esa_enable_t'(hit_esa);
 
@@ -131,6 +147,11 @@ module ppc_micro_tlb #(
     else $fatal(1, "micro-TLB size must be a power of two of at least 2");
   assert property (@(posedge clk_i) disable iff (!rst_ni) $onehot0(match))
     else $error("micro-TLB holds one page twice");
+  // The store lookup repeats the first for the same page.
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    (lookup_write_i && lookup_page_i == store_page_i) |->
+      (store_hit_o == hit_o && store_rpn_o == hit_rpn_o && store_wimg_o == hit_wimg_o))
+    else $error("micro-TLB store lookup differs from the first");
   // synthesis translate_on
 endmodule
 `default_nettype wire

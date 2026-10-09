@@ -239,7 +239,7 @@ module ppc_core_cached_bus60x #(
     .dmem_rsp_valid_i(dmem_rsp_valid),
     .dmem_rsp_ready_o(dmem_rsp_ready),
     .dmem_rsp_rdata_i(dmem_rsp_rdata),
-    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(NO_DATA_FAULT), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0), .dmem_rsp_error_i(dmem_rsp_error),
+    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(NO_DATA_FAULT), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_lookup_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0), .dmem_rsp_error_i(dmem_rsp_error),
     .retire_valid_o, .retire_ready_i, .retire_o,
     // Pair retirement is not exported.
     /* verilator lint_off PINCONNECTEMPTY */

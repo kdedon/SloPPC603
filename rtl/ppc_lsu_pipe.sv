@@ -109,6 +109,12 @@ module ppc_lsu_pipe #(
   // Bytes of the access, for a direct-store segment.
   output logic [2:0] req_bytes_o,
   output logic req_fp_o,
+  // req_addr_o and req_write_o as a late choice: the queued store's page
+  // when req_queued_o, else the head's page and write.
+  output logic req_queued_o,
+  output logic [19:0] req_queued_page_o,
+  output logic [19:0] req_head_page_o,
+  output logic req_head_write_o,
   input  logic rsp_valid_i,
   output logic rsp_ready_o,
   // Word accesses use the low half of a wider port.
@@ -425,6 +431,10 @@ module ppc_lsu_pipe #(
   assign req_wstrb_o = sq_offer ? sq_head.wstrb : p1_wstrb;
   assign req_bytes_o = sq_offer ? sq_head.bytes : p1_nbytes;
   assign req_fp_o = sq_offer ? sq_head.fp : p1_head.fp;
+  assign req_queued_o = sq_offer;
+  assign req_queued_page_o = sq_head.addr[31:12];
+  assign req_head_page_o = p1_addr[31:12];
+  assign req_head_write_o = p1_head.store;
   logic _unused_sq_young;
   assign _unused_sq_young = sq_head.young;
   // The two beats of one doubleword do not make each other speculative.
@@ -891,6 +901,11 @@ module ppc_lsu_pipe #(
   always @(posedge clk_i)
     if (rst_ni && p1_check)
       assert (chk_addr_o == p1_addr) else $error("store check address is not the head's");
+  always @(posedge clk_i)
+    if (rst_ni && req_valid_o)
+      assert (req_addr_o[31:12] == (req_queued_o ? req_queued_page_o : req_head_page_o) &&
+              req_write_o == (req_queued_o || req_head_write_o))
+        else $error("split request lookup differs from the request");
   always @(posedge clk_i)
     if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && !head_base0 && !head_base1 &&
         (p1_check || offer))

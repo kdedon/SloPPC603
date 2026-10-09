@@ -39,7 +39,7 @@ module tb_completion_update;
     .finish_accept_o(fv), .wake_valid_o(wv), .wake_o(wake),
     .result1_valid_i(1'b0), .result1_retire_i(1'b0), .result1_i('0), .result2_valid_i(1'b0), .result2_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
-    .retire_valid_o(tv), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .result_lsu_valid_i(1'b0), .retire_mem_valid_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(tr), .retire_hold_i(1'b0), .retire_o(retired), .retire_tag_o(rt),
+    .retire_valid_o(tv), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .result_lsu_valid_i(1'b0), .result_plain_valid_i(1'b0), .result1_plain_valid_i(1'b0), .retire_plain_valid_o(), .retire1_plain_valid_o(), .retire_mem_valid_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(tr), .retire_hold_i(1'b0), .retire_o(retired), .retire_tag_o(rt),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),
     .redirect_accepted_o(redirect_accepted), .redirect_kill_o(kill),

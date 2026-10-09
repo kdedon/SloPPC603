@@ -54,6 +54,8 @@ module tb_segment_runtime_router;
   logic [3:0] dmem_rsp_fault_o;
   logic dmem_req_valid_i, dmem_req_ready_o, dmem_req_write_i;
   logic [31:0] dmem_req_addr_i, dmem_req_wdata_i;
+  ppc_pkg::dmem_lookup_t dmem_req_lookup_i;
+  assign dmem_req_lookup_i = {1'b0, 20'b0, dmem_req_addr_i[31:12], dmem_req_write_i};
   logic [3:0] dmem_req_wstrb_i;
   logic dmem_rsp_valid_o, dmem_rsp_ready_i;
   logic [31:0] dmem_rsp_rdata_o;

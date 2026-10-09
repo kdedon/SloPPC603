@@ -187,6 +187,14 @@ package ppc_pkg;
     // only where a speculative access is harmless (UM 3.5.5.2).
     logic spec;
   } dmem_attr_t;
+  // A data request's translation lookup, split so a late choice between the
+  // store-queue head and any other request selects two finished lookups.
+  typedef struct packed {
+    logic queued;
+    logic [19:0] queued_page;
+    logic [19:0] page;
+    logic write;
+  } dmem_lookup_t;
   typedef enum logic [2:0] {
     CACHE_OP_NONE, CACHE_OP_DCBF, CACHE_OP_DCBST, CACHE_OP_DCBI,
     CACHE_OP_DCBZ, CACHE_OP_DCBT, CACHE_OP_DCBTST, CACHE_OP_SYNC

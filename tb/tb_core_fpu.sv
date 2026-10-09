@@ -147,7 +147,7 @@ module tb_core_fpu #(
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr), .dmem_rsp_rdata_i(rdata),
     .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i(dcapsule), .dmem_rsp_fault_i(dfault),
-    .dmem_store_check_addr_o(check_addr), .dmem_store_check_ok_i(check_ok),
+    .dmem_store_check_addr_o(check_addr), /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_lookup_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(check_ok),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .pin_event_i('0), .pin_status_o(pin_status),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),

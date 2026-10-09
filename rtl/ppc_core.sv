@@ -215,6 +215,8 @@ module ppc_core #(
   // Cache-block probe: translate and check permission, transfer nothing.
   output logic dmem_req_probe_o,
   output ppc_pkg::dmem_attr_t dmem_req_attr_o,
+  // dmem_req_addr_o's page and dmem_req_write_o for translation.
+  output ppc_pkg::dmem_lookup_t dmem_req_lookup_o,
   input logic dmem_rsp_valid_i,
   output logic dmem_rsp_ready_o,
   input logic [DMEM_BITS-1:0] dmem_rsp_rdata_i,
@@ -320,6 +322,8 @@ module ppc_core #(
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
+  logic lsu_req_queued, lsu_req_head_write;
+  logic [19:0] lsu_req_queued_page, lsu_req_head_page;
   logic [DMEM_BITS-1:0] lsu_req_wdata;
   logic [DMEM_BITS/8-1:0] lsu_req_wstrb;
   result_packet_t lsu_result;
@@ -350,6 +354,7 @@ module ppc_core #(
   logic next_sources_committed;
   logic [CQ_INDEX_WIDTH-1:0] cq_head;
   logic cq_retire_valid, cq_retire1_valid, commit1, gpr_commit1;
+  logic cq_retire_plain_valid, cq_retire1_plain_valid, commit_plain, commit1_plain;
   completion_tag_t retire1_producer;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_kill;
@@ -2856,12 +2861,23 @@ module ppc_core #(
   endfunction
   // A move that is a shadow's tagged entry waits for the head, where the
   // shadow writes.
-  assign sru_head_next = commit && !bs_busy && !(special_producer == retire_producer) &&
+  // A held move issues only while the special unit is idle and no recovery
+  // is accepted, where commits need neither's terms.
+  assign commit_plain = cq_retire_plain_valid && retire_gate && retire_ready_i;
+  assign commit1_plain = commit_plain && cq_retire1_plain_valid && retire1_gate &&
+                         retire1_ready_i;
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && !special_busy && !recovery_accepted)
+      assert (commit_plain == commit && commit1_plain == commit1)
+        else $error("commit without special and recovery terms differs");
+  // synthesis translate_on
+  assign sru_head_next = commit_plain && !bs_busy && !(special_producer == retire_producer) &&
     !(shadow_valid_q && shadow_armed_q && (sru_producer_q == shadow_tag_q)) &&
     !(cshadow_valid_q && cshadow_armed_q && (sru_producer_q == cshadow_tag_q)) &&
-    (commit1 ? (!(special_producer == retire1_producer) &&
-                (cq_next(cq_next(cq_head)) == sru_producer_q.index)) :
-               (cq_next(cq_head) == sru_producer_q.index));
+    (commit1_plain ? (!(special_producer == retire1_producer) &&
+                      (cq_next(cq_next(cq_head)) == sru_producer_q.index)) :
+                     (cq_next(cq_head) == sru_producer_q.index));
   // The held operand takes a matching result as it is written.
   function automatic operand_t sru_wake(operand_t o, logic zero);
     sru_wake = o;
@@ -3318,6 +3334,8 @@ module ppc_core #(
         .req_write_o(lsu_req_write), .req_addr_o(lsu_req_addr),
         .req_wdata_o(lsu_req_wdata), .req_wstrb_o(lsu_req_wstrb),
         .req_spec_o(lsu_req_spec), .req_bytes_o(lsu_req_bytes), .req_fp_o(lsu_req_fp),
+        .req_queued_o(lsu_req_queued), .req_queued_page_o(lsu_req_queued_page),
+        .req_head_page_o(lsu_req_head_page), .req_head_write_o(lsu_req_head_write),
         .rsp_valid_i(dmem_rsp_valid_i), .rsp_ready_o(lsu_rsp_ready),
         .rsp_rdata_i(dmem_rsp_rdata_i), .rsp_error_i(dmem_rsp_error_i),
         .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
@@ -3345,6 +3363,10 @@ module ppc_core #(
       assign lsu_req_spec = 1'b0;
       assign lsu_req_bytes = '0;
       assign lsu_req_fp = 1'b0;
+      assign lsu_req_queued = 1'b0;
+      assign lsu_req_queued_page = '0;
+      assign lsu_req_head_page = '0;
+      assign lsu_req_head_write = 1'b0;
       assign fp_rsp_valid = 1'b0;
       assign fp_rsp_tag = '0;
       assign fp_rsp_data = '0;
@@ -3408,6 +3430,10 @@ module ppc_core #(
     dmem_req_valid_o = sp_req_valid || lsu_req_valid;
     dmem_req_write_o = lsu_req_sel ? lsu_req_write : sp_req_write;
     dmem_req_addr_o = lsu_req_sel ? lsu_req_addr : sp_req_addr;
+    dmem_req_lookup_o.queued = lsu_req_sel && lsu_req_queued;
+    dmem_req_lookup_o.queued_page = lsu_req_queued_page;
+    dmem_req_lookup_o.page = lsu_req_sel ? lsu_req_head_page : sp_req_addr[31:12];
+    dmem_req_lookup_o.write = lsu_req_sel ? lsu_req_head_write : sp_req_write;
     dmem_req_wdata_o = lsu_req_sel ? lsu_req_wdata : sp_req_wdata;
     dmem_req_wstrb_o = lsu_req_sel ? lsu_req_wstrb : sp_req_wstrb;
     dmem_req_probe_o = !lsu_req_valid && sp_req_probe;
@@ -3431,6 +3457,11 @@ module ppc_core #(
         else $error("lane offered while idle");
       assert (!(lsu_req_valid && !lsu_req_sel))
         else $error("pipelined unit offered beside a busy lane");
+      assert (!dmem_req_valid_o ||
+              (dmem_req_addr_o[31:12] == (dmem_req_lookup_o.queued ?
+                 dmem_req_lookup_o.queued_page : dmem_req_lookup_o.page) &&
+               dmem_req_write_o == (dmem_req_lookup_o.queued || dmem_req_lookup_o.write)))
+        else $error("request lookup differs from the request");
       assert (!(adopt_go && dispatch && special_uop && !lsu_route && !sru_move))
         else $error("adoption collided with a lane dispatch");
       assert (!(sru_issue_go && (adopt_go || (dispatch1 && d1_mem) ||
@@ -3732,6 +3763,11 @@ module ppc_core #(
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
     .result_lsu_valid_i(lsu_result_valid && !lsu_result_store),
     .retire_mem_valid_o(cq_retire_mem_valid),
+    .result_plain_valid_i((lsu_result_valid && !lsu_result_store) ||
+                          (!lsu_port0 && iu_result_valid)),
+    .result1_plain_valid_i(sru_result_valid || (ENABLE_LSU_PIPE && iu_result_valid && lsu_port0 &&
+                                                !sru_result_offer)),
+    .retire_plain_valid_o(cq_retire_plain_valid), .retire1_plain_valid_o(cq_retire1_plain_valid),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&
                     !update_pending_q && !bs_hold),

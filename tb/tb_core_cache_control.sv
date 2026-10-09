@@ -116,7 +116,7 @@ module tb_core_cache_control;
     .dmem_req_wdata_o(unused_wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr),
     .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0),
-    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(rfault), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
+    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(rfault), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_lookup_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),

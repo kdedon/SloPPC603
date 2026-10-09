@@ -190,6 +190,7 @@ module ppc_core_bat #(
   logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
   logic [31:0] dmem_req_addr;
+  ppc_pkg::dmem_lookup_t dmem_req_lookup;
   logic [DMEM_BITS-1:0] dmem_req_wdata;
   logic [DMEM_BITS/8-1:0] dmem_req_wstrb;
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
@@ -362,7 +363,7 @@ module ppc_core_bat #(
     .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write), .dmem_req_addr_o(dmem_req_addr),
     .dmem_req_wdata_o(dmem_req_wdata), .dmem_req_wstrb_o(dmem_req_wstrb),
-    .dmem_req_probe_o(dmem_req_probe),
+    .dmem_req_probe_o(dmem_req_probe), .dmem_req_lookup_o(dmem_req_lookup),
     .dmem_rsp_valid_i(dmem_rsp_valid), .dmem_rsp_ready_o(dmem_rsp_ready),
     .dmem_rsp_fault_i(dmem_rsp_fault),
     .dmem_store_check_addr_o(store_check_addr), .dmem_store_check_ok_i(store_check_ok),
@@ -516,7 +517,7 @@ module ppc_core_bat #(
     .data_spec_ok_i(ENABLE_DATA_SPECULATION && pin_status_o.dcache_enable &&
                     !pin_status_o.dcache_lock),
     .dmem_req_write_i(dmem_req_write), .dmem_req_attr_i(dmem_req_attr),
-    .dmem_req_addr_i(dmem_req_addr),
+    .dmem_req_addr_i(dmem_req_addr), .dmem_req_lookup_i(dmem_req_lookup),
     .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),
     .dmem_rsp_valid_o(router_dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready && !sync_wait_q),

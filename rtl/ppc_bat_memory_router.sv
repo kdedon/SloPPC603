@@ -220,6 +220,8 @@ module ppc_bat_memory_router #(
   // Class of the access, for direct-store segments and speculation.
   input  ppc_pkg::dmem_attr_t dmem_req_attr_i,
   input  logic [31:0] dmem_req_addr_i,
+  // dmem_req_addr_i's page and dmem_req_write_i, split for translation.
+  input  ppc_pkg::dmem_lookup_t dmem_req_lookup_i,
   input  logic [DMEM_BITS-1:0] dmem_req_wdata_i,
   input  logic [DMEM_BITS/8-1:0] dmem_req_wstrb_i,
   output logic        dmem_rsp_valid_o,
@@ -308,7 +310,12 @@ module ppc_bat_memory_router #(
   // The snapshot address: protection-only mode reads SR0 (602UM 5.6.1).
   logic [31:0] segment_ea;
   logic [1:0] unused_d_hit_esa;
-  logic d_check_hit, unused_i_check;
+  logic d_look_hit, d_store_hit;
+  logic [19:0] d_look_rpn, d_store_rpn;
+  logic [3:0] d_look_wimg, d_store_wimg;
+  logic d_check_hit, unused_i_check, unused_i_store_hit;
+  logic [19:0] unused_i_store_rpn;
+  logic [3:0] unused_i_store_wimg;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
   // Direct-store state of the data lane: its class, the translated request,
@@ -851,6 +858,8 @@ module ppc_bat_memory_router #(
     .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
     .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
     .hit_esa_o(i_hit_esa), .check_page_i(20'b0), .check_hit_o(unused_i_check),
+    .store_page_i(20'b0), .store_hit_o(unused_i_store_hit),
+    .store_rpn_o(unused_i_store_rpn), .store_wimg_o(unused_i_store_wimg),
     .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(route_esa),
@@ -858,15 +867,22 @@ module ppc_bat_memory_router #(
     .fill_from_tlb_i(route_from_tlb)
   );
 
+  // The store-queue head's lookup runs beside the other request's, so the
+  // late choice between them selects finished results.
+  assign d_hit_raw = dmem_req_lookup_i.queued ? d_store_hit : d_look_hit;
+  assign d_hit_rpn = dmem_req_lookup_i.queued ? d_store_rpn : d_look_rpn;
+  assign d_hit_wimg = dmem_req_lookup_i.queued ? d_store_wimg : d_look_wimg;
   ppc_micro_tlb #(.ENTRIES(DATA_MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && !owner_instruction_q),
     .set_flush_index_i(request_set),
-    .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
-    .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
+    .lookup_page_i(dmem_req_lookup_i.page), .lookup_write_i(dmem_req_lookup_i.write),
+    .hit_o(d_look_hit), .hit_rpn_o(d_look_rpn), .hit_wimg_o(d_look_wimg),
     .hit_esa_o(unused_d_hit_esa),
     .check_page_i(store_check_page_i), .check_hit_o(d_check_hit),
+    .store_page_i(dmem_req_lookup_i.queued_page), .store_hit_o(d_store_hit),
+    .store_rpn_o(d_store_rpn), .store_wimg_o(d_store_wimg),
     .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(ESA_DENIED),
@@ -1624,6 +1640,11 @@ module ppc_bat_memory_router #(
     owner_q != OWN_NONE |-> lanes_idle && !imem_req_ready_o && !dmem_req_ready_o);
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     d_second_q |-> d_state_q == LANE_RESPONSE && !d_ds_q);
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    dmem_req_addr[31:12] == (dmem_req_lookup_i.queued ? dmem_req_lookup_i.queued_page :
+                                                        dmem_req_lookup_i.page) &&
+    dmem_req_write == (dmem_req_lookup_i.queued || dmem_req_lookup_i.write))
+    else $error("data lookup differs from the request");
   // synthesis translate_on
 
   // Service echo and attribute fields left unused here.

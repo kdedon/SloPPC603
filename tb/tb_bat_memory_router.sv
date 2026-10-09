@@ -37,6 +37,8 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
   logic [31:0] imem_rsp_insn_o;
   logic dmem_req_valid_i, dmem_req_ready_o, dmem_req_write_i;
   logic [31:0] dmem_req_addr_i, dmem_req_wdata_i;
+  ppc_pkg::dmem_lookup_t dmem_req_lookup_i;
+  assign dmem_req_lookup_i = {1'b0, 20'b0, dmem_req_addr_i[31:12], dmem_req_write_i};
   logic [3:0] dmem_req_wstrb_i;
   logic dmem_rsp_valid_o, dmem_rsp_ready_i, dmem_rsp_error_o;
   logic [31:0] dmem_rsp_rdata_o;

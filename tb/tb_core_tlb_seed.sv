@@ -119,7 +119,7 @@ module tb_core_tlb_seed #(parameter bit FEATURE=1'b1);
     .dmem_req_addr_o(da),.dmem_req_wdata_o(wd),.dmem_req_wstrb_o(ws),
     .dmem_rsp_valid_i(drv),.dmem_rsp_ready_o(drr),
     .dmem_rsp_rdata_i(32'b0),.dmem_rsp_error_i(1'b0),
-    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
+    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_lookup_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0),.checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(red),.redirect_all_i(!red_keep),
     .redirect_keep_pivot_i(red_keep),.redirect_pivot_i(pivot),

@@ -74,6 +74,13 @@ module ppc_completion #(
   // retire_valid_o for a head that finished earlier or finishes on a load/store
   // unit result, without the other units' finish terms.
   output logic retire_mem_valid_o,
+  // retire_valid_o and retire1_valid_o from first- and second-port valids
+  // without the special unit's results and without the redirect's kill:
+  // equal to them while neither a special result nor a redirect is accepted.
+  input logic result_plain_valid_i,
+  input logic result1_plain_valid_i,
+  output logic retire_plain_valid_o,
+  output logic retire1_plain_valid_o,
   // Stored head and CQ[1] packets, for checks that must not wait for a
   // finishing result. A clean finish changes only value and delta fields.
   output ppc_pkg::retire_packet_t head_o,
@@ -489,6 +496,27 @@ module ppc_completion #(
       active_q[result2_i.producer.index] && !done_q[result2_i.producer.index] &&
       (generations_q[result2_i.producer.index] == result2_i.producer.generation) &&
       !redirect_kill_o[result2_i.producer.index];
+  end
+  // Finishes as accepted without a redirect; plain results retire on arrival.
+  function automatic logic open_for(ppc_pkg::completion_tag_t t);
+    return (t.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) && active_q[t.index] && !done_q[t.index] &&
+           (generations_q[t.index] == t.generation);
+  endfunction
+  logic plain_ok0, plain_ok1, plain_ok2;
+  always_comb begin
+    plain_ok0 = result_plain_valid_i && open_for(result_i.producer) && !result_fault;
+    plain_ok1 = result1_plain_valid_i && open_for(result1_i.producer);
+    plain_ok2 = result2_valid_i && open_for(result2_i.producer) && !result2_fault;
+    retire_plain_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
+      ((plain_ok0 && (result_i.producer.index == head_q)) ||
+       (plain_ok1 && (result1_i.producer.index == head_q)) ||
+       (plain_ok2 && (result2_i.producer.index == head_q))));
+    retire1_plain_valid_o = ENABLE_PAIR_RETIRE && retire_plain_valid_o &&
+      (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
+      (done_q[head1_q] || (plain_ok0 && (result_i.producer.index == head1_q)) ||
+       (plain_ok1 && (result1_i.producer.index == head1_q)) ||
+       (plain_ok2 && (result2_i.producer.index == head1_q))) &&
+      pair_ok(packets_q[head_q], packets_q[head1_q]);
   end
   // A faulting result changes the entry's fault fields; it retires a cycle
   // later from the stored packet.
