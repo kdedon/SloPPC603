@@ -32,8 +32,9 @@ lsu_pipe=0
 analyze=0
 suite=""
 seed=""
+router_normal=0
 sys_mhz=45
-usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N]" >&2; exit 2; }
+usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N] [--router-normal]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
@@ -43,6 +44,7 @@ while (($#)); do
     --fpu-compact) fpu=1; fpu_compact=1 ;;
     --dual) dual=1 ;;
     --lsu-pipe) lsu_pipe=1 ;;
+    --router-normal) router_normal=1 ;;
     --seed)
       shift
       [[ "${1:-}" =~ ^[0-9]+$ ]] || usage
@@ -125,6 +127,10 @@ fi
 if [[ "${lsu_pipe}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "PPC_LSU_PIPE=1"' >> "${here}/ppc603e.qsf"
 fi
+# Normal router timing effort: less hold-fix routing demand on a full device.
+if [[ "${router_normal}" == 1 ]]; then
+  sed -i "s/^set_global_assignment -name ROUTER_TIMING_OPTIMIZATION_LEVEL .*/set_global_assignment -name ROUTER_TIMING_OPTIMIZATION_LEVEL NORMAL/" "${here}/ppc603e.qsf"
+fi
 if [[ -n "${seed}" ]]; then
   sed -i "s/^set_global_assignment -name SEED .*/set_global_assignment -name SEED ${seed}/" "${here}/ppc603e.qsf"
 fi
@@ -171,8 +177,11 @@ if [[ -f "${out}/ppc603e.fit.rpt" ]]; then
   # annotation.
   awk '/Estimated Delay Added for Hold Timing Summary/ {s=1; n=0} s && /^; / && n++ < 12 {print} s && /^$/ {s=0}' \
     "${out}/ppc603e.fit.rpt" | sed 's/^/hold delay error: /' || true
-  awk '/Estimated Delay Added for Hold Timing Details/ {s=1; n=0} s && /^; / && n++ < 16 {print} s && /^$/ {s=0}' \
-    "${out}/ppc603e.fit.rpt" | sed 's/^/hold delay error: /' | cut -c1-260 || true
+  # Details rows: source ; destination ; delay, with each node cut to its leaf.
+  awk -F';' '/Estimated Delay Added for Hold Timing Details/ {s=1; n=0; next} s && /^; / && NF >= 4 && n++ < 16 {
+      f = $2; t = $3; gsub(/ +/, "", f); gsub(/ +/, "", t); gsub(/ +/, "", $4)
+      if (length(f) > 80) f = "..." substr(f, length(f) - 79); if (length(t) > 80) t = "..." substr(t, length(t) - 79)
+      print "hold delay error: " $4 " ns " f " -> " t } s && /^$/ {s=0}' "${out}/ppc603e.fit.rpt" || true
 fi
 if [[ -f "${out}/ppc603e.sta.summary" ]]; then
   # One line per corner, analysis and clock: worst slack.

@@ -42,7 +42,9 @@ jobs:
       # publish job fails only if no seed passes.
       - name: Build the core (seed ${{ matrix.seed }})
         run: |
-          if ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45 --seed "${{ matrix.seed }}"; then
+          # Seeds 5-8 use normal router timing effort, to compare routability.
+          router=""; if [ "${{ matrix.seed }}" -ge 5 ]; then router=--router-normal; fi
+          if ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45 --seed "${{ matrix.seed }}" ${router}; then
             touch build/mister/PASS
           fi
       # Timing reports for every seed, passed or missed.
