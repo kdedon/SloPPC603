@@ -8,6 +8,7 @@
 ../rtl/ppc_divider.sv
 ../rtl/ppc_iu.sv
 ../rtl/ppc_regfile_gpr.sv
+../rtl/ppc_regfile_gpr_copy.sv
 ../rtl/ppc_rename.sv
 ../rtl/ppc_completion.sv
 ../rtl/ppc_flags.sv

@@ -71,10 +71,11 @@ module ppc_regfile_gpr #(
   generate
     for (bank = 0; bank < BANKS; bank = bank + 1) begin : g_bank
       for (port = 0; port < READS; port = port + 1) begin : g_copy
-        (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] copy [32];
-        always_ff @(posedge clk_i)
-          if (array_write[bank]) copy[array_reg[bank]] <= array_value[bank];
-        assign bank_value[bank][port] = copy[read_reg[port]];
+        ppc_regfile_gpr_copy ram (
+          .clk_i, .we_i(array_write[bank]), .waddr_i(array_reg[bank]),
+          .wdata_i(array_value[bank]), .raddr_i(read_reg[port]),
+          .rdata_o(bank_value[bank][port])
+        );
       end
     end
     if (DUAL_WRITE) begin : g_lvt
@@ -108,10 +109,10 @@ module ppc_regfile_gpr #(
   generate if (DUAL_WRITE) begin : g_view_lvt
     always_comb
       for (int i = 0; i < 32; i++)
-        gpr[i] = g_lvt.lvt_q[i] ? g_bank[1].g_copy[0].copy[i] : g_bank[0].g_copy[0].copy[i];
+        gpr[i] = g_lvt.lvt_q[i] ? g_bank[1].g_copy[0].ram.mem[i] : g_bank[0].g_copy[0].ram.mem[i];
   end else begin : g_view_single
     always_comb
-      for (int i = 0; i < 32; i++) gpr[i] = g_bank[0].g_copy[0].copy[i];
+      for (int i = 0; i < 32; i++) gpr[i] = g_bank[0].g_copy[0].ram.mem[i];
   end endgenerate
 
   always @(posedge clk_i) begin
