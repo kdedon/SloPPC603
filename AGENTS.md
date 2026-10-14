@@ -147,6 +147,8 @@ Each record opens with one line:
 
 ## Working rules
 
+- Before implementation, fetch the configured remote and reconcile the branch with its upstream. Preserve existing dirty work first; never change source while a build is running. Record any deliberate divergence instead of silently starting from stale main.
+- Save completed work in reviewable commits on a named branch and merge validated batches regularly. Keep untested candidates separate, and distinguish a saved checkpoint from full release acceptance.
 - A feature is done only when implementation and its acceptance test land together.
   Unsupported behavior rejects explicitly; a diagnostic halt is never an implemented exception.
 - Strict lint with no blanket waivers; any local waiver is narrow and states a reason.

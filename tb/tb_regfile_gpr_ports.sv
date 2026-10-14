@@ -6,7 +6,8 @@
 // architectural view must match the model and every read.
 module tb_regfile_gpr_ports #(
   parameter bit ENABLE_TGPR = 1'b1,
-  parameter bit DUAL_WRITE = 1'b1
+  parameter bit DUAL_WRITE = 1'b1,
+  parameter logic [5:0] REGISTERED_READS = 6'b0
 );
   logic clk_i = 1'b0;
   always #5 clk_i <= ~clk_i;
@@ -17,7 +18,8 @@ module tb_regfile_gpr_ports #(
   logic [4:0] write_reg_i, write1_reg_i;
   logic [31:0] write_value_i, write1_value_i;
 
-  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_WRITE)) dut (.*);
+  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_WRITE),
+                    .REGISTERED_READS(REGISTERED_READS)) dut (.*);
 
   logic [31:0] model_gpr [32];
   logic [31:0] model_tgpr [4];
@@ -207,8 +209,8 @@ module tb_regfile_gpr_ports #(
     if (raw_hits[0] == 0 || single_cycles[0] == 0 ||
         (DUAL_WRITE && (raw_hits[1] == 0 || both_cycles == 0 || single_cycles[1] == 0)))
       $fatal(1, "coverage hole");
-    $display("PASS GPR ports tgpr=%0d dual_write=%0d: %0d read checks, %0d view checks, %0d single-port-0, %0d single-port-1, %0d dual-write cycles, %0d write-write pairs, same-cycle read-after-write %0d (port 0) %0d (port 1)",
-             ENABLE_TGPR, DUAL_WRITE, checks, view_checks, single_cycles[0], single_cycles[1], both_cycles,
+    $display("PASS GPR ports tgpr=%0d dual_write=%0d registered_reads=%06b: %0d read checks, %0d view checks, %0d single-port-0, %0d single-port-1, %0d dual-write cycles, %0d write-write pairs, same-cycle read-after-write %0d (port 0) %0d (port 1)",
+             ENABLE_TGPR, DUAL_WRITE, REGISTERED_READS, checks, view_checks, single_cycles[0], single_cycles[1], both_cycles,
              ww_pairs, raw_hits[0], raw_hits[1]);
     $finish;
   end

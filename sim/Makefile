@@ -1745,6 +1745,24 @@ test-regfile-gpr-ports:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single-plain ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
 	./$(BUILD_DIR)/regfile-gpr-ports-single-plain/Vtb_regfile_gpr_ports $(SIM_ARGS)
 
+# Mixed block/LUT copies used by the core; same independent six-port oracle.
+# Keep the original four profiles and guard the production mixed-copy setting.
+.PHONY: test-regfile-gpr-ports-registered
+test: test-regfile-gpr-ports-registered
+test-regfile-gpr-ports-registered:
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-registered-tgpr
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 --top-module tb_regfile_gpr_ports "-GREGISTERED_READS=6'b111011" --Mdir $(BUILD_DIR)/regfile-gpr-ports-registered-tgpr ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-registered-tgpr/Vtb_regfile_gpr_ports $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-registered
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 --top-module tb_regfile_gpr_ports "-GREGISTERED_READS=6'b111011" "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-registered ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-registered/Vtb_regfile_gpr_ports $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-registered-single
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 --top-module tb_regfile_gpr_ports "-GREGISTERED_READS=6'b111011" "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-registered-single ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-registered-single/Vtb_regfile_gpr_ports $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-registered-single-plain
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 --top-module tb_regfile_gpr_ports "-GREGISTERED_READS=6'b111011" "-GENABLE_TGPR=1'b0" "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-registered-single-plain ../rtl/ppc_regfile_gpr.sv ../rtl/ppc_regfile_gpr_copy.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-registered-single-plain/Vtb_regfile_gpr_ports $(SIM_ARGS)
+
 test-core-tgpr:
 	mkdir -p $(BUILD_DIR)/core-tgpr-enabled
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_tgpr --Mdir $(BUILD_DIR)/core-tgpr-enabled $(RTL) ../tb/tb_core_tgpr.sv

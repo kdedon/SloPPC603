@@ -1425,7 +1425,7 @@ wrapper-attribute proof. Read-only review confirms those wrapper snapshot
 expressions are unchanged. Owned compiler products are removed after passing.
 
 The matched CPU-only fit and subsequent all-corner detailed STA complete
-successfully. Recorded: `quartus/chip/build.sh --mister --no-fpu --jobs 2
+successfully. Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2
 --sys-mhz 66`, commit `b9f52ae8ef3b52159c341c7aa2ecaa565074da76` plus
 uncommitted changes, 2026-10-14, Quartus 17.0.2 Build 602, pinned image
 `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70`.
@@ -1474,3 +1474,17 @@ through existing fetch/FD boundaries. Every scalar, refill and fault source
 must preserve provenance and legacy four-state behavior. No added fetch stage,
 acceptance edge, IQ payload expansion or manual cycle change is permitted.
 The proposal is not implemented or measured yet.
+
+
+## Upstream synchronization before further timing work
+
+The 40.66 MHz source is saved at `9a68a26`. The previously missing nine
+remote commits through `e5cddb9` are integrated at `22eb2b0`, preserving local
+accuracy fixes and adding eligible registered-address GPR RAM copies and
+registered-FD branch release. Focused combined-source gates pass with the
+same verified memory, owner-wrap and cycle counts. The mixed-copy leaf
+profile also passes. A fresh matched fit is required before assigning this
+combined source any timing result. The next direct-class and cache-metadata
+proposals remain private; no additional candidate is stacked onto the merge.
+See [upstream integration](UPSTREAM_INTEGRATION_2026-10-14.md) for commands,
+counts, conflict choices and remaining release gates.

@@ -296,6 +296,15 @@ a missing-clock cause. Preserve 66 MHz, seed 2, normal router effort and the
 existing setup/hold constraints for that experiment. No higher-clock release or
 manual timing relaxation is accepted.
 
+Before further timing changes, upstream synchronization is integrated on
+`codex/integrate-upstream-20261014` at `22eb2b0`, including nine remote commits
+through `e5cddb9`. The 40.66 MHz checkpoint is preserved at `9a68a26`.
+Combined lint/spec, fetch/cache/recovery/owner-wrap and verified-cycle gates
+pass, including the production mixed GPR RAM-copy profile. Its fresh capped
+CPU-only fit is pending. No direct-class or cache-metadata candidate is added
+until this merged source is measured; see
+[the integration record](../../UPSTREAM_INTEGRATION_2026-10-14.md).
+
 Queued, in order:
 
 1. Land the pending branches: `aud90c` (fetch stops, P12 checks),
