@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-13. This is the active planning entry point. The target for
+Updated: 2026-10-14. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -304,10 +304,21 @@ pass, including the production mixed GPR RAM-copy profile. Its fresh capped
 CPU-only fit completes at 40.12 MHz limiting (40.74 MHz at the other slow
 corner), saving 1,768 ALMs and 2,567 registers but giving no clock gain over
 the saved predecessor. Holds pass; unconstrained categories are zero.
-Frontend lookahead remains on 74/80 detailed paths, so the isolated direct
-branch/needs-IU projection is next; no reset/error normalization change or
-cache-metadata candidate is stacked with it. See
-[the integration record](../../UPSTREAM_INTEGRATION_2026-10-14.md).
+The subsequent isolated direct branch/needs-IU projection at `bea975a`
+passes source-extracted four-state and focused core/manual-cycle gates. Its
+fresh matched CPU-only fit measures 40.99 MHz limiting, with 281 fewer ALMs
+and 155 fewer registers than the integrated baseline, passing holds and zero
+unconstrained categories. No fetched-word classification, predecode or
+`fd_next_iu` appears on its 80 reported detailed setup paths. The new hot
+limit is selected-producer/rename readiness into LSU P1; the cold limit is
+CR/branch validity into station capture. Fixed-slot rename readiness is the
+next isolated timing preparation. SQ overlap and cache metadata transport
+are deferred; neither appears on the new measured path set. Full CI,
+initialization-randomized, FPU and reference release acceptance remain
+pending on the merged batch; 66 MHz remains open. See
+[the integration record](../../UPSTREAM_INTEGRATION_2026-10-14.md),
+[measured control-path evidence](../../CPU_CONTROL_PATH_REVIEW_2026-10-13.md)
+and [the source-only architecture review](../../CPU_ARCHITECTURE_REVIEW_2026-10-14.md).
 
 Queued, in order:
 

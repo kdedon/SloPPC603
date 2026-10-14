@@ -175,3 +175,18 @@ the manual fetch bypass and precise architectural behavior. CPU SRU specializati
 and parallel branch-target factoring enter verification before the next CPU-only
 fit; their timing benefit remains unmeasured. These isolated harness results
 provide diagnostics, not board timing or release acceptance.
+
+## Latest matched CPU-only class cut
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2
+--sys-mhz 66`, commit `bea975a`, 2026-10-14.
+
+Restricted Fmax improves to 40.99 MHz limiting (slow 100 C), with 41.35 MHz
+at slow -40 C, from the integrated 40.12 MHz baseline. The saved 40.66 MHz
+predecessor remains at `9a68a26`. Resources are 21,676 ALMs, 15,793 registers,
+46 M10Ks and two DSPs. All hold corners pass and unconstrained categories
+are zero; 66 MHz still fails. Focused accuracy/cycle and bounded four-state
+gates pass. Detailed paths now limit at result/rename readiness and CR/branch
+qualification, with no fetched-word classification on the top 80. See the
+[full command, corner and path record](CPU_CONTROL_PATH_REVIEW_2026-10-13.md).
+This remains CPU isolation rather than board or full release acceptance.

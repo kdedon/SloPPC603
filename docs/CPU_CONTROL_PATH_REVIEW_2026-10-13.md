@@ -1554,3 +1554,64 @@ canonical target depends only on repository source and optional Icarus,
 without private snapshots or Git-history dependencies. Strict spec/checker
 counts repeat unchanged. A read-only architecture review approved the
 independent references, guards and nonvacuity before execution.
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2
+--sys-mhz 66`, commit `bea975a`, 2026-10-14.
+
+Quartus 17.0.2 Build 602 completes in 41m32 with zero errors and 86 warnings.
+Restricted Fmax is 40.99 MHz at slow 100 C and 41.35 MHz at slow -40 C.
+This improves the integrated baseline by 0.87 MHz and the saved 40.66 MHz
+predecessor by 0.33 MHz. Resources are 21,676 ALMs, 15,793 registers, 46 M10Ks,
+two DSPs, 54 MLAB LABs, 26,624 MLAB bits and 280,320 block-memory bits:
+281 fewer ALMs and 155 fewer registers than the integrated baseline. The ten
+GPR BLOCK copies remain M10Ks, with the two remaining copies in MLAB.
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+|---|---:|---:|
+| Slow 100 C | -9.243 | +0.237 |
+| Slow -40 C | -9.033 | +0.201 |
+| Fast 100 C | +0.922 | +0.134 |
+| Fast -40 C | +3.458 | +0.119 |
+
+All five unconstrained categories are zero. Both slow corners still miss
+66 MHz. The summary's dirty flag reflects the temporary generated run QSF;
+RTL was committed and unchanged throughout both analyses, before/after fit
+inputs agree, and the original QSF is restored. This CPU-only result does
+not establish board timing or full release acceptance.
+
+Recorded: `quartus_sta -t ../all_corner_paths.tcl ppc603e_chip
+ppc603e_chip <run-SDC> <output-dir>` from `quartus/chip`, commit
+`bea975a`, 2026-10-14. Use the emitted 66 MHz run SDC; the capped pinned
+container and exact project/revision remain as in the main fit.
+
+Detailed STA completes in 2m37 with zero errors and three warnings; all four
+worst slacks and the 15.151 ns relationship match the main analysis. None of
+80 reported setup paths contain fetched-word classification/predecode,
+`fd_next_iu`, IQ Add0, SQ overlap or D-uTLB matching. The earlier
+classification chain is removed from this measured top-path set, rather
+than proving every such arc meets 66 MHz.
+
+The hot worst path is HRESET through SRU result qualification, selected
+producer identity, rename readiness, incoming alignment/allocation and LSU
+P1 EA capture: 20 levels, 23.838 ns data delay, 16.652 ns interconnect (70%),
+-0.496 ns skew. The cold worst is IU operand through count/CR0, CR ownership,
+branch resolution, `fd1_valid`, and station selection/capture: 20 levels,
+23.462 ns data delay, 13.986 ns interconnect (60%), -0.662 ns skew.
+`c0_sru` still appears on 27 paths through branch/validity qualification.
+
+| Corner | Sources among 20 setup paths | Endpoints |
+|---|---|---|
+| Slow 100 C | IU operands 14, HRESET 6 | station 11, P1 6, fetch-address 3 |
+| Slow -40 C | IU operand 17, CQ head 3 | station 16, P1 3, cache update 1 |
+| Fast 100 C | HRESET 20 | P1 9, special/cache state 11 |
+| Fast -40 C | HRESET 20 | P1 13, special/cache state 7 |
+
+The next isolated timing candidate is fixed-slot rename readiness, after
+source-exact equivalence and focused manual gates. The cold CR/branch family
+is an independent limit near 41.35 MHz if only the hot family is removed.
+Cache classification transport and SQ overlap are deferred because neither
+is on this measured set. Keep their private preparation separate from the
+accepted two-file cut. Broad CI, initialization-randomized and FPU gates
+remain pending on the merged batch. The source-only
+[architecture review](CPU_ARCHITECTURE_REVIEW_2026-10-14.md) records separate
+throughput and maintenance findings without claiming new correctness proof.

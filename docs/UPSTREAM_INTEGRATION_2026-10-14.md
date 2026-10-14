@@ -153,3 +153,16 @@ IABR always matched and LR readiness was coupled to a blocking control.
 Independent review caught both gaps. The committed fixture uses nonmatching/
 disabled/matching breakpoint profiles and independent controls with required
 nonzero target coverage. Production RTL was not changed to repair the test.
+
+## Follow-up measured CPU cut
+
+The isolated frontend classification commit `bea975a` passes focused
+accuracy/cycle and source-extracted four-state gates, then measures
+40.99 MHz CPU-only at the limiting corner, improving this integration's
+40.12 MHz baseline. The [control-path record](CPU_CONTROL_PATH_REVIEW_2026-10-13.md)
+contains its rerunnable commands, exact corners, resources and newly limiting
+cones. The [source-only architecture review](CPU_ARCHITECTURE_REVIEW_2026-10-14.md)
+records separate throughput/debt findings. Neither establishes full release
+acceptance or 66 MHz closure. The integration branch was published at
+`a05344f` after explicit user approval; follow-up work is committed separately
+before its merged-batch gates.
