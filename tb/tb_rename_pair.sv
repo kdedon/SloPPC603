@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
-// Rename against a model with two allocations, two releases, a wake, four
-// lookups and recovery rebuilds per cycle: slot choice, same-register WAW,
+// Rename against a model with two allocations, two releases, a wake,
+// six lookups and recovery rebuilds per cycle: slot choice, same-register WAW,
 // release map clearing and the survivor walk.
 /* verilator lint_off BLKSEQ */
 module tb_rename_pair;
@@ -11,12 +11,17 @@ module tb_rename_pair;
   logic clk = 1'b0, rst_n = 1'b0;
   always #5 clk = ~clk;
 
-  logic [4:0] rd [4];
-  logic [31:0] arch [4];
+  logic [4:0] rd [6];
+  logic [31:0] arch [6];
   // Ports are driven from scalars copied before each check.
-  logic [4:0] rd0, rd1, rd2, rd3;
-  logic [31:0] arch0, arch1, arch2, arch3;
-  operand_t got [4];
+  logic [4:0] rd0, rd1, rd2, rd3, rd4, rd5;
+  logic [31:0] arch0, arch1, arch2, arch3, arch4, arch5;
+  operand_t got [6];
+  logic [11:0] early_a, early_b;
+  logic [31:0] early_value, early1_value;
+  logic wake1_v, wake1_offer;
+  wake_packet_t wake1;
+  int forwarding_cases = 0;
   logic [31:0] mapped;
   logic a0_ready, a1_ready, a2_ready, alloc0, alloc1, alloc2, rel0, rel1, wake_v, recovery;
   rename_tag_t a0_tag, a1_tag, a2_tag, rel0_tag, rel1_tag;
@@ -29,10 +34,8 @@ module tb_rename_pair;
   completion_tag_t surv_tag [CQ_DEPTH];
 
   ppc_rename dut (
-    /* verilator lint_off PINCONNECTEMPTY */
-    .read_c_i(5'd0), .arch_c_i(32'd0), .read_c_o(),
-    .read_c1_i(5'd0), .arch_c1_i(32'd0), .read_c1_o(),
-    /* verilator lint_on PINCONNECTEMPTY */
+    .read_c_i(rd4), .arch_c_i(arch4), .read_c_o(got[4]),
+    .read_c1_i(rd5), .arch_c1_i(arch5), .read_c1_o(got[5]),
     .alloc_value_valid_i(1'b0), .alloc_value_i(32'd0),
     .alloc1_value_valid_i(1'b0), .alloc1_value_i(32'd0),
     .release2_i(1'b0), .release2_reg_i(5'd0), .release2_tag_i('0), .release2_producer_i('0),
@@ -48,14 +51,15 @@ module tb_rename_pair;
     .alloc1_reg_i(a1_reg), .alloc1_producer_i(a1_prod),
     .alloc2_ready_o(a2_ready), .alloc2_tag_o(a2_tag), .alloc2_i(alloc2),
     .alloc2_reg_i(a2_reg), .alloc2_producer_i(a2_prod),
-    .wake_early_value_i(32'b0), .wake1_early_value_i(32'b0), /* verilator lint_off PINCONNECTEMPTY */ .read_a_early_o(), .read_b_early_o() /* verilator lint_on PINCONNECTEMPTY */,
-    .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
+    .wake_early_value_i(early_value), .wake1_early_value_i(early1_value),
+    .read_a_early_o(early_a), .read_b_early_o(early_b),
+    .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(wake1_v), .wake1_i(wake1), .wake1_offer_i(wake1_offer),
     .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
     .release_producer_i(rel0_prod),
     .release1_i(rel1), .release1_reg_i(rel1_reg), .release1_tag_i(rel1_tag),
     .release1_producer_i(rel1_prod),
     .recovery_i(recovery), .recovery_survivor_count_i(surv_count),
-    .recovery_survivor_packet_i(surv_pkt), .recovery_survivor_tag_i(surv_tag));
+    .recovery_survivor_packet_i(surv_pkt), .recovery_survivor_tag_i(surv_tag), .recovery_rename_i('{default:'0}), .recovery_remove_i(2'b00));
 
   // Model.
   bit m_valid [RD], m_ready [RD];
@@ -87,10 +91,13 @@ module tb_rename_pair;
   task automatic apply;
     rd0 = rd[0]; rd1 = rd[1]; rd2 = rd[2]; rd3 = rd[3];
     arch0 = arch[0]; arch1 = arch[1]; arch2 = arch[2]; arch3 = arch[3];
+    rd4 = rd[4]; rd5 = rd[5]; arch4 = arch[4]; arch5 = arch[5];
+    early_value = wake.value;
+    early1_value = wake1.value;
   endtask
 
   task automatic check_lookups;
-    for (int p = 0; p < 4; p++) begin
+    for (int p = 0; p < 6; p++) begin
       operand_t e;
       e = '0;
       e.ready = 1'b1;
@@ -111,16 +118,19 @@ module tb_rename_pair;
       end
       check(got[p] == e, $sformatf("lookup %0d r%0d", p, rd[p]));
     end
+    check(early_a == got[0].value[11:0] && early_b == got[1].value[11:0], "early lookup payload");
     for (int r = 0; r < 32; r++) check(mapped[r] == m_map_valid[r], "mapped");
   endtask
 
   task automatic idle;
     alloc0 = 0; alloc1 = 0; alloc2 = 0; rel0 = 0; rel1 = 0; wake_v = 0; recovery = 0;
+    wake1_v = 0; wake1_offer = 0; wake1 = '0;
+    early_value = '0; early1_value = '0;
     a0_reg = '0; a1_reg = '0; a0_prod = '0; a1_prod = '0;
     rel0_reg = '0; rel1_reg = '0; rel0_tag = '0; rel1_tag = '0;
     rel0_prod = '0; rel1_prod = '0; wake = '0; surv_count = '0;
     for (int i = 0; i < CQ_DEPTH; i++) begin surv_pkt[i] = '0; surv_tag[i] = '0; end
-    for (int p = 0; p < 4; p++) begin rd[p] = '0; arch[p] = '0; end
+    for (int p = 0; p < 6; p++) begin rd[p] = '0; arch[p] = '0; end
   endtask
 
   // One random cycle: drive, check combinational outputs, step the model.
@@ -137,7 +147,7 @@ module tb_rename_pair;
     f0 = free_slot(-1);
     f1 = (f0 >= 0) ? free_slot(f0) : -1;
     // Lookups aim at a small register set so maps are hit.
-    for (int p = 0; p < 4; p++) begin
+    for (int p = 0; p < 6; p++) begin
       rd[p] = 5'($urandom_range(0, 7));
       arch[p] = 32'hA000_0000 | 32'(p << 8) | 32'(rd[p]);
     end
@@ -263,6 +273,76 @@ module tb_rename_pair;
                       do_recovery, nrel, nalloc));
   endtask
 
+  // Check payload forwarding independently of readiness. Inactive and late
+  // wakes may expose a speculative value while keeping the operand pending.
+  task automatic forwarding_matrix;
+    for (int owner0 = 0; owner0 < 3; owner0++) begin
+      for (int owner1 = 0; owner1 < 3; owner1++) begin
+        for (int mode = 0; mode < 32; mode++) begin
+          completion_tag_t producer;
+          rename_tag_t slot;
+          operand_t expected;
+          logic [11:0] expected_early;
+          @(negedge clk);
+          idle();
+          rst_n = 0;
+          @(posedge clk);
+          @(negedge clk);
+          rst_n = 1;
+          alloc0 = 1;
+          a0_reg = 5'd3;
+          producer = completion_tag_t'(32'h102);
+          a0_prod = producer;
+          #1;
+          slot = a0_tag;
+          @(posedge clk);
+          @(negedge clk);
+          idle();
+          for (int p = 0; p < 6; p++) rd[p] = 5'd3;
+          wake.tag = owner0 == 2 ? rename_tag_t'(int'(slot) + 1) : slot;
+          wake.producer = producer;
+          if (owner0 == 1) wake.producer.generation = producer.generation + CQ_GENERATION_WIDTH'(1);
+          wake.value = 32'h0123_4567;
+          wake1.tag = owner1 == 2 ? rename_tag_t'(int'(slot) + 1) : slot;
+          wake1.producer = producer;
+          if (owner1 == 1) wake1.producer.generation = producer.generation + CQ_GENERATION_WIDTH'(1);
+          wake1.value = 32'h89ab_cdef;
+          wake_v = mode[0];
+          wake1_v = mode[1];
+          wake1_offer = mode[2];
+          wake.late = mode[3];
+          wake1.late = mode[4];
+          apply();
+          early_value = 32'h1357_9abc;
+          early1_value = 32'h2468_def0;
+          expected = '0;
+          expected.tag = slot;
+          expected.producer = producer;
+          expected.ready = (mode[0] && !mode[3] && owner0 == 0) ||
+                           (mode[1] && !mode[4] && owner1 == 0);
+          expected.value = owner0 != 1 ? wake.value : 32'b0;
+          expected_early = owner0 != 1 ? early_value[11:0] : 12'b0;
+          if (mode[2] && owner1 == 0) begin
+            expected.value = wake1.value;
+            expected_early = early1_value[11:0];
+          end
+          #1;
+          for (int p = 0; p < 6; p++)
+            check(got[p] == expected, $sformatf("forwarding port %0d owners %0d/%0d mode %0d", p, owner0, owner1, mode));
+          check(early_a == expected_early && early_b == expected_early,
+                "distinct early wake payload and second-port priority");
+          forwarding_cases++;
+        end
+      end
+    end
+    @(negedge clk);
+    idle();
+    rst_n = 0;
+    @(posedge clk);
+    @(negedge clk);
+    rst_n = 1;
+  endtask
+
   initial begin
     idle();
     for (int i = 0; i < RD; i++) begin m_valid[i] = 0; m_ready[i] = 0; end
@@ -331,12 +411,14 @@ module tb_rename_pair;
     @(negedge clk);
     idle();
 
+    forwarding_matrix();
     for (int n = 0; n < 50000; n++) cycle(n % 37 == 36);
     if (dual_allocs == 0 || waw == 0 || dual_releases == 0 || recoveries == 0 ||
         lane1_lookup_hits == 0 || wake_bypass == 0)
       $fatal(1, "coverage hole");
     $display("PASS rename pair ports: %0d checks, %0d dual allocations (%0d same-register), %0d dual releases, %0d recoveries, %0d lane-1 mapped lookups, %0d wake bypasses",
              checks, dual_allocs, waw, dual_releases, recoveries, lane1_lookup_hits, wake_bypass);
+    $display("PASS rename forwarding: %0d combinations, six ordinary and two distinct early payload lookups", forwarding_cases);
     $finish;
   end
 endmodule

@@ -84,3 +84,34 @@ pins), 5CSEBA6U23I7, 15.152 ns (66 MHz) clock, Standard Fit, Quartus 17.0.2.
 Timing is met at 66 MHz for the cache alone, with ideal virtual-pin boundaries.
 The data RAMs use twice the minimum M10K count; a 256 × 40 split would halve it if
 BRAM becomes scarce.
+
+
+## Ready-qualified metadata pre-read (2026-10-13)
+
+Recorded: `sim/tools/verilate --binary --timing --assert -Wall -j 1
+--x-assign unique --x-initial unique
+-MAKEFLAGS 'OPT_FAST=-O0 OPT_SLOW=-O0 OPT_GLOBAL=-O0'
+--top-module tb_dcache_ready_preread_oracle -GSETS=<sets> -GWAYS=<ways>
+-GFAST_LOAD_HIT=1\'b<fast> --Mdir sim/build/dcache-preread
+rtl/ppc_dcache_pkg.sv rtl/ppc_ram_sdp_be.sv rtl/ppc_ram_lut.sv
+rtl/ppc_dcache.sv tb/tb_dcache_ready_preread_oracle.sv`, then
+`timeout 30s sim/build/dcache-preread/Vtb_dcache_ready_preread_oracle
++verilator+seed+1 +verilator+rand+reset+2 +TRACEFILE=<trace>`, commit
+`b9f52ae8ef3b52159c341c7aa2ecaa565074da76` plus uncommitted changes,
+2026-10-13. Run both fast modes for 128×4, 128×2 and 64×2.
+
+Before and after the read-selector change, all six profiles pass the independent
+public-port oracle, totaling 1,043 cycles, 127 responses and 2,426 checks per
+matrix, including six optional trace-open checks. All six public cycle traces
+match exactly, normalizing only payloads whose valid is low. Coverage includes
+moving invalid offers, accepted snoop/request overlap, same-edge metadata writes,
+held responses, consecutive fast stores, fill/install, dirty eviction/push and
+flash invalidation. The retained `test-dcache-preread` target reruns this matrix
+without trace files (one fewer check per profile).
+
+Fresh combined core gates pass, including 3,360,981 standalone cache checks and
+integrated cache/LSU/coherence/machine-check tests; commands and counts are in
+[the CPU control review](CPU_CONTROL_PATH_REVIEW_2026-10-13.md). This establishes
+accuracy and cycle preservation. The combined candidate fit reaches 38.95 MHz, below the previous 39.23 MHz
+best; individual cache timing benefit remains unmeasured. The historical
+standalone-cache result above does not establish whole-core timing.

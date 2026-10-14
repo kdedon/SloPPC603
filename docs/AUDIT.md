@@ -168,3 +168,31 @@ Gaps from [MANUAL_INVENTORY.md](references/MANUAL_INVENTORY.md), 2026-10-05: fea
 | AUD-71 | L | S | `docs/SYSTEM_COMPLETION.md:404-405,548-549`, `docs/plans/current/MVP_EXECUTION_PLAN.md:681-728` | Missing spaces ("MVP80.81%"). | Restore. | fixed (uncommitted) |
 | AUD-72 | L | S | `skills/concise-writing/SKILL.md:8-18` | Rules repeated; no checklist; README row omits docs. | Merge bullets; add checklist. | fixed (uncommitted) |
 | AUD-73 | L | K | `AGENTS.md` "Recording evidence" | Bans citing `build/`, but reproduction commands legitimately write there. | Separate evidence citations from command output directories. | fixed (uncommitted) |
+
+## AUD-91 — Queued LSU wake alias (2026-10-14)
+
+**High severity, correctness; fixed in the working tree, wider release pending.**
+`rtl/ppc_lsu_pipe.sv` selected a queued load's EA by raw wake-0 tag/owner
+match even when only wake 1 was valid. An inactive IU result can retain an
+owner across CQ generation wrap and alias a live SRU result. A real program
+then offered address `0x20` instead of `0x1000` before the production
+assertion stopped simulation. The faulty selector and exclusion assertion
+exist in baseline `b9f52ae`; reproduction used that commit plus uncommitted
+changes before this correction.
+
+EA selection now uses valid-qualified `head_base0`/`head_base1`, preserving
+wake-0 priority when both qualify. No stage or intentional cycle is added.
+
+Recorded: `make -C sim -j1 test-core-lsu-wake-wrap`, commit `b9f52ae`
+plus uncommitted changes, 2026-10-14: default warm-up 1,278 passes with
+1,285 retirements in 3,959 cycles and one required invalid-0/live-1 alias;
+six nonalias controls pass. The public-port program checks addresses,
+retirement order and results; internal reads establish boundary coverage.
+[LSU evidence and scope](LSU_PIPELINE.md#queued-base-wake-after-generation-wrap-2026-10-14).
+Fresh manual-backed LSU timing, 602/FP, cache, dual dispatch, branch/reset/chip
+and recovery/coherence integration also pass; see the
+[dated integration record](CPU_CONTROL_PATH_REVIEW_2026-10-13.md#queued-lsu-generation-wrap-correction).
+Full CI, X-randomization and release acceptance remain pending. A fresh
+corrected-source CPU-only fit reaches 39.82 MHz at the limiting corner; all
+holds pass and no paths are unconstrained, but 66 MHz remains unmet.
+Completion percentages are unchanged.

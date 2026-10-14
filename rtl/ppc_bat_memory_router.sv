@@ -22,6 +22,8 @@ module ppc_bat_memory_router #(
   parameter bit ENABLE_PAGE_INSTRUCTION_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0,
   parameter bit ENABLE_MICRO_TLB = 1'b1,
+  // Coherent producer/consumer wiring is selected by the translated core.
+  parameter bit ENABLE_DATA_PAGE_PROJECTION = 1'b0,
   // A physical TEA returns as a machine-check fault instead of stopping the
   // instruction lane or reporting an untyped data error.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
@@ -220,6 +222,7 @@ module ppc_bat_memory_router #(
   // Class of the access, for direct-store segments and speculation.
   input  ppc_pkg::dmem_attr_t dmem_req_attr_i,
   input  logic [31:0] dmem_req_addr_i,
+  input  ppc_pkg::dtlb_projection_t data_page_projection_i,
   input  logic [DMEM_BITS-1:0] dmem_req_wdata_i,
   input  logic [DMEM_BITS/8-1:0] dmem_req_wstrb_i,
   output logic        dmem_rsp_valid_o,
@@ -849,6 +852,7 @@ module ppc_bat_memory_router #(
     .set_flush_i(route_set_touch && owner_instruction_q),
     .set_flush_index_i(request_set),
     .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
+    .projected_i('0),
     .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
     .hit_esa_o(i_hit_esa), .check_page_i(20'b0), .check_hit_o(unused_i_check),
     .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
@@ -858,12 +862,14 @@ module ppc_bat_memory_router #(
     .fill_from_tlb_i(route_from_tlb)
   );
 
-  ppc_micro_tlb #(.ENTRIES(DATA_MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
+  ppc_micro_tlb #(.ENTRIES(DATA_MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS),
+    .PROJECTED_LOOKUP(ENABLE_DATA_PAGE_PROJECTION)) d_utlb (
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && !owner_instruction_q),
     .set_flush_index_i(request_set),
     .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
+    .projected_i(data_page_projection_i),
     .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
     .hit_esa_o(unused_d_hit_esa),
     .check_page_i(store_check_page_i), .check_hit_o(d_check_hit),
@@ -1066,7 +1072,6 @@ module ppc_bat_memory_router #(
     end
 
     imem_rsp_valid = 1'b0;
-    imem_rsp_insn = pimem_rsp_insn_i;
     imem_rsp_fault_o = FETCH_OK;
     imem_rsp_esa_o = ESA_DENIED;
     pimem_rsp_ready_o = 1'b0;
@@ -1081,14 +1086,12 @@ module ppc_bat_memory_router #(
         imem_rsp_esa_o = HAS_602 ? i_esa_q : ESA_DENIED;
         // A refetch that succeeds still reports the first TEA.
         if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q)) begin
-          imem_rsp_insn = '0;
           imem_rsp_fault_o = i_refetch_q && pimem_rsp_error_i ? FETCH_TEA_REPEAT :
                                                                 FETCH_MACHINE_CHECK;
         end
       end
     end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
       imem_rsp_valid = 1'b1;
-      imem_rsp_insn = '0;
       imem_rsp_fault_o = fetch_fault_q;
     end
 
@@ -1112,6 +1115,20 @@ module ppc_bat_memory_router #(
       dmem_rsp_rdata = '0;
       dmem_rsp_error = (data_fault_q == DATA_OK) && !ds_noop_q;
       dmem_rsp_fault_o = data_fault_q;
+    end
+  end
+
+  // Payload selection is independent of reset. The response-valid and
+  // physical-ready controls above suppress every transfer during reset.
+  always_comb begin
+    imem_rsp_insn = pimem_rsp_insn_i;
+    if (i_state_q == LANE_RESPONSE) begin
+      // With machine check enabled, i_refetch is the only discard case.
+      if (i_refetch) imem_rsp_insn = pimem_rsp_insn_i;
+      else if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q))
+        imem_rsp_insn = '0;
+    end else if (state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
+      imem_rsp_insn = '0;
     end
   end
 

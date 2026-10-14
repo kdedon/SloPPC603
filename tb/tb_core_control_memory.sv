@@ -43,6 +43,64 @@ module tb_core_control_memory #(
   int poison_fetches = 0;
   logic [31:0] must_fold[$];
   bit folded[logic [31:0]];
+  // Optional public edge trace for comparing timing-preserving RTL changes.
+  // Internal stop signals certify coverage only; they never predict a target.
+  string public_trace_path;
+  int public_trace_fd = 0;
+  bit stop_single_edges[$], stop_pair_edges[$];
+  int require_stop_both = 0;
+  logic stopped_lane_observed;
+  bit ctr_release_lane0[$], ctr_release_lane1[$];
+  bit ctr_release_aa0[$], ctr_release_aa1[$];
+  int require_ctr_release_both, require_ctr_capture_matrix;
+  bit [2:0] ctr_capture_events[$];
+  function automatic int ctr_capture_count(input bit [2:0] kind);
+    bit [2:0] filtered_events[$];
+    filtered_events = ctr_capture_events.find() with (item == kind);
+    return filtered_events.size();
+  endfunction
+
+  initial begin
+    require_ctr_release_both = 0;
+    require_ctr_capture_matrix = 0;
+    if ($value$plusargs("REQUIRE_CTR_CAPTURE_MATRIX=%d", require_ctr_capture_matrix)) begin end
+    if ($value$plusargs("REQUIRE_CTR_RELEASE_BOTH=%d", require_ctr_release_both)) begin end
+    if ($value$plusargs("PUBLIC_TRACE=%s", public_trace_path)) begin
+      public_trace_fd = $fopen(public_trace_path, "w");
+      assert(public_trace_fd != 0) else $fatal(1, "cannot open public trace");
+    end
+    if ($value$plusargs("REQUIRE_STOP_BOTH=%d", require_stop_both)) begin end
+  end
+
+  always @(posedge clk) begin
+    if (public_trace_fd != 0)
+      $fdisplay(public_trace_fd,
+        "%0d %b %b%b %h %b%b %h %b%b %b %h %h %h %h %b%b %b %h %b%b %h %b",
+        edge_count, rst_n, iv, ir, iv ? ia : 32'b0,
+        sv, sr, sv ? iw_bus : '0,
+        dv, dr, dv && dw, dv ? da : 32'b0, dv ? wd : 32'b0,
+        dv ? st : 4'b0, dv ? dattr : dmem_attr_t'('0),
+        rv, rr, rv && re, rv ? rd : 32'b0,
+        tv, tr, tv ? retired : retire_packet_t'('0), halted);
+    if (rst_n && dut.fetch_stop) begin
+      if (dut.iq_push1) stop_pair_edges.push_back(1'b1);
+      else stop_single_edges.push_back(1'b1);
+    end
+    // Coverage only: remember the actually captured stopped lane, then
+    // classify the actual release. No DUT target helper predicts a result.
+    if (!rst_n) stopped_lane_observed <= 1'b0;
+    else begin
+      if (dut.fetch_stop) stopped_lane_observed <= dut.iq_in1 && dut.wait1;
+      if (dut.ctr_rel)
+        ctr_capture_events.push_back({dut.ctr_rel_taken, dut.stop_insn_q[1], stopped_lane_observed});
+      if (dut.ctr_rel_taken) begin
+        if (stopped_lane_observed) ctr_release_lane1.push_back(1'b1);
+        else ctr_release_lane0.push_back(1'b1);
+        if (dut.stop_insn_q[1]) ctr_release_aa1.push_back(1'b1);
+        else ctr_release_aa0.push_back(1'b1);
+      end
+    end
+  end
 
   logic [3:0] unused_context;
   logic [36:0] unused_tlb_inv_core;
@@ -52,7 +110,11 @@ module tb_core_control_memory #(
   logic [5:0] unused_mmu_602;
   logic [4:0] unused_tlb_fill_ext;
   logic [33*FETCH_WIDTH-2:0] iw_bus;
-  ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH)) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+  ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH)) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .data_page_projection_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
@@ -261,10 +323,32 @@ module tb_core_control_memory #(
             require(folded.exists(must_fold[i]) != 0, $sformatf("branch %08x never folded", must_fold[i]));
           require(read_requests >= 20 && write_requests >= 20 && request_stalls > 0 && retire_stalls > 0,
                   "missing memory/retirement backpressure coverage");
+          if (require_stop_both != 0)
+            require(stop_single_edges.size() > 0 && stop_pair_edges.size() > 0,
+                    "missing single-word or paired fetch-stop coverage");
+          $display("fetch-stop coverage: single=%0d pair=%0d",
+                   stop_single_edges.size(), stop_pair_edges.size());
+          if (require_ctr_capture_matrix != 0) begin
+            for (int kind = 0; kind < 8; kind++) begin
+              $display("CTR capture bin %03b: %0d", 3'(kind), ctr_capture_count(3'(kind)));
+            end
+            for (int kind = 0; kind < 8; kind++) begin
+              if ((FETCH_WIDTH == 2) || ((kind % 2) == 0))
+                require(ctr_capture_count(3'(kind)) > 0,
+                        $sformatf("missing CTR release taken/AA/lane bin %03b", 3'(kind)));
+            end
+          end
+          if (require_ctr_release_both != 0)
+            require(ctr_release_lane0.size() > 0 && ctr_release_lane1.size() > 0,
+                    "missing actual taken CTR release from both stopped lanes");
+          $display("taken CTR release coverage: lane0=%0d lane1=%0d AA0=%0d AA1=%0d",
+                   ctr_release_lane0.size(), ctr_release_lane1.size(),
+                   ctr_release_aa0.size(), ctr_release_aa1.size());
           $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d speculative=%0d mispredicted=%0d early=%0d removed=%0d",
                    checks, retirements, read_requests, write_requests, request_stalls, retire_stalls,
                    edge_count, spec_branches, spec_misses, spec_early, removed_branches);
           $fclose(expected_fd);
+          if (public_trace_fd != 0) $fclose(public_trace_fd);
           $finish;
         end
       end

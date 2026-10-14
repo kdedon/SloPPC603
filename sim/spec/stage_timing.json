@@ -200,7 +200,7 @@
           "section": "6.6.1.3"
         }
       ],
-      "implementation_binding": "Implementation commit requires a previously registered finish. The missing same-cycle path is a deliberate conservative choice, not full timing conformance."
+      "implementation_binding": "An ownership-qualified clean ordinary IU result may retire on its finish edge when it is oldest and retirement is allowed. Faulting and serialized special-lane results require a stored finish; full timing conformance remains separate."
     },
     {
       "id": "ST-M04",
@@ -326,7 +326,7 @@
   "checker_relations": [
     "D+1 issue lower bound",
     "exact E+1 ownership-valid finish, because CQ result_ready is always asserted outside reset",
-    "no retirement-valid before finish+1",
+    "no retirement-valid before finish; eligible IU results may retire on their finish edge",
     "independent decode/RAW producer order and operand/result values",
     "oldest retirement and stable stalled packet",
     "CQ and rename occupancy at every edge; no full same-edge reclamation",

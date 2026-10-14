@@ -80,7 +80,11 @@ module tb_core_le #(
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .ENABLE_LSU_PIPE(LSU_PIPE != 0), .FETCH_WIDTH(FETCH_WIDTH),
     .DISPATCH_WIDTH(DISPATCH_WIDTH), .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
-  ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+  ) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .data_page_projection_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),

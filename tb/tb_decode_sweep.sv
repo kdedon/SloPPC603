@@ -10,7 +10,8 @@
 // double-precision FP), esa/dsa/mfrom and its SPRs, and drops EAR and
 // eciwx/ecowx (602UM 2.1.2, 2.3.4.3.6, 2.3.7, 4.5.7.2).
 module tb_decode_sweep #(
-  parameter int VARIANT = 0
+  parameter int VARIANT = 0,
+  parameter bit FPU_ENABLED = 1'b0
 );
   import ppc_pkg::*;
   localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
@@ -20,6 +21,8 @@ module tb_decode_sweep #(
   localparam bit NOFPU = cpu_has_no_fpu(CPU_VARIANT);
   logic [31:0] insn;
   uop_t full, base;
+  int imm_roundtrips = 0;
+  int imm_forms [6] = '{default: 0};
 
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
@@ -29,7 +32,7 @@ module tb_decode_sweep #(
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_BYTE_REVERSE(1'b1), .ENABLE_MULTIPLE_STRING(1'b1),
     .ENABLE_RESERVATION(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
-    .ENABLE_FULL_DECODE(1'b1), .CPU_VARIANT(CPU_VARIANT)
+    .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(FPU_ENABLED), .CPU_VARIANT(CPU_VARIANT)
   ) full_decode (.insn_i(insn), .uop_o(full));
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
@@ -39,7 +42,7 @@ module tb_decode_sweep #(
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_BYTE_REVERSE(1'b1), .ENABLE_MULTIPLE_STRING(1'b1),
     .ENABLE_RESERVATION(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
-    .ENABLE_FULL_DECODE(1'b0), .CPU_VARIANT(CPU_VARIANT)
+    .ENABLE_FULL_DECODE(1'b0), .ENABLE_FPU(FPU_ENABLED), .CPU_VARIANT(CPU_VARIANT)
   ) base_decode (.insn_i(insn), .uop_o(base));
 
   typedef enum int {C_OTHER, C_ILLEGAL, C_FPU, C_TRAP, C_NEW,
@@ -112,12 +115,41 @@ module tb_decode_sweep #(
   task automatic probe(input logic [31:0] w);
     cls_t c;
     bit base_ok;
+    /* verilator lint_off UNUSEDSIGNAL */
+    iq_pair_t pair;
+    /* verilator lint_on UNUSEDSIGNAL */
+    uop_t packed_full, packed_base, restored_full, restored_base;
     insn = w;
     #1;
     probes++;
+    packed_full = iq_pack_imm(full, w[31:26], w[10:1]);
+    packed_base = iq_pack_imm(base, w[31:26], w[10:1]);
+    restored_full = iq_unpack_imm(packed_full, w[15:0]);
+    restored_base = iq_unpack_imm(packed_base, w[15:0]);
+    // Compare the complete uop, including unsupported and partial illegal
+    // base-profile fields; use_imm and permissions must remain intact.
+    if (restored_full != full) fail("full IQ immediate round-trip");
+    if (restored_base != base) fail("base IQ immediate round-trip");
+    if ((packed_full.imm[31:3] != 0) || (packed_base.imm[31:3] != 0))
+      fail("IQ immediate form exceeds three bits");
+    imm_forms[packed_full.imm[2:0]]++;
+    imm_forms[packed_base.imm[2:0]]++;
+    imm_roundtrips += 2;
     c = classify(w);
     base_ok = !base.illegal && (base.special_op != SPECIAL_PROGRAM_ILLEGAL);
     if (full.illegal) fail("diagnostic decode");
+    if ((w[31:26] inside {[6'd48:6'd55]}) ||
+        ((w[31:26] == 6'd31) &&
+         (w[10:1] inside {10'd535, 10'd567, 10'd599, 10'd631, 10'd663,
+                          10'd695, 10'd727, 10'd759, 10'd983}))) begin
+      pair = pair_predecode(full, w, 1'b0);
+      if (pair.unit != UNIT_LSU || full.src_a != w[20:16] ||
+          full.src_b != w[15:11] || full.zero_a != (w[20:16] == 0) ||
+          full.use_imm != (w[31:26] != 6'd31))
+        fail("FP memory source metadata");
+      if (!pair.cq1_ok != ((w[31:26] == 6'd31) ? w[8] : w[28]))
+        fail("FP memory direction metadata");
+    end
     case (c)
       C_ILLEGAL: begin
         if (full.special_op != SPECIAL_PROGRAM_ILLEGAL) fail("illegal opcode not program");
@@ -139,7 +171,8 @@ module tb_decode_sweep #(
         n_emul++;
       end
       C_FPEMU: begin
-        if (full.special_op != SPECIAL_FPU_EMULATE) fail("602 DP form not emulated");
+        if (full.special_op != (FPU_ENABLED ? SPECIAL_FPU : SPECIAL_FPU_EMULATE))
+          fail("602 DP form emulation routing");
         if (base_ok) fail("602 DP form accepted without full decode");
         n_fpemu++;
       end
@@ -208,6 +241,11 @@ module tb_decode_sweep #(
     $display("PASS tb_decode_sweep variant=%0d: probes=%0d unchanged=%0d illegal=%0d fp=%0d trap=%0d new=%0d privileged_undefined=%0d emulation=%0d fp_emulated=%0d esa_dsa=%0d mfrom=%0d",
              VARIANT, probes, n_same, n_illegal, n_fpu, n_trap, n_new, n_priv,
              n_emul, n_fpemu, n_esa, n_mfrom);
+    for (int form = 0; form < 6; form++)
+      if (imm_forms[form] == 0) fail("IQ immediate form coverage");
+    $display("PASS IQ immediate round-trips variant=%0d: checks=%0d forms=%0d/%0d/%0d/%0d/%0d/%0d",
+             VARIANT, imm_roundtrips, imm_forms[0], imm_forms[1], imm_forms[2],
+             imm_forms[3], imm_forms[4], imm_forms[5]);
     $finish;
   end
 endmodule

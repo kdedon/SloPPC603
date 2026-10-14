@@ -32,6 +32,9 @@ module tb_execution;
   wake_packet_t dp_wake;
   logic dp_issue_valid, dp_issue_ready;
   issue_packet_t dp_issue;
+  logic dp_lsu_done, dp_fwd_done;
+  completion_tag_t dp_lsu_producer, dp_fwd_producer;
+  logic [31:0] dp_lsu_value, dp_fwd_value;
 
   logic iu_issue_valid, iu_issue_ready;
   issue_packet_t iu_issue;
@@ -76,7 +79,7 @@ module tb_execution;
     .release_i(rn_release), .release_reg_i(rn_release_reg),
     .release_tag_i(rn_release_tag), .release_producer_i(rn_release_producer),
     .recovery_i(1'b0), .recovery_survivor_count_i('0),
-    .recovery_survivor_packet_i(empty_packets), .recovery_survivor_tag_i(empty_tags)
+    .recovery_survivor_packet_i(empty_packets), .recovery_survivor_tag_i(empty_tags), .recovery_rename_i('{default:'0}), .recovery_remove_i(2'b00)
   );
 
   rs_entry_t dp_entry;
@@ -88,14 +91,14 @@ module tb_execution;
     dp_entry.b = dp_b;
   end
   ppc_dispatch dispatch_dut (
-    .fwd_done_i(1'b0), .fwd_producer_i('0), .fwd_value_i('0),
+    .fwd_done_i(dp_fwd_done), .fwd_producer_i(dp_fwd_producer), .fwd_value_i(dp_fwd_value),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(dp_valid), .dispatch_ready_o(dp_ready),
     .entry_i(dp_entry),
     .wake_valid_i(dp_wake_valid), .wake_i(dp_wake), .wake1_valid_i(1'b0), .wake1_i('0),
     .iu_done_i(iu_result_valid && iu_result_ready),
-    .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value), .lsu_done_i(1'b0), .lsu_producer_i('0),
-    .lsu_value_i(32'b0),
+    .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
+    .lsu_done_i(dp_lsu_done), .lsu_producer_i(dp_lsu_producer), .lsu_value_i(dp_lsu_value),
     .issue_valid_o(dp_issue_valid), .issue_ready_i(dp_issue_ready),
     .issue_o(dp_issue)
   );
@@ -114,13 +117,13 @@ module tb_execution;
   issue_packet_t ln_issue;
   result_packet_t ln_result;
   ppc_dispatch linked_dut (
-    .fwd_done_i(1'b0), .fwd_producer_i('0), .fwd_value_i('0),
+    .fwd_done_i(dp_fwd_done), .fwd_producer_i(dp_fwd_producer), .fwd_value_i(dp_fwd_value),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(ln_valid), .dispatch_ready_o(ln_ready),
     .entry_i(ln_entry), .wake_valid_i(1'b0), .wake_i('0), .wake1_valid_i(1'b0), .wake1_i('0),
     .iu_done_i(ln_result_valid && ln_result_ready),
-    .iu_producer_i(ln_result.producer), .iu_value_i(ln_result.value), .lsu_done_i(1'b0), .lsu_producer_i('0),
-    .lsu_value_i(32'b0),
+    .iu_producer_i(ln_result.producer), .iu_value_i(ln_result.value),
+    .lsu_done_i(dp_lsu_done), .lsu_producer_i(dp_lsu_producer), .lsu_value_i(dp_lsu_value),
     .issue_valid_o(ln_issue_valid), .issue_ready_i(ln_issue_ready),
     .issue_o(ln_issue)
   );
@@ -191,6 +194,12 @@ module tb_execution;
     dp_wake_valid = 1'b0;
     dp_wake = '0;
     dp_issue_ready = 1'b0;
+    dp_lsu_done = 1'b0;
+    dp_fwd_done = 1'b0;
+    dp_lsu_producer = '0;
+    dp_fwd_producer = '0;
+    dp_lsu_value = 32'h1234_5678;
+    dp_fwd_value = 32'h89ab_cdef;
 
     iu_issue_valid = 1'b0;
     iu_issue = '0;
@@ -477,6 +486,15 @@ module tb_execution;
     check(ln_result_valid && ln_result.value == 32'd6, "linked producer result missing");
     check(ln_issue_valid && ln_issue.a == 32'd6 && ln_issue.b == 32'd10 &&
           ln_issue.ctrl.producer == ctag(1, 32'h41), "dependent op did not issue back to back");
+    dp_lsu_producer = ctag(0, 32'h40);
+    dp_fwd_producer = ctag(0, 32'h40);
+    dp_lsu_done = 1'b1;
+    dp_fwd_done = 1'b1;
+    #1;
+    check(ln_issue_valid && ln_issue.a == 32'd6 && ln_issue.b == 32'd10,
+          "overlapping forward sources displaced the IU bypass or ready operand");
+    dp_lsu_done = 1'b0;
+    dp_fwd_done = 1'b0;
     tick();
     check(ln_result_valid && ln_result.value == 32'd16 &&
           ln_result.producer == ctag(1, 32'h41), "dependent result wrong");
@@ -537,7 +555,42 @@ module tb_execution;
     check(iu_issue_ready && dp_ready && rn_alloc_ready,
           "execution units did not recover readiness after reset");
 
-    $display("PASS: rename ownership/pressure, RS wake/backpressure, IU bypass back to back, IU hold/turnover/reset");
+    // Held operands select only a completed exact owner. Include inactive
+    // stale owners, generation mismatches and overlapping forward sources.
+    reset_units();
+    @(negedge clk);
+    dp_a = pending_operand(rename_tag_t'(0), ctag(1, 10));
+    dp_b = pending_operand(rename_tag_t'(1), ctag(2, 10));
+    dp_producer = ctag(3, 10);
+    dp_valid = 1'b1;
+    tick();
+    dp_valid = 1'b0;
+    for (int lsu_owner = 0; lsu_owner < 4; lsu_owner++) begin
+      for (int fwd_owner = 0; fwd_owner < 4; fwd_owner++) begin
+        for (int done = 0; done < 4; done++) begin
+          logic a_lsu, b_lsu, a_fwd, b_fwd;
+          logic [31:0] expected_a, expected_b;
+          dp_lsu_producer = ctag(lsu_owner < 2 ? lsu_owner + 1 : lsu_owner - 1,
+                                  lsu_owner < 2 ? 10 : 11);
+          dp_fwd_producer = ctag(fwd_owner < 2 ? fwd_owner + 1 : fwd_owner - 1,
+                                  fwd_owner < 2 ? 10 : 11);
+          dp_lsu_done = done[0];
+          dp_fwd_done = done[1];
+          a_lsu = done[0] && lsu_owner == 0;
+          b_lsu = done[0] && lsu_owner == 1;
+          a_fwd = done[1] && fwd_owner == 0;
+          b_fwd = done[1] && fwd_owner == 1;
+          expected_a = a_lsu ? dp_lsu_value : a_fwd ? dp_fwd_value : dp_a.value;
+          expected_b = b_lsu ? dp_lsu_value : b_fwd ? dp_fwd_value : dp_b.value;
+          #1;
+          check(dp_issue.a == expected_a && dp_issue.b == expected_b,
+                "held forwarding selected a stale owner or lost LSU priority");
+          check(dp_issue_valid == ((a_lsu || a_fwd) && (b_lsu || b_fwd)),
+                "held forwarding lost done or exact-generation qualification");
+        end
+      end
+    end
+    $display("PASS: rename ownership/pressure, RS wake/backpressure, IU bypass back to back, IU hold/turnover/reset, 64 forwarding combinations");
     $finish;
   end
 endmodule

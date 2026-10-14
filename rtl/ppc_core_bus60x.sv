@@ -109,6 +109,9 @@ module ppc_core_bus60x #(
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
     /* verilator lint_off PINCONNECTEMPTY */
+    .data_page_projection_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),

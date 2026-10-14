@@ -15,6 +15,18 @@ package ppc_pkg;
     logic [CQ_INDEX_WIDTH-1:0] index;
     logic [CQ_GENERATION_WIDTH-1:0] generation;
   } completion_tag_t;
+  // Recovery metadata before same-edge oldest-entry retirement. No values,
+  // faults or status payload; exact completion ownership is retained.
+  typedef struct packed {
+    logic retained;
+    logic gpr_write;
+    logic [4:0] gpr;
+    rename_tag_t tag;
+    logic update_owned;
+    logic [4:0] update_gpr;
+    rename_tag_t update_tag;
+    completion_tag_t producer;
+  } rename_recovery_entry_t;
   typedef struct packed {
     logic ready;
     logic [31:0] value;
@@ -69,6 +81,13 @@ package ppc_pkg;
     // but forwarded only after (UM 6.3.3.2): readers use it a cycle later.
     logic late;
   } wake_packet_t;
+  // Read-only D-uTLB page candidates; separate from accepted memory attrs.
+  // Source order: stored P1/special, wake0 sum, wake1 sum, queued store.
+  typedef struct packed {
+    logic use_lookup;
+    logic [1:0] source;
+    logic [3:0][19:0] page;
+  } dtlb_projection_t;
   // Fetch-borne events. FETCH_MACHINE_CHECK is a bus TEA on the fetch;
   // FETCH_TEA_REPEAT a 603 refetch that took TEA again with the machine
   // check pending; FETCH_IABR marks an instruction address breakpoint match
@@ -1010,6 +1029,62 @@ package ppc_pkg;
     return p;
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
+  // The IQ stores an immediate's form; its instruction supplies the bits.
+  typedef enum logic [2:0] {
+    IQ_IMM_ZERO = 3'd0,
+    IQ_IMM_SIGN16 = 3'd1,
+    IQ_IMM_ZERO16 = 3'd2,
+    IQ_IMM_HIGH16 = 3'd3,
+    IQ_IMM_ZERO5 = 3'd4,
+    IQ_IMM_ONES = 3'd5
+  } iq_imm_form_t;
+
+  function automatic uop_t iq_pack_imm(input uop_t u,
+                                       input logic [5:0] primary,
+                                       input logic [9:0] xo);
+    uop_t q;
+    iq_imm_form_t form;
+    q = u;
+    form = IQ_IMM_ZERO;
+    // use_imm retains the decoder's feature and invalid-form decisions.
+    // Partial illegal uops in the base profile must still round-trip.
+    if (u.use_imm) begin
+      case (primary)
+        6'd3, 6'd7, 6'd8, 6'd11, 6'd12, 6'd13, 6'd14,
+        6'd32, 6'd33, 6'd34, 6'd35, 6'd36, 6'd37, 6'd38,
+        6'd39, 6'd40, 6'd41, 6'd42, 6'd43, 6'd44, 6'd45,
+        6'd46, 6'd47, 6'd48, 6'd49, 6'd50, 6'd51, 6'd52,
+        6'd53, 6'd54, 6'd55: form = IQ_IMM_SIGN16;
+        6'd10, 6'd24, 6'd26, 6'd28: form = IQ_IMM_ZERO16;
+        6'd15, 6'd25, 6'd27, 6'd29: form = IQ_IMM_HIGH16;
+        6'd21: form = IQ_IMM_ZERO5;
+        6'd31: begin
+          if (xo == 10'd824) form = IQ_IMM_ZERO5;
+          else if ((xo[8:0] == 9'd234) || (xo[8:0] == 9'd232))
+            form = IQ_IMM_ONES;
+        end
+        default: ;
+      endcase
+    end
+    q.imm = {29'b0, form};
+    return q;
+  endfunction
+
+  function automatic uop_t iq_unpack_imm(input uop_t u,
+                                         input logic [15:0] insn_low);
+    uop_t q;
+    q = u;
+    case (u.imm[2:0])
+      IQ_IMM_SIGN16: q.imm = {{16{insn_low[15]}}, insn_low};
+      IQ_IMM_ZERO16: q.imm = {16'b0, insn_low};
+      IQ_IMM_HIGH16: q.imm = {insn_low, 16'b0};
+      IQ_IMM_ZERO5: q.imm = {27'b0, insn_low[15:11]};
+      IQ_IMM_ONES: q.imm = 32'hffff_ffff;
+      default: q.imm = 32'b0;
+    endcase
+    return q;
+  endfunction
+
   // Decode helpers shared with the IQ, which rebuilds fields from the word.
   function automatic logic [31:0] make_rotate_mask(
     input logic [4:0] mb,
@@ -1032,6 +1107,22 @@ package ppc_pkg;
       5'd16, 5'd17, 5'd18, 5'd19, 5'd20: return 1'b1;
       default: return 1'b0;
     endcase
+  endfunction
+  // {LR write, CTR write, linking branch} for frontend dependencies.
+  // Classify the raw instruction even when its fetch faults.
+  function automatic logic [2:0] fetch_lr_ctr_projection(input logic [31:0] insn);
+    logic direct_b, cond_b, indirect_b, mtspr_lr, mtspr_ctr, link;
+    direct_b = insn[31:26] == 6'd18;
+    cond_b = insn[31:26] == 6'd16 && valid_bo(insn[25:21]);
+    indirect_b = insn[31:26] == 6'd19 && insn[15:11] == 5'b0 &&
+      valid_bo(insn[25:21]) &&
+      ((insn[10:1] == 10'd16) || (insn[10:1] == 10'd528 && insn[23]));
+    mtspr_lr = insn[31:26] == 6'd31 && insn[10:1] == 10'd467 &&
+      !insn[0] && {insn[15:11],insn[20:16]} == SPR_LR;
+    mtspr_ctr = insn[31:26] == 6'd31 && insn[10:1] == 10'd467 &&
+      !insn[0] && {insn[15:11],insn[20:16]} == SPR_CTR;
+    link = (direct_b || cond_b || indirect_b) && insn[0];
+    return {link || mtspr_lr, ((cond_b || indirect_b) && !insn[23]) || mtspr_ctr, link};
   endfunction
 endpackage
 /* verilator lint_on UNUSEDPARAM */

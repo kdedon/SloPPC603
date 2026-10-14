@@ -21,6 +21,33 @@ printed 5-36); they do not describe this structure.
 `ppc_core_bat`, `ppc_core_bat_bus60x` and `ppc_core_bat_cached_bus60x` pass
 `ENABLE_MICRO_TLB` through. The split lanes are present in both settings.
 
+## Provisional data-page projection
+
+`ENABLE_DATA_PAGE_PROJECTION` defaults to one in `ppc_core_bat` and its
+cached 60x wrapper, and zero in the lower core, LSU and router modules.
+The composed enable requires both the pipelined LSU and micro-TLB, and is
+passed identically to producer and consumer. The leaf micro-TLB option is
+`PROJECTED_LOOKUP`, default zero. Standalone callers must tie unused hints
+to zero; enabling the consumer requires coherent same-cycle producer hints.
+
+The packed `dtlb_projection_t` carries four 20-bit candidate EA pages,
+a two-bit source index and `use_lookup` (83 bits). Candidate pages are the
+stored P1/special-lane address, two full-width wake-base sums and the SQ-head
+address. Known, valid-qualified source selection chooses a comparison bank
+late; relevant unknown controls select the literal original actual-EA lookup.
+The hint does not replace actual EA arithmetic, low offsets, store permission
+or transaction ownership. Comparisons share existing storage and one permission
+and raw-match payload reduction; a denied store hit retains the original raw
+payload even though its permitted-hit output is false.
+
+No state, replacement policy, invalidation priority, cache port or stage is
+added. A held physical OFFER still uses its captured address, WIMG and packet;
+live hints cannot alter that snapshot. This option currently has passing
+focused enabled/disabled accuracy and cycle gates and a 40.66 MHz CPU-only
+limiting-corner fit. Full release acceptance remains pending; see the
+[control-path review](CPU_CONTROL_PATH_REVIEW_2026-10-13.md#provisional-parallel-data-page-comparison)
+for measured scope and evidence.
+
 ## Lanes
 
 Each side holds at most one request, as before. A lane accepts when it is

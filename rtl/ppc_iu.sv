@@ -57,34 +57,9 @@ module ppc_iu #(
   logic [13:0] short_high_part;
   logic [31:0] short_product;
   logic [31:0] alu_value;
+  logic [31:0] record_value;
   logic divide_by_zero;
   logic signed_divide_exception;
-  logic [4:0] rotate_amount;
-  logic [63:0] rotate_double;
-  logic [31:0] rotate_value;
-  logic [31:0] _unused_rotate_low;
-  logic [31:0] left_mask, right_mask;
-  logic sign_fill;
-  logic [31:0] sraw_value;
-  logic sraw_ca;
-  logic [5:0] leading_zeros;
-  // Tree count: level k merges pairs of 2^k-bit groups. A group count equal
-  // to its width means the group is all zero.
-  function automatic logic [5:0] count_leading_zeros(input logic [31:0] value);
-    logic [5:0] count [32];
-    logic [5:0] high, low;
-    for (int i = 0; i < 32; i++) count[i] = {5'b0, !value[31 - i]};
-    for (int level = 0; level < 5; level++) begin
-      for (int group = 0; group < (16 >> level); group++) begin
-        high = count[2 * group];
-        low = count[2 * group + 1];
-        if (!high[level]) count[group] = high;
-        else if (low[level]) count[group] = high << 1;
-        else count[group] = high | low;
-      end
-    end
-    return count[0];
-  endfunction
   initial begin
     if (DIV_LATENCY < 17)
       $fatal(1, "DIV_LATENCY must allow 16 radix-4 iterations after start");
@@ -115,7 +90,8 @@ module ppc_iu #(
   generate
     if (ADD_COMPARE_ONLY) begin : g_no_divider
       logic _unused_divider;
-      assign _unused_divider = &{1'b0, divider_start, divider_cancel, divider_signed};
+      assign _unused_divider = &{1'b0, divider_start, divider_cancel, divider_signed,
+                                  divider_quotient};
       assign divider_busy = 1'b0;
       assign divider_quotient_valid = 1'b0;
       assign divider_quotient = '0;
@@ -258,30 +234,6 @@ module ppc_iu #(
                               (held.ctrl.op == ALU_DIVW) ? signed_divide_exception :
                               add_overflow;
   assign final_so = held.ctrl.so_in | operation_overflow;
-  // One left rotator serves every rotate and shift. A right shift by n is a
-  // left rotate by (32 - n) mod 32 masked to the low 32 - n bits. The
-  // amount is chosen at issue so the op decode stays off the result path.
-  always_ff @(posedge clk_i) begin
-    if (issue_valid_i && issue_ready_o) begin
-      case (issue_i.ctrl.op)
-        ALU_RLWIMI: rotate_amount <= issue_i.ctrl.shift;
-        ALU_SRW, ALU_SRAW: rotate_amount <= 5'd0 - issue_i.b[4:0];
-        default: rotate_amount <= issue_i.b[4:0];
-      endcase
-    end
-  end
-  assign rotate_double = {held.a, held.a} << rotate_amount;
-  assign {rotate_value, _unused_rotate_low} = rotate_double;
-  assign left_mask = 32'hffff_ffff << held.b[4:0];
-  assign right_mask = 32'hffff_ffff >> held.b[4:0];
-  assign sign_fill = held.a[31];
-  assign sraw_value = held.b[5] ? {32{sign_fill}} :
-    (rotate_value & right_mask) | ({32{sign_fill}} & ~right_mask);
-  // CA is set when a negative value shifts out any one bit.
-  assign sraw_ca = sign_fill && (held.b[5] || |(held.a & ~left_mask));
-  assign leading_zeros = count_leading_zeros(held.a);
-  assign result_o.ca = held.ctrl.write_ca ?
-    ((!ADD_COMPARE_ONLY && (held.ctrl.op == ALU_SRAW)) ? sraw_ca : add_sum[32]) : 1'b0;
   assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
   assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
   // A short MULLI's low word comes straight from the first-step product
@@ -304,40 +256,221 @@ module ppc_iu #(
   assign result_o.cr0 = !held.ctrl.write_cr_field ? 4'b0 :
     held_compare ? {!compare_gt && !compare_eq, compare_gt, compare_eq,
                     held.ctrl.so_in} : {
-    alu_value[31],
-    !alu_value[31] && (alu_value != 0),
-    alu_value == 0,
+    record_value[31],
+    !record_value[31] && (record_value != 0),
+    record_value == 0,
     held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
   };
-  always_comb begin
-    case (ADD_COMPARE_ONLY && !held_compare ? ALU_ADD : held.ctrl.op)
-      ALU_ADD: alu_value = add_sum[31:0];
-      ALU_ROTATE: alu_value = rotate_value & held.ctrl.mask;
-      ALU_RLWIMI: alu_value = (rotate_value & held.ctrl.mask) |
-                                 (held.b & ~held.ctrl.mask);
-      ALU_SLW: alu_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
-      ALU_SRW: alu_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
-      ALU_SRAW: alu_value = sraw_value;
-      ALU_CNTLZW: alu_value = {26'b0, leading_zeros};
-      ALU_EXTSB: alu_value = {{24{held.a[7]}}, held.a[7:0]};
-      ALU_EXTSH: alu_value = {{16{held.a[15]}}, held.a[15:0]};
-      ALU_MULLI: alu_value = multiply_acc[31:0];
-      ALU_MULLW: alu_value = multiply_acc[31:0];
-      ALU_MULHW: alu_value = multiply_acc[63:32];
-      ALU_MULHWU: alu_value = multiply_acc[63:32];
-      ALU_DIVWU: alu_value = divider_quotient;
-      ALU_DIVW: alu_value = divider_quotient;
-      ALU_OR: alu_value = held.a | held.b;
-      ALU_XOR: alu_value = held.a ^ held.b;
-      ALU_AND: alu_value = held.a & held.b;
-      ALU_ANDC: alu_value = held.a & ~held.b;
-      ALU_ORC: alu_value = held.a | ~held.b;
-      ALU_NAND: alu_value = ~(held.a & held.b);
-      ALU_NOR: alu_value = ~(held.a | held.b);
-      ALU_EQV: alu_value = ~(held.a ^ held.b);
-      default: alu_value = '0;
-    endcase
-  end
+  generate
+    if (ADD_COMPARE_ONLY) begin : g_add_compare_value
+      // These control fields describe datapaths absent from this instance.
+      logic _unused_add_compare_control;
+      assign _unused_add_compare_control = ^{held.ctrl.mask, held.ctrl.shift};
+      assign result_o.ca = held.ctrl.write_ca ? add_sum[32] : 1'b0;
+      // Compare results carry their value in CR; the original ALU case
+      // returns zero for CMP/CMPL. Make the restricted datapath explicit.
+      assign alu_value = held_compare ? 32'b0 : add_sum[31:0];
+      assign record_value = held_compare ? 32'b0 : add_sum[31:0];
+    end else begin : g_full_alu_value
+      logic [4:0] rotate_amount;
+      logic [63:0] rotate_double;
+      logic [31:0] rotate_value;
+      logic [31:0] _unused_rotate_low;
+      logic [31:0] left_mask, right_mask;
+      logic sign_fill;
+      logic [31:0] sraw_value;
+      logic sraw_ca;
+      logic [5:0] leading_zeros;
+      // Source-bit masks for record predicates. They depend only on issue
+      // controls and are captured beside the existing rotate amount.
+      logic [31:0] record_mask_d, record_sign_mask_d;
+      logic [31:0] record_mask_q, record_sign_mask_q;
+      logic record_a_nonzero, record_a_sign, record_b_nonzero, record_b_sign;
+      function automatic logic [31:0] inverse_rotate_mask(
+        input logic [31:0] mask, input logic [4:0] amount);
+        return 32'({mask, mask} >> amount);
+      endfunction
+      always_comb begin
+        record_mask_d = '0;
+        record_sign_mask_d = '0;
+        case (issue_i.ctrl.op)
+          ALU_ROTATE: begin
+            record_mask_d = inverse_rotate_mask(issue_i.ctrl.mask, issue_i.b[4:0]);
+            record_sign_mask_d = (32'h8000_0000 >> issue_i.b[4:0]) &
+                                {32{issue_i.ctrl.mask[31]}};
+          end
+          ALU_RLWIMI: begin
+            record_mask_d = inverse_rotate_mask(issue_i.ctrl.mask, issue_i.ctrl.shift);
+            record_sign_mask_d = (32'h8000_0000 >> issue_i.ctrl.shift) &
+                                {32{issue_i.ctrl.mask[31]}};
+          end
+          ALU_SLW: begin
+            record_mask_d = issue_i.b[5] ? 32'b0 : 32'hffff_ffff >> issue_i.b[4:0];
+            record_sign_mask_d = issue_i.b[5] ? 32'b0 : 32'h8000_0000 >> issue_i.b[4:0];
+          end
+          ALU_SRW: begin
+            record_mask_d = issue_i.b[5] ? 32'b0 : 32'hffff_ffff << issue_i.b[4:0];
+            record_sign_mask_d = (issue_i.b[5:0] == 6'b0) ? 32'h8000_0000 : 32'b0;
+          end
+          ALU_SRAW: begin
+            record_mask_d = issue_i.b[5] ? 32'b0 : 32'hffff_ffff << issue_i.b[4:0];
+            // A negative arithmetic shift never becomes zero, even >=32.
+            record_sign_mask_d = 32'h8000_0000;
+          end
+          default: begin end
+        endcase
+      end
+      assign record_a_nonzero = |(held.a & record_mask_q);
+      assign record_a_sign = |(held.a & record_sign_mask_q);
+      assign record_b_nonzero = |(held.b & ~held.ctrl.mask);
+      assign record_b_sign = held.b[31] && !held.ctrl.mask[31];
+      // Tree count: level k merges pairs of 2^k-bit groups. A group count equal
+      // to its width means the group is all zero.
+      function automatic logic [5:0] count_leading_zeros(input logic [31:0] value);
+        logic [5:0] count [32];
+        logic [5:0] high, low;
+        for (int i = 0; i < 32; i++) count[i] = {5'b0, !value[31 - i]};
+        for (int level = 0; level < 5; level++) begin
+          for (int group = 0; group < (16 >> level); group++) begin
+            high = count[2 * group];
+            low = count[2 * group + 1];
+            if (!high[level]) count[group] = high;
+            else if (low[level]) count[group] = high << 1;
+            else count[group] = high | low;
+          end
+        end
+        return count[0];
+      endfunction
+      // One left rotator serves every rotate and shift. A right shift by n is a
+      // left rotate by (32 - n) mod 32 masked to the low 32 - n bits. The
+      // amount is chosen at issue so the op decode stays off the result path.
+      always_ff @(posedge clk_i) begin
+        if (issue_valid_i && issue_ready_o) begin
+          record_mask_q <= record_mask_d;
+          record_sign_mask_q <= record_sign_mask_d;
+          case (issue_i.ctrl.op)
+            ALU_RLWIMI: rotate_amount <= issue_i.ctrl.shift;
+            ALU_SRW, ALU_SRAW: rotate_amount <= 5'd0 - issue_i.b[4:0];
+            default: rotate_amount <= issue_i.b[4:0];
+          endcase
+        end
+      end
+      assign rotate_double = {held.a, held.a} << rotate_amount;
+      assign {rotate_value, _unused_rotate_low} = rotate_double;
+      assign left_mask = 32'hffff_ffff << held.b[4:0];
+      assign right_mask = 32'hffff_ffff >> held.b[4:0];
+      assign sign_fill = held.a[31];
+      assign sraw_value = held.b[5] ? {32{sign_fill}} :
+        (rotate_value & right_mask) | ({32{sign_fill}} & ~right_mask);
+      // CA is set when a negative value shifts out any one bit.
+      assign sraw_ca = sign_fill && (held.b[5] || |(held.a & ~left_mask));
+      assign leading_zeros = count_leading_zeros(held.a);
+      assign result_o.ca = held.ctrl.write_ca ?
+        ((held.ctrl.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
+      always_comb begin
+        case (held.ctrl.op)
+          ALU_ADD: begin
+            alu_value = add_sum[31:0];
+            record_value = add_sum[31:0];
+          end
+          ALU_ROTATE: begin
+            alu_value = rotate_value & held.ctrl.mask;
+            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+          end
+          ALU_RLWIMI: begin
+            alu_value = (rotate_value & held.ctrl.mask) |
+                                     (held.b & ~held.ctrl.mask);
+            record_value = {record_a_sign | record_b_sign, 30'b0,
+                            record_a_nonzero | record_b_nonzero};
+          end
+          ALU_SLW: begin
+            alu_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
+            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+          end
+          ALU_SRW: begin
+            alu_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
+            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+          end
+          ALU_SRAW: begin
+            alu_value = sraw_value;
+            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+          end
+          ALU_CNTLZW: begin
+            alu_value = {26'b0, leading_zeros};
+            record_value = {26'b0, leading_zeros};
+          end
+          ALU_EXTSB: begin
+            alu_value = {{24{held.a[7]}}, held.a[7:0]};
+            record_value = {{24{held.a[7]}}, held.a[7:0]};
+          end
+          ALU_EXTSH: begin
+            alu_value = {{16{held.a[15]}}, held.a[15:0]};
+            record_value = {{16{held.a[15]}}, held.a[15:0]};
+          end
+          ALU_MULLI: begin
+            alu_value = multiply_acc[31:0];
+            record_value = multiply_acc[31:0];
+          end
+          ALU_MULLW: begin
+            alu_value = multiply_acc[31:0];
+            record_value = multiply_acc[31:0];
+          end
+          ALU_MULHW: begin
+            alu_value = multiply_acc[63:32];
+            record_value = multiply_acc[63:32];
+          end
+          ALU_MULHWU: begin
+            alu_value = multiply_acc[63:32];
+            record_value = multiply_acc[63:32];
+          end
+          ALU_DIVWU: begin
+            alu_value = divider_quotient;
+            record_value = divider_quotient;
+          end
+          ALU_DIVW: begin
+            alu_value = divider_quotient;
+            record_value = divider_quotient;
+          end
+          ALU_OR: begin
+            alu_value = held.a | held.b;
+            record_value = held.a | held.b;
+          end
+          ALU_XOR: begin
+            alu_value = held.a ^ held.b;
+            record_value = held.a ^ held.b;
+          end
+          ALU_AND: begin
+            alu_value = held.a & held.b;
+            record_value = held.a & held.b;
+          end
+          ALU_ANDC: begin
+            alu_value = held.a & ~held.b;
+            record_value = held.a & ~held.b;
+          end
+          ALU_ORC: begin
+            alu_value = held.a | ~held.b;
+            record_value = held.a | ~held.b;
+          end
+          ALU_NAND: begin
+            alu_value = ~(held.a & held.b);
+            record_value = ~(held.a & held.b);
+          end
+          ALU_NOR: begin
+            alu_value = ~(held.a | held.b);
+            record_value = ~(held.a | held.b);
+          end
+          ALU_EQV: begin
+            alu_value = ~(held.a ^ held.b);
+            record_value = ~(held.a ^ held.b);
+          end
+          default: begin
+            alu_value = '0;
+            record_value = '0;
+          end
+        endcase
+      end
+    end
+  endgenerate
   always_ff @(posedge clk_i) begin
     if (issue_valid_i && issue_ready_o) held <= issue_i;
   end

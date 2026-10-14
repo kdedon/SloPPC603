@@ -2,7 +2,14 @@
 
 Status: accepted bounded implementation contract. The [CX-I02 state foundation](FLAGS_STATE.md) now implements packet deltas, committed registers and owner control; [CX-I03 record-logical execution](RECORD_LOGICAL.md) connects the first CR0 writers. It extends the ownership and recovery rules in [EXECUTION_CONTRACT.md](EXECUTION_CONTRACT.md), [RECOVERY_BACKEND.md](RECOVERY_BACKEND.md) and [CORE_RECOVERY.md](CORE_RECOVERY.md). The original 15 forms remain flag-free; record-logical forms add CR0 writes, and [ADD/ADDC](ADD_FLAGS.md) implements CA/OV/SO and record effects. [ADDE](ADDE.md) now also captures committed CA for carry-input addition; [ADDME/ADDZE](ADD_UNARY.md) extend it to decrement/increment. [RLWINM/RLWNM](ROTATE_EXECUTION.md) now use captured SO with final masked-result CR0 updates and preserve XER. [SLW/SRW](LOGICAL_SHIFTS.md) likewise preserve XER and record their final shifted result. The reviewed metadata in [isa.json](../sim/spec/isa.json) prepares ADD, register-logical, word-rotate and word-shift variants; metadata coverage does not enable their decode.
 
-This contract admits one speculative instruction with flag dependencies or destinations. That resource restriction is a deliberate first implementation choice. It is not architectural instruction serialization, an assertion about the 603e's XER implementation, or acceptance of full chapter-6 timing. Independent instructions without flag effects can continue through the existing resources until ordinary in-order dispatch encounters a blocked instruction.
+The original contract admits one speculative instruction with flag dependencies
+or destinations. That resource restriction is a deliberate first implementation
+choice, extended by the later [dual-dispatch design](DUAL_DISPATCH_DESIGN.md).
+It is not architectural instruction serialization or acceptance of full
+chapter-6 timing. Current supersession, 2026-10-13: eligible IU/SRU results may
+commit their GPR and masked flag deltas on their accepted finish edge under the
+[current edge table](EXECUTION_CONTRACT.md#current-finish-and-retirement-edges).
+Historical evidence below retains its original scope.
 
 ## Source decisions and limits
 
@@ -111,7 +118,13 @@ Flag candidates never broadcast on the current GPR wake lane. There is no CA/SO 
 
 ## Commitment, recovery and edge priority
 
-An owner's earliest issue/finish/commit edges retain the current D/E/F/C contract: issue at least D+1, unstalled accepted finish E+1, and commitment no earlier than the edge after finish. Flag computation does not add an unreviewed stage or enable finish-to-retire bypass.
+For a single-cycle IU owner, issue is at least D+1 and unstalled accepted finish
+is E+1. The original contract required commitment one edge later. The
+writeback-cycle extension now permits an eligible surviving IU/SRU owner to
+commit at its finish edge when it reaches the head (or eligible paired CQ[1])
+and retirement is allowed. Candidate flag computation alone never authorizes
+architectural updates; allocation permissions, accepted result ownership and
+the retirement handshake still control them.
 
 At the finished CQ head's accepted retirement edge, update its GPR and both masked architectural flag registers **atomically** using one retirement handshake. If the head is stalled, all offered GPR and flag metadata/results remain stable, all architectural state remains unchanged, and ownership remains busy. Release the flag token only when that exact owner commits or is killed. A flag-free retirement cannot release it. The retirement interface and scoreboards must expose/check the same combined effects; an independently backpressured flag channel is outside this design.
 
@@ -120,9 +133,9 @@ Apply the existing pre-edge recovery classification:
 - Reset clears committed CR/XER, token and all local producers/consumers together.
 - An accepted prefix cut blocks dispatch, including flag acquisition. Determine owner survival by exact identity in the valid CQ prefix, using CQ traversal age; numeric slot order is irrelevant.
 - If the owner is killed, clear its token and discard its speculative delta. A coincident response from that owner cannot finish or wake. Previously committed CR/XER remain unchanged.
-- If the owner survives, retain its captured inputs, CQ delta/readiness and identity. A surviving unfinished owner may accept its complete result on the redirect edge, but cannot commit that newly finished result on that edge.
+- If the owner survives, retain its captured inputs, CQ delta/readiness and identity. A surviving unfinished owner may accept its complete result on the redirect edge and, if eligible under the current edge table, commit its combined GPR/flag effects on that edge.
 - A surviving pre-edge finished owner may commit on the redirect edge if ready; apply its masked flags and GPR once, then release the token. Classifying ownership from the **post-commit** survivor list naturally removes this owner. Keeping a stalled owner preserves it unchanged.
-- A cut killing any pre-edge finished head remains rejected, ready or not, under the accepted irreversible-retirement policy. Rejected/misaligned/halted redirects have no cancellation effect and cannot suppress ordinary flag progress.
+- Apply the scoped irreversible-retirement guards in [RECOVERY_CONTRACT.md](RECOVERY_CONTRACT.md#one-edge-event-priority). Rejected redirects have no cancellation effect and cannot suppress ordinary flag progress.
 
 There is no flag map to rebuild: at most one flag owner can survive. Recovery must assert that the surviving CQ contains exactly the busy owner when one exists, and no second `needs_flags` allocation. Old-generation responses cannot reacquire ownership. Keep the current local cancellation and finite-generation lifetime assumptions: eight generation bits are not an unbounded replay defense. An external flag producer would require the explicit producer-lifetime extension before connection.
 

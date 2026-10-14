@@ -12,12 +12,14 @@ module tb_icache #(
   localparam int LINES = SETS * WAYS;
   localparam logic [31:0] WAY_STRIDE = 32'(SETS * 32);
   localparam logic [31:0] CAPACITY_MASK = 32'(LINES * 32 - 1);
-  logic clk = 1'b0;
-  logic rst_n = 1'b0;
-  always #5 clk = ~clk;
+  logic clk;
+  logic rst_n;
+  initial begin clk = 1'b0; forever #5 clk = ~clk; end
+  logic lock_mode, set_invalidate;
+  logic [31:0] set_invalidate_addr;
   // Unlocked, no response asks for an uncached read.
   always @(posedge clk)
-    if (fetch_rsp_valid && fetch_rsp_bypass) $fatal(1, "bypass response from an unlocked cache");
+    if (fetch_rsp_valid && fetch_rsp_bypass && !lock_mode) $fatal(1, "bypass response from an unlocked cache");
 
   logic fetch_valid, fetch_ready;
   logic [31:0] fetch_addr;
@@ -48,10 +50,10 @@ module tb_icache #(
     .fetch_addr_i(fetch_addr), .fetch_rsp_valid_o(fetch_rsp_valid),
     .fetch_rsp_ready_i(fetch_rsp_ready),
     .fetch_rsp_insn_o(fetch_rsp_all),
-    .fetch_rsp_error_o(fetch_rsp_error), .lock_i(1'b0), .fetch_rsp_bypass_o(fetch_rsp_bypass),
+    .fetch_rsp_error_o(fetch_rsp_error), .lock_i(lock_mode), .fetch_rsp_bypass_o(fetch_rsp_bypass),
     .kill_i(kill), .invalidate_i(invalidate),
     .invalidate_done_o(invalidate_done),
-    .invalidate_set_i(1'b0), .invalidate_set_addr_i(32'b0),
+    .invalidate_set_i(set_invalidate), .invalidate_set_addr_i(set_invalidate_addr),
     .line_req_valid_o(line_req_valid),
     .line_req_ready_i(line_req_ready),
     .line_req_line_addr_o(line_req_line_addr),
@@ -134,6 +136,8 @@ module tb_icache #(
     begin
       @(negedge clk);
       rst_n = 1'b0;
+      lock_mode = 1'b0;
+      set_invalidate = 1'b0;
       fetch_valid = 1'b0;
       fetch_rsp_ready = 1'b0;
       kill = 1'b0;
@@ -469,6 +473,10 @@ module tb_icache #(
     logic [31:0] addr_other, addr_chain;
     logic [31:0] seed_chain;
 
+    rst_n = 1'b0;
+    lock_mode = 1'b0;
+    set_invalidate = 1'b0;
+    set_invalidate_addr = '0;
     fetch_valid = 1'b0;
     fetch_addr = 32'b0;
     fetch_rsp_ready = 1'b0;
@@ -710,6 +718,32 @@ module tb_icache #(
     check(accepted_line_requests >= 7,
           "multiple replacements and cancellation paths accepted refills");
     check((FETCH_WIDTH == 1) || (pair_responses > 0), "pair responses observed");
+
+    // Lock, rejected alignment and set invalidation must not poison a later refill.
+    pulse_invalidate();
+    refill_fetch(addr_a, SEED_A, 0, 0);
+    @(negedge clk); lock_mode=1;
+    hit_fetch(addr_a, SEED_A, 1); // locked hit still updates LRU
+    issue_fetch(addr_b+32'd12, 1'b0, 1'b1); // locked miss, different tag/word
+    check(fetch_rsp_valid && fetch_rsp_bypass && !line_req_valid,
+          "locked miss bypasses without allocating");
+    expect_fetch_response(32'b0, 1'b0, 2);
+    issue_fetch(addr_c+32'd2, 1'b0, 1'b0); // alignment outranks lock
+    check(fetch_rsp_error && !fetch_rsp_bypass && !line_req_valid,
+          "alignment overrides lock without allocation");
+    expect_fetch_response(32'b0, 1'b1, 1);
+    @(negedge clk); lock_mode=0;
+    hit_fetch(addr_a, SEED_A, 0);
+    refill_fetch(addr_b+32'd12, SEED_B, 2, 1);
+    hit_fetch(addr_a, SEED_A, 0);
+    // Set invalidation is legal only after response/refill drain.
+    @(negedge clk); set_invalidate_addr=addr_a; set_invalidate=1;
+    @(posedge clk);
+    @(negedge clk); set_invalidate=0;
+    refill_fetch(addr_b+32'd20, SEED_B, 1, 1);
+    issue_fetch(addr_a, 1'b0, 1'b1);
+    pulse_kill();
+    $display("PASS additional cache lock/alignment/set-invalidate checks");
     $display("PASS: tb_icache %0d sets x %0d ways, %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests, %0d streamed hits (200 in %0d cycles), %0d pair responses",
              SETS, WAYS, checks, accepted_fetches, hit_pulses, miss_pulses,
              accepted_line_requests, stream_hit_count, stream_best_cycles, pair_responses);

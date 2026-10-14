@@ -12,7 +12,8 @@
 // after the final flush. Exceptions are checked by their handlers' SPR reads.
 /* verilator lint_off BLKSEQ */
 module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED = 32'h1357_9bdf,
-                        parameter int SETS = 128, parameter int WAYS = 4);
+                        parameter int SETS = 128, parameter int WAYS = 4,
+                        parameter bit DATA_PAGE_PROJECTION = 1'b1);
   import ppc_pkg::*;
   import ppc_dcache_pkg::*;
   `include "ppc_asm.svh"
@@ -55,6 +56,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
 
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_core_bat_cached_bus60x #(.RESET_PC(START),.ENABLE_TEST_REDIRECT(1'b0),
+    .ENABLE_DATA_PAGE_PROJECTION(DATA_PAGE_PROJECTION),
     .ICACHE_SETS(SETS),.ICACHE_WAYS(WAYS),.DCACHE_SETS(SETS),.DCACHE_WAYS(WAYS),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),

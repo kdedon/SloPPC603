@@ -344,17 +344,24 @@ module ppc_icache #(
         unique case (state_q)
           IC_IDLE: begin
             if (accept) begin
+              rsp_insn_q <= 32'b0;
+              // Only a miss uses these fields. Capture before tag resolution;
+              // refill states cannot accept another lookup. The independent
+              // LRU update uses upd_set_q while its write is pending.
+              miss_addr_q <= fetch_addr_i[31:3];
+              miss_set_q <= lookup_set;
+              miss_tag_q <= lookup_tag;
+              miss_word_q <= lookup_word;
+              miss_valid_q <= lookup_valid;
               rsp_bypass_q <= 1'b0;
               if (fetch_addr_i[1:0] != 2'b00) begin
                 rsp_way_q <= '0;
-                rsp_insn_q <= 32'b0;
                 rsp_error_q <= 1'b1;
                 rsp_valid_q <= 1'b1;
                 protocol_error_q <= 1'b1;
               end else if (lookup_hit) begin
                 rsp_way_q <= lookup_hit_way;
                 rsp_word_q <= lookup_word[1:0];
-                rsp_insn_q <= 32'b0;
                 rsp_error_q <= 1'b0;
                 rsp_valid_q <= 1'b1;
                 hit_q <= 1'b1;
@@ -364,17 +371,11 @@ module ppc_icache #(
                 upd_way_q <= lookup_way;
               end else if (lock_i) begin
                 rsp_way_q <= '0;
-                rsp_insn_q <= 32'b0;
                 rsp_error_q <= 1'b0;
                 rsp_bypass_q <= 1'b1;
                 rsp_valid_q <= 1'b1;
                 miss_q <= 1'b1;
               end else begin
-                miss_addr_q <= fetch_addr_i[31:3];
-                miss_set_q <= lookup_set;
-                miss_tag_q <= lookup_tag;
-                miss_word_q <= lookup_word;
-                miss_valid_q <= lookup_valid;
                 miss_q <= 1'b1;
                 state_q <= IC_REFILL_REQUEST;
               end
