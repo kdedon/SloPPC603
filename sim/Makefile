@@ -2917,3 +2917,9 @@ test: test-lsu-store-queue-order
 test-lsu-store-queue-order:
 	$(VERILATOR) --binary --timing --assert -Wall -j 1 -CFLAGS -O0 --top-module tb_lsu_store_queue_order --Mdir $(BUILD_DIR)/lsu-store-queue-order ../rtl/ppc_pkg.sv ../rtl/ppc_lsu_pipe.sv ../tb/tb_lsu_store_queue_order.sv
 	timeout 30s $(abspath $(BUILD_DIR))/lsu-store-queue-order/Vtb_lsu_store_queue_order $(SIM_ARGS)
+
+# Optional bounded four-state held-FD release/readiness expression check.
+# Requires Icarus; X/Z FD-valid differences are diagnostics, not equivalence.
+.PHONY: test-held-release-equivalence
+test-held-release-equivalence:
+	python3 tools/held_release_equivalence.py --build-dir $(BUILD_DIR)/held-release-equivalence

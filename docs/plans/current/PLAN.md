@@ -301,8 +301,12 @@ Before further timing changes, upstream synchronization is integrated on
 through `e5cddb9`. The 40.66 MHz checkpoint is preserved at `9a68a26`.
 Combined lint/spec, fetch/cache/recovery/owner-wrap and verified-cycle gates
 pass, including the production mixed GPR RAM-copy profile. Its fresh capped
-CPU-only fit is pending. No direct-class or cache-metadata candidate is added
-until this merged source is measured; see
+CPU-only fit completes at 40.12 MHz limiting (40.74 MHz at the other slow
+corner), saving 1,768 ALMs and 2,567 registers but giving no clock gain over
+the saved predecessor. Holds pass; unconstrained categories are zero.
+Frontend lookahead remains on 74/80 detailed paths, so the isolated direct
+branch/needs-IU projection is next; no reset/error normalization change or
+cache-metadata candidate is stacked with it. See
 [the integration record](../../UPSTREAM_INTEGRATION_2026-10-14.md).
 
 Queued, in order:

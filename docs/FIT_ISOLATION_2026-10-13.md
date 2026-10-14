@@ -45,6 +45,15 @@ release acceptance remains pending. Detailed paths now point to frontend
 instruction classification feeding dispatch; prepared SQ overlap and isolated
 IQ fixed-pop fits are deferred in favor of that broader upstream cut.
 
+The latest upstream-integrated CPU source at `0cf0429` measures 40.12 MHz
+at the limiting slow 100 C corner (40.74 MHz at slow -40 C). It saves 1,768
+ALMs and 2,567 registers, with 46 M10Ks, passing holds and zero unconstrained
+paths. This is an area gain; 40.66 MHz remains the saved predecessor's best
+clock result, not a measurement of the current merged source. Detailed paths
+still point to frontend classification. See
+[upstream integration](UPSTREAM_INTEGRATION_2026-10-14.md) for mapping,
+verification and remaining release gates.
+
 ## Historical reference
 
 The [integrated baseline](INTEGRATED_SYNTHESIS_BASELINE.md) records 74.91 MHz at

@@ -1488,3 +1488,14 @@ combined source any timing result. The next direct-class and cache-metadata
 proposals remain private; no additional candidate is stacked onto the merge.
 See [upstream integration](UPSTREAM_INTEGRATION_2026-10-14.md) for commands,
 counts, conflict choices and remaining release gates.
+
+The upstream-integrated fit at `0cf0429` measures 40.12 MHz at its limiting
+slow 100 C corner (40.74 MHz at slow -40 C), with passing holds and zero
+unconstrained categories. It saves 1,768 ALMs and 2,567 registers, but does
+not improve the saved 40.66 MHz clock result. All ten requested GPR BLOCK
+copies physically map to M10K; the predecessor already used six. Detailed
+STA still places frontend lookahead on 74/80 paths, including both slow
+worst paths, now through lane1 classification. A direct branch/needs-IU
+projection is the next isolated candidate; reset/error normalization remains
+unchanged. See the integration record for exact commands and warning/memory
+mapping scope. Full release acceptance remains pending.

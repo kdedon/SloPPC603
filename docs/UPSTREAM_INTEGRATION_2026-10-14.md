@@ -86,3 +86,70 @@ independent read/view and collision counts as the original four LUT profiles.
 The original profiles remain; the mixed-copy target joins the default test
 set. This confirms source-level behavior of both RAM branches, not mapped
 read-during-write behavior or register absorption. Fresh fit remains pending.
+
+## Matched upstream fit
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2
+ --sys-mhz 66`, commit `0cf0429`, 2026-10-14, Quartus 17.0.2 Build 602
+and the same pinned image and constraints as the saved checkpoint. Main flow
+completes in 29m00s, zero errors and 86 warnings. CPU-only restricted Fmax is
+**40.12 MHz at slow 100 C**, and 40.74 MHz at slow -40 C. The limiting result
+is below the predecessor's 40.66 MHz; this integration establishes an area
+improvement, not a clock improvement or 66 MHz closure.
+
+Resources: 21,957 ALMs, 15,948 registers, 46 M10Ks, two DSPs, 54 MLAB LABs,
+26,624 MLAB bits and 280,320 block-memory bits. Relative to the saved fit,
+this saves 1,768 ALMs and 2,567 registers while adding four M10Ks.
+
+| Corner | Setup slack at 66 MHz (ns) | Hold slack (ns) |
+|---|---:|---:|
+| Slow 100 C | -9.775 | +0.239 |
+| Slow -40 C | -9.392 | +0.230 |
+| Fast 100 C | +1.517 | +0.132 |
+| Fast -40 C | +3.622 | +0.115 |
+
+All unconstrained categories remain zero. All source/configuration pins match
+before/after; all 79 RTL files remain unchanged, and the original QSF is
+restored. The summary's dirty flag reflects temporary generated run settings;
+no RTL is changed during compilation. Full CI, reference, X-randomization
+and board release acceptance remain pending.
+
+The reports confirm ten GPR M10Ks, versus six in the preceding fit; all five
+requested BLOCK ports in both banks map as intended. Each has a registered
+RAM address/input and unregistered output. Port2 in each bank is MLAB.
+GPR hierarchical ALMs fall from 1,763.9 to 450.7, and dedicated registers
+from 3,121 to 604. New mixed-port read-during-write is reported as Don't care
+with explicit synthesized pass-through logic; the old blocks reported Old
+data with pass-through. Warning 276020 increases from six to ten, explaining
+the four additional warnings; other map/fit warning-code counts are unchanged.
+These reports confirm mapping, not a post-fit whole-core behavioral simulation.
+
+Subsequent all-corner detailed STA completes in 2m26s, zero errors and three
+warnings, using the exact run SDC. Both slow worst paths launch at checkstop
+and traverse managed error qualification, router instruction normalization,
+lane1 predecode/branch classification, `fd_next_iu`, `after1_iu`, and
+`d1_station_ready` into station operand capture. Hot/cold data delay is
+24.312/23.928 ns, with clock skew -0.554/-0.555 ns. Frontend lookahead is on
+74 of 80 reported setup paths, including 37 of 40 slow paths. Six remaining
+paths launch from BS tag/index through pivot recovery and SQ overlap.
+The direct branch/needs-IU projection is therefore the next measured-relevant
+candidate; changing reset/error normalization is a broader semantic change
+and is not included. No direct-class timing result exists yet.
+
+## Reproducible held-release expression check
+
+Recorded: `OBJCACHE= make -C sim -j1 test-held-release-equivalence check-spec`,
+commit `0cf0429` plus the canonical expression tool, 2026-10-14, Icarus 12.0.
+Pass: 131,072 matrix cases (65,536 known-valid equivalence assertions and
+65,536 unknown-valid diagnostics, including 8,352 differences), plus 72
+independent directed cases. Required positive target checks are B=4, BC=4,
+BCLR=4, BCCTR=4, crossing both frontend configurations; breakpoint matching
+and six individual release inhibitors are checked. This confirms bounded
+initialized-valid expression behavior, not arbitrary unknown sequential
+state or a complete ISA/temporal proof. Strict spec checks remain passing.
+
+The initial private fixture's positive target comparison was vacuous because
+IABR always matched and LR readiness was coupled to a blocking control.
+Independent review caught both gaps. The committed fixture uses nonmatching/
+disabled/matching breakpoint profiles and independent controls with required
+nonzero target coverage. Production RTL was not changed to repair the test.
