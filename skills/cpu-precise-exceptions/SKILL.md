@@ -10,6 +10,14 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
 603e model: in-order completion from a 5-entry CQ;
 architectural state (GPR/FPR, CR, XER, LR, CTR, MSR, SPRs) changes only at completion.
 
+DSPPC604's [two fixed commit points](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/docs/DSPPC604_plan.md#L27-L36)
+are an alternative for its scalar pipeline, not a change to this contract. Status commits at
+EX there only after older faults are excluded, and memory uops write no status. In particular,
+its [sequencer splits `stwcx.` into a store and a later CR0 write](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604_seq.sv#L109-L121).
+Before proposing early status writes here, prove that every older fault, the operation's own
+fault and recovery can no longer cancel them, including faulting `stwcx.` and update forms.
+Until then, preserve CQ-gated status writes and recovery shadows.
+
 ## 1. Detect early, act at commit
 
 - **Exception status is data carried with the instruction** (fetch fault with the word, data fault with
@@ -42,6 +50,11 @@ architectural state (GPR/FPR, CR, XER, LR, CTR, MSR, SPRs) changes only at compl
   the exception gate ([`cpu.vhd:2449-2459`](https://github.com/MiSTer-devel/PSX_MiSTer/blob/cd17b5a0ad261005c321d9d5ba41b8dbe313a7d3/rtl/cpu.vhd#L2449-L2459)). 603e: stores leave the store queue only after completion.
 
 ## 4. Redirect safely
+
+- **Use one recovery transaction with cause, age and target** for branch correction, exceptions
+  and context refetch. DSPPC604's [one-flush rule](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/docs/DSPPC604_plan.md#L48-L50)
+  is useful precedent, but a common path must still preserve our distinct fault/branch ages,
+  committed stores and outstanding-response draining. Sharing a flush wire alone is insufficient.
 
 - **Drain outstanding bus transactions before redirecting, or tag responses with an epoch and drop stale
   ones.** SS holds `trap_stop` until instruction and data outstanding counts are zero
