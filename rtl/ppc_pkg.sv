@@ -987,8 +987,20 @@ package ppc_pkg;
     // rA, rB, rS equal a GPR the preceding instruction writes.
     logic [2:0] dep_prev;
   } iq_pair_t;
-  // Everything but dep_prev, which needs the preceding instruction.
+  typedef struct packed {
+    logic branch;
+    logic needs_iu;
+  } fetch_lookahead_t;
   /* verilator lint_off UNUSEDSIGNAL */
+  // Shared raw encoding test; callers retain decoded legality/unit eligibility.
+  function automatic logic pair_sru_form(logic [31:0] insn);
+    return ((insn[31:26] == 6'd14) || (insn[31:26] == 6'd15) ||
+       (insn[31:26] == 6'd11) || (insn[31:26] == 6'd10) ||
+       ((insn[31:26] == 6'd31) && !insn[0] &&
+        ((insn[9:1] == 9'd266) || (insn[10:1] == 10'd0) || (insn[10:1] == 10'd32))));
+  endfunction
+
+  // Everything but dep_prev, which needs the preceding instruction.
   function automatic iq_pair_t pair_predecode(uop_t u, logic [31:0] insn, logic fault);
     iq_pair_t p;
     logic branch, fp_arith, fp_mem, store, plain_mem;
@@ -1010,11 +1022,7 @@ package ppc_pkg;
     else if (plain_mem || fp_mem) p.unit = UNIT_LSU;
     else p.unit = UNIT_SPECIAL;
     p.serial = p.unit == UNIT_SPECIAL;
-    p.sru = (p.unit == UNIT_IU) &&
-      ((insn[31:26] == 6'd14) || (insn[31:26] == 6'd15) ||
-       (insn[31:26] == 6'd11) || (insn[31:26] == 6'd10) ||
-       ((insn[31:26] == 6'd31) && !insn[0] &&
-        ((insn[9:1] == 9'd266) || (insn[10:1] == 10'd0) || (insn[10:1] == 10'd32))));
+    p.sru = (p.unit == UNIT_IU) && pair_sru_form(insn);
     p.reads[3] = branch && (u.special_op != SPECIAL_B) && !u.branch_bo[4];
     p.reads[2] = u.read_ca || u.read_so;
     p.reads[1] = u.special_op == SPECIAL_BCLR;
@@ -1026,6 +1034,22 @@ package ppc_pkg;
     p.writes[0] = branch && (u.special_op != SPECIAL_B) && !u.branch_bo[2];
     p.gpr_dsts = 2'(u.gpr_write) + 2'(u.mem_update);
     p.cq1_ok = !p.serial && !store && (p.unit != UNIT_FPU);
+    return p;
+  endfunction
+
+  // Only the two class predicates used by fetched-word unit lookahead.
+  // Preserve pair_predecode's procedural priority, including unknown tests.
+  function automatic fetch_lookahead_t fetch_lookahead(
+    uop_t u, logic [31:0] insn, logic fault
+  );
+    fetch_lookahead_t p;
+    logic branch;
+    branch = (u.special_op == SPECIAL_B) || (u.special_op == SPECIAL_BC) ||
+             (u.special_op == SPECIAL_BCLR) || (u.special_op == SPECIAL_BCCTR);
+    p = '0;
+    if (u.illegal || fault) p = '0;
+    else if (branch) p.branch = 1'b1;
+    else if (u.special_op == SPECIAL_NONE) p.needs_iu = !pair_sru_form(insn);
     return p;
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */

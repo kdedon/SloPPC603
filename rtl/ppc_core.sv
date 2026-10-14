@@ -3014,13 +3014,19 @@ module ppc_core #(
   unit_class_e dq2_unit, dq3_unit;
   logic dq2_sru, dq3_sru;
   logic fd_next_iu, after1_iu, after2_iu, after0_iu;
+  fetch_lookahead_t fd_class;
+  /* verilator lint_off UNUSEDSIGNAL */
+  fetch_lookahead_t fd_class1; // The second word only contributes needs_iu.
+  /* verilator lint_on UNUSEDSIGNAL */
   assign dq2_unit = unit_class_e'(iq_dq2[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
   assign dq2_sru = iq_dq2[BREC_W + 1 + $bits(iq_pair_t) - 3];
   assign dq3_unit = unit_class_e'(iq_dq3[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
   assign dq3_sru = iq_dq3[BREC_W + 1 + $bits(iq_pair_t) - 3];
+  assign fd_class = fetch_lookahead(push_uop, queued.insn, queued.fault != FETCH_OK);
+  assign fd_class1 = fetch_lookahead(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
   assign fd_next_iu = fd_valid &&
-    ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
-     (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)));
+    (!fd_class.branch ? fd_class.needs_iu :
+     (fd1_valid && fd_class1.needs_iu));
   // A branch in the queue takes no unit station; the lookahead passes it.
   assign after2_iu = (iq_count > IQ_COUNT_WIDTH'(3)) ?
     ((dq3_unit != UNIT_BPU) && needs_iu(dq3_unit, dq3_sru)) : fd_next_iu;

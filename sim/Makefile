@@ -2923,3 +2923,8 @@ test-lsu-store-queue-order:
 .PHONY: test-held-release-equivalence
 test-held-release-equivalence:
 	python3 tools/held_release_equivalence.py --build-dir $(BUILD_DIR)/held-release-equivalence
+
+# Optional bounded four-state FD classification/whole-pair expression check.
+.PHONY: test-fd-lookahead-equivalence
+test-fd-lookahead-equivalence:
+	python3 tools/fd_lookahead_equivalence.py --build-dir $(BUILD_DIR)/fd-lookahead-equivalence

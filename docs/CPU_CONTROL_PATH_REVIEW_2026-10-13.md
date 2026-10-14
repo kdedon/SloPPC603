@@ -1499,3 +1499,58 @@ worst paths, now through lane1 classification. A direct branch/needs-IU
 projection is the next isolated candidate; reset/error normalization remains
 unchanged. See the integration record for exact commands and warning/memory
 mapping scope. Full release acceptance remains pending.
+
+
+## Provisional direct fetched-word class projection
+
+The measured lane1 path computes a full priority unit enum and then compares
+it only for branch/primary-IU lookahead. This isolated two-file candidate
+projects those two predicates from the same decoded uop, instruction and
+fetch/IABR fault, using the same procedural illegal/fault, branch, and normal
+integer priority. A shared raw SRU encoding helper retains the original
+predicate. Full pair metadata, decode, queue payloads, forwarding, status,
+packets, request/response acceptance, reset/error normalization and stages
+are unchanged. No logical state or cycle is added; physical benefit is
+unmeasured. The saved merged baseline is `a05344f` (same RTL as fitted
+`0cf0429`); the preceding 40.66 MHz source remains at `9a68a26`.
+
+Recorded: `OBJCACHE= make -C sim -j1 lint check-spec
+test-held-release-equivalence test-core-translated-held-cr
+test-core-branch-fold test-core-dual-lsu-pipe test-core-lsu-wake-wrap
+test-core-lsu-response-wrap test-core-lsu-timing-snoop test-core-lsu-timing-602
+test-core-dcache-lsu-pipe test-core-fpu-machine-check-lsu`, commit `a05344f`
+plus this uncommitted candidate, 2026-10-14.
+
+PASS: strict lint; 190 spec rows, 41 rules, 391 source locators; seven stage
+anchors; 259 tool tests and 29 checker tests. The bounded held-release check
+passes its 131,072 matrix cases and 72 directed cases, with four positive
+target checks per branch family. Translated held-CR tests preserve request
+191/dispatch 196 for taken branches and dispatch 193 for not-taken branches,
+at both dispatch widths. Branch-fold programs retire 1,922 instructions in
+8,918/7,806 cycles. Dual LSU retires 74 instructions in 228/213 cycles with
+65 identical compared packets. All seven queued-wake wrap variants and both
+canceled-response owner-wrap variants retain the upstream-integrated counts.
+
+Snoop/FPU programs retain 8,306 retirements and 29,151/27,094 cycles;
+602 programs retain 9,693/9,692 retirements and 36,112/33,938 cycles.
+The cached core passes 105,303 checks, 2,452 retirements, ten exceptions and
+12,112 cycles. FPU/machine-check LSU passes 3,195 checks, 8,509 retirements
+and 31,134 cycles. All counts match the upstream integration record; source
+was unchanged throughout the run. These are focused gates, not full release
+acceptance. A fresh matched fit remains pending. Only this candidate will
+be fitted; no SQ, IQ, cache-metadata or reset/error cut is stacked with it.
+
+Recorded: `OBJCACHE= make -C sim -j1 test-fd-lookahead-equivalence
+check-spec`, commit `a05344f` plus this uncommitted candidate, 2026-10-14.
+
+PASS: 303,104 complete-pair/class cases and 4,096 actual FD validity/fault/lane
+compositions against fixed independent legacy equations. All three class
+coverage rows independently record branch 1,152, needs-IU 245,874, SRU 16,460
+and non-IU/nonbranch 39,520 positive observations; both FD reference/actual
+outcomes require positive and negative coverage. Source layout, encoding,
+function and caller guards remain active. X/Z guards and opcode/XO/Rc patterns
+are covered, not arbitrary sequential state or full ISA behavior. The
+canonical target depends only on repository source and optional Icarus,
+without private snapshots or Git-history dependencies. Strict spec/checker
+counts repeat unchanged. A read-only architecture review approved the
+independent references, guards and nonvacuity before execution.
