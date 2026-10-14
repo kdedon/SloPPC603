@@ -327,52 +327,45 @@ module ppc603e_demo_soc #(
       tben_q <= 1'b1;
       video_en_q <= 1'b1;
       console_valid_q <= 1'b0;
-      console_data_q <= '0;
       exit_valid_q <= 1'b0;
-      exit_code_q <= '0;
-      io_rdata_q <= '0;
-      input_q <= '0;
     end else begin
       cycle_q <= cycle_q + 64'd1;
-      input_q <= input_i;
       if (cpu_perf.retire) retired_q <= retired_q + 64'd1 + 64'(cpu_perf.retire1);
       console_valid_q <= 1'b0;
       if (frame) frames_q <= frames_q + 32'd1;
-      if (io_req && !we) begin
-        unique case (beat_byte[11:3])
-          9'd0: io_rdata_q <= {SOC_ID, 30'b0, video_en_q, tben_q};
-          9'd1: begin
-            io_rdata_q <= {cycle_q[31:0], cycle_hi_q};
-            // Reading the low word latches the high word for the next read.
-            if (be[7]) cycle_hi_q <= cycle_q[63:32];
-          end
-          9'd3: io_rdata_q <= {frames_q, 31'b0, vblank_o};
-          // Framebuffer geometry: base, stride; width, height, MiSTer FB_FORMAT.
-          9'd4: io_rdata_q <= {FB_BASE, 32'(FB_WIDTH)};
-          9'd5: io_rdata_q <= {16'(FB_WIDTH), 16'(FB_HEIGHT), 32'(FB_FORMAT)};
-          9'd6: io_rdata_q <= {16'(SYS_MHZ), 7'b0, ENABLE_FPU, mode_i, tenures};
-          9'd7: begin
-            io_rdata_q <= {retired_q[31:0], retired_hi_q};
-            if (be[7]) retired_hi_q <= retired_q[63:32];
-          end
-          9'd8: io_rdata_q <= {input_q, 32'b0};
-          default: io_rdata_q <= perf_range ? perf_rdata : '0;
-        endcase
+      // Reading the low word latches the high word for the next read.
+      if (io_req && !we && be[7]) begin
+        if (beat_byte[11:3] == 9'd1) cycle_hi_q <= cycle_q[63:32];
+        if (beat_byte[11:3] == 9'd7) retired_hi_q <= retired_q[63:32];
       end
       if (io_we)
         unique case (io_word)
           10'd1: {video_en_q, tben_q} <= io_wdata[1:0];
-          10'd4: begin
-            console_valid_q <= 1'b1;
-            console_data_q <= io_wdata[7:0];
-          end
-          10'd5: begin
-            exit_valid_q <= 1'b1;
-            exit_code_q <= io_wdata;
-          end
+          10'd4: console_valid_q <= 1'b1;
+          10'd5: exit_valid_q <= 1'b1;
           default: ;
         endcase
     end
+  end
+  // Data registers, read only beside their valid flags or after a read:
+  // no reset.
+  always_ff @(posedge clk_i) begin
+    input_q <= input_i;
+    if (io_we && io_word == 10'd4) console_data_q <= io_wdata[7:0];
+    if (io_we && io_word == 10'd5) exit_code_q <= io_wdata;
+    if (io_req && !we)
+      unique case (beat_byte[11:3])
+        9'd0: io_rdata_q <= {SOC_ID, 30'b0, video_en_q, tben_q};
+        9'd1: io_rdata_q <= {cycle_q[31:0], cycle_hi_q};
+        9'd3: io_rdata_q <= {frames_q, 31'b0, vblank_o};
+        // Framebuffer geometry: base, stride; width, height, MiSTer FB_FORMAT.
+        9'd4: io_rdata_q <= {FB_BASE, 32'(FB_WIDTH)};
+        9'd5: io_rdata_q <= {16'(FB_WIDTH), 16'(FB_HEIGHT), 32'(FB_FORMAT)};
+        9'd6: io_rdata_q <= {16'(SYS_MHZ), 7'b0, ENABLE_FPU, mode_i, tenures};
+        9'd7: io_rdata_q <= {retired_q[31:0], retired_hi_q};
+        9'd8: io_rdata_q <= {input_q, 32'b0};
+        default: io_rdata_q <= perf_range ? perf_rdata : '0;
+      endcase
   end
   assign console_valid_o = console_valid_q;
   assign console_data_o = console_data_q;

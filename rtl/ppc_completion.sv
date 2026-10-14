@@ -116,6 +116,9 @@ module ppc_completion #(
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
   logic finish2_accept, result2_fault, head_now2, head1_now2, head_mem0;
+  // synthesis translate_off
+  logic head_killed;
+  // synthesis translate_on
   retire_packet_t finish0_packet, finish1_packet, finish2_packet;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
@@ -386,8 +389,15 @@ module ppc_completion #(
           (ring_age(CQ_INDEX_WIDTH'(s), head_q) >= retained))
         redirect_candidate_kill[s] = 1'b1;
     end
-    // The head has age 0 and the next entry age 1.
-    kill_head = (count_q != '0) && (retained == '0);
+    // The head has age 0 and the next entry age 1. The head is removed by a
+    // recovery that removes all, or by one that drops a pivot at the head.
+    kill_head = (count_q != '0) && (redirect_all_i ||
+      (PIVOT && !redirect_keep_pivot_i && (redirect_pivot_i.index == head_q) &&
+       active_q[head_q] && (redirect_pivot_i.generation == generations_q[head_q])));
+    // synthesis translate_off
+    if (rst_ni && PIVOT && (kill_head != ((count_q != '0) && (retained == '0))))
+      $error("head removal disagrees with the retained count");
+    // synthesis translate_on
     kill_head1 = (count_q > COUNT_WIDTH'(1)) && (retained <= COUNT_WIDTH'(1));
 
     if (!PIVOT) begin
@@ -410,6 +420,11 @@ module ppc_completion #(
       redirect_accepted_o = 1'b0;
 
     redirect_kill_o = redirect_accepted_o ? redirect_candidate_kill : '0;
+    // The pending-arrival path uses the stronger fixed-head predicate below.
+    // Retain the general accepted-kill form as its simulation cross-check.
+    // synthesis translate_off
+    head_killed = redirect_accepted_o && (PIVOT ? kill_head : active_q[head_q]);
+    // synthesis translate_on
     for (int i = 0; i < CQ_DEPTH; i++)
       redirect_kill_generation_o[i] = generations_q[i];
   end
@@ -539,6 +554,8 @@ module ppc_completion #(
   always @(posedge clk_i) begin
     if (rst_ni && pending_head) begin
       assert (pending_head_kill == redirect_kill_o[head_q]);
+      assert (pending_head_kill == head_killed)
+        else $error("pending head kill disagrees with accepted fixed-head kill");
       assert (head_now0 == (result_clean && (result_i.producer.index == head_q)));
       assert (head_now1 == (finish1_accept && result1_retire_i &&
                            (result1_i.producer.index == head_q)));

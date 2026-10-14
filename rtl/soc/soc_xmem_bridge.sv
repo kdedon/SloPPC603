@@ -55,13 +55,10 @@ module soc_xmem_bridge #(
   logic [7:0] be_q [4];
 
   always_ff @(posedge clk_i) begin
-    if (!rst_ni) begin
-      state_q <= X_IDLE;
-      addr_q <= '0;
-      burst_q <= 1'b0;
-      idx_q <= '0;
-      left_q <= '0;
-    end else
+    // The address and counters load in X_IDLE before use; only the state
+    // resets.
+    if (!rst_ni) state_q <= X_IDLE;
+    else
       unique case (state_q)
         X_IDLE:
           if (start_i) begin

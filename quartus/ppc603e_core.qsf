@@ -18,6 +18,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_dispatch.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_divider.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_iu.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_regfile_gpr.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_regfile_gpr_copy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_rename.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_completion.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_flags.sv
