@@ -10,7 +10,8 @@
 // permission of their page.
 module ppc_micro_tlb #(
   parameter int ENTRIES = 4,
-  parameter int TLB_SETS = 32
+  parameter int TLB_SETS = 32,
+  parameter bit PROJECTED_LOOKUP = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -19,6 +20,9 @@ module ppc_micro_tlb #(
   input  logic [$clog2(TLB_SETS)-1:0] set_flush_index_i,
   input  logic [19:0] lookup_page_i,
   input  logic lookup_write_i,
+  // Read-only page comparisons formed before the late address selector.
+  // The legacy actual-page comparison owns disabled/unknown selections.
+  input  ppc_pkg::dtlb_projection_t projected_i,
   output logic hit_o,
   output logic [19:0] hit_rpn_o,
   output logic [3:0] hit_wimg_o,
@@ -48,13 +52,49 @@ module ppc_micro_tlb #(
   logic fill_matched;
   int chosen;
 
+  logic [ENTRIES-1:0] legacy_match;
+  logic [3:0][ENTRIES-1:0] projected_match;
+  genvar probe;
+  generate
+    if (PROJECTED_LOOKUP) begin : g_projected_lookup
+      for (probe = 0; probe < 4; probe = probe + 1) begin : g_probe
+        always_comb begin
+          for (int i = 0; i < ENTRIES; i++)
+            projected_match[probe][i] = valid_q[i] &&
+              (page_q[i] == projected_i.page[probe]);
+        end
+      end
+    end else begin : g_legacy_lookup
+      logic _unused_projected_inputs;
+      assign _unused_projected_inputs = ^{projected_i.use_lookup, projected_i.page, projected_i.source};
+      assign projected_match = '0;
+    end
+  endgenerate
+  always_comb begin
+    for (int i = 0; i < ENTRIES; i++)
+      legacy_match[i] = valid_q[i] && (page_q[i] == lookup_page_i);
+    match = legacy_match;
+    if (PROJECTED_LOOKUP) begin
+      case (projected_i.use_lookup)
+        1'b1: begin
+          case (projected_i.source)
+            2'd0: match = projected_match[0];
+            2'd1: match = projected_match[1];
+            2'd2: match = projected_match[2];
+            2'd3: match = projected_match[3];
+            default: match = legacy_match;
+          endcase
+        end
+        default: match = legacy_match;
+      endcase
+    end
+  end
   // At most one entry holds a page, so the payload is an AND-OR of matches.
   always_comb begin
     hit_rpn_o = '0;
     hit_wimg_o = '0;
     hit_esa = '0;
     for (int i = 0; i < ENTRIES; i++) begin
-      match[i] = valid_q[i] && page_q[i] == lookup_page_i;
       permitted[i] = match[i] && (!lookup_write_i || write_ok_q[i]);
       hit_rpn_o = hit_rpn_o | ({20{match[i]}} & rpn_q[i]);
       hit_wimg_o = hit_wimg_o | ({4{match[i]}} & wimg_q[i]);

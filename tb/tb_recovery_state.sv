@@ -68,7 +68,11 @@ module tb_recovery_state;
     .redirect_kill_generation_o(redirect_kill_generation),
     .recovery_survivor_count_o(recovery_count),
     .recovery_survivor_packet_o(recovery_packets),
-    .recovery_survivor_tag_o(recovery_tags)
+    .recovery_survivor_tag_o(recovery_tags),
+    // Legacy oracle consumes compact survivors; optional metadata is unused.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .recovery_rename_o(), .recovery_remove_o()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
 
   /* verilator lint_off UNUSEDSIGNAL */
@@ -109,7 +113,7 @@ module tb_recovery_state;
     .recovery_i(redirect_accepted),
     .recovery_survivor_count_i(recovery_count),
     .recovery_survivor_packet_i(recovery_packets),
-    .recovery_survivor_tag_i(recovery_tags)
+    .recovery_survivor_tag_i(recovery_tags), .recovery_rename_i('{default:'0}), .recovery_remove_i(2'b00)
   );
 
   task automatic require(input logic condition, input string message);

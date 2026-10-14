@@ -226,8 +226,8 @@ module ppc_dcache #(
   logic [WAY_COUNT-1:0] vld, drt, hitw;
   logic hit, hdirty, any_valid;
   logic [WAY_BITS-1:0] hway, victim;
-  // Registered copy of the read address: the snoop address while
-  // snp_valid_q, else req_addr_q.
+  // A registered snoop or active request reads its owner's address.
+  // Idle metadata may instead belong to an unaccepted ready offer.
   logic [SET_BITS-1:0] rd_set_q, rd_set_d;
   logic [TAG_BITS-1:0] rd_tag_q, rd_tag_d;
   assign rd_set = rd_set_q;
@@ -930,7 +930,9 @@ module ppc_dcache #(
     if (rst_ni && snoop_valid_i) begin
       rd_set_d = snoop_addr_i[5 +: SET_BITS];
       rd_tag_d = snoop_addr_i[31 -: TAG_BITS];
-    end else if (req_accept) begin
+    // Read a ready offer before validity arrives. Without acceptance the
+    // next cycle is idle, so these metadata registers have no consumer.
+    end else if (req_ready_o) begin
       rd_set_d = req_addr_i[5 +: SET_BITS];
       rd_tag_d = req_addr_i[31 -: TAG_BITS];
     end else begin
@@ -1207,7 +1209,9 @@ module ppc_dcache #(
 
   // synthesis translate_off
   always_ff @(posedge clk_i) begin
-    if (rst_ni)
+    // Idle metadata may belong to an unaccepted offer. A consuming FSM
+    // cycle or registered snoop must still read its exact accepted owner.
+    if (rst_ni && (state_q != S_IDLE || snp_valid_q))
       assert ({rd_set, rd_tag} == (snp_valid_q ?
                 {snp_addr_q[5 +: SET_BITS], snp_addr_q[31 -: TAG_BITS]} :
                 {req_set, req_tag}))

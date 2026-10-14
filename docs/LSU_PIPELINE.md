@@ -254,6 +254,10 @@ snooped (UM 6.3.3.1):
   displacement while comparing. The head offers in the cycle its base is
   written, with that sum as the address; an entry that does not offer then
   keeps the sum.
+- A queued head selects its EA using `head_base0`/`head_base1`: the wake
+  must be valid and match both the rename tag and exact completion owner.
+  Wake 0 retains priority when both qualify. Inactive raw metadata cannot
+  select the sum, even when it aliases a live owner after generation wrap.
 - Alignment is decided on that EA in the unit for every such load, ready
   base or not: a fault rewrites the entry to an alignment uop the lane
   adopts at the head, and its destination write is suppressed at
@@ -782,3 +786,67 @@ does not yet accept stores written after retirement at this setting.
 Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fa58482, 2026-10-04.
 0 errors, 51 warnings. No fit or timing: the load hit data gains a byte
 merge with the forwarded store.
+
+### Queued base wake after generation wrap (2026-10-14)
+
+Recorded: `make -C sim -j1 test-core-lsu-wake-wrap`, commit `b9f52ae`
+plus uncommitted changes, 2026-10-14. All seven runs pass with production
+assertions enabled. The default 1,278-instruction warm-up retires 1,285
+instructions in 3,959 cycles: one SRU dispatch, 67 queued-base-wait edges,
+66 raw-match observations and one invalid-wake-0/live-wake-1 alias. Six
+controls (warm-up counts 1,270, 1,277, 1,279, 1,285, 1,530 and 1,542)
+each exercise the SRU and queued wait without an alias.
+
+Before the fix, the same real-instruction program failed the queued-head
+assertion and offered address `0x20` instead of `0x1000`. `cntlzw` leaves an
+inactive IU value of 32; repeated `mfspr PVR` instructions wrap the five-slot
+CQ's eight-bit generation. A later SRU addition reuses that owner and writes
+`0x800 + 0x800`. The queued dependent load matched both buses, but raw wake-0
+priority selected the stale IU value while valid wake 1 enabled the request.
+This selector and its invalid-wake exclusion assertion were already present
+in `b9f52ae`; the bug predates the current optimization batch.
+
+The corrected selector qualifies both choices by wake validity and retains
+wake-0 priority. The canonical bench uses dual dispatch, two-word fetch and
+the pipelined LSU; it checks public request addresses, retirement order and
+results, including final `r4 = 0x800`, without forced state. Its alias counters
+establish reachability rather than supply expected architectural values.
+
+The fix adds no stage or intentional load-use cycle. Fresh manual-backed LSU,
+602/FP, cache, dual-dispatch, branch/reset/chip and recovery/coherence gates
+pass with the incoming trap factoring; the
+[dated integration record](CPU_CONTROL_PATH_REVIEW_2026-10-13.md#queued-lsu-generation-wrap-correction)
+gives rerun commands and counts. Full CI, X-randomization and release acceptance
+remain pending. The corrected-source CPU-only fit reaches 39.82 MHz at the
+limiting corner with all holds passing and zero unconstrained paths; it misses
+66 MHz. Earlier fits do not qualify the corrected RTL. Completion percentages are unchanged. See [AUD-91](AUDIT.md#aud-91--queued-lsu-wake-alias-2026-10-14).
+
+
+### Rejected store metadata movement trial (2026-10-14)
+
+The trial's `classified_store` applied the existing per-entry sequence before queue
+movement: kill an uncommitted doomed/recovered/young-faulted store, clear young
+when no passed load remains, apply matching retirement commit, then kill a
+committed store on write error. The sequence also applies to an incoming store
+on its queueing edge. Every physical slot is classified, including inactive
+slots and the duplicated old-last slot after a pop; occupancy does not gate
+classification. Pop/drop, push, count/capacity, request selection, authorization
+and data formatting remain unchanged. This adds no stage or cycle.
+
+Recorded: `OBJCACHE= make -C sim -j1 test-lsu-store-queue-order`, commit
+`b9f52ae8ef3b52159c341c7aa2ecaa565074da76` plus uncommitted changes,
+2026-10-14. The independent production-DUT oracle passes 386 edges,
+340 assertions and 24 FIFO-checked writes. Coverage includes simultaneous
+pop/push/added commit/older write error, generation kill/drop, both existing
+and incoming young cancellation, late integer data and FP single data.
+This unit profile is 32-bit 603e, four SQ slots, misalignment enabled.
+Fresh core LSU timing, 602/FP-double, split-memory, cache, dual dispatch,
+branch and recovery integration also pass with unchanged cycles; see the
+[dated batch record](CPU_CONTROL_PATH_REVIEW_2026-10-13.md).
+The matched SQ/pivot CPU-only fit reaches 39.70 MHz, below its 39.82 MHz
+corrected-source predecessor. All holds pass and paths remain constrained;
+the trial has no timing-gain claim. After the subsequent P1-only fit also
+missed the corrected-source best, this restructuring and the CQ pivot trial
+were removed byte-exactly. The original movement/classification order is
+restored; the independent store-order and P1 boundary tests are retained.
+Full release gates remain pending.

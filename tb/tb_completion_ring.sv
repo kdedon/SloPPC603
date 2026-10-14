@@ -34,7 +34,11 @@ module tb_completion_ring;
     .redirect_valid_i(dv),.redirect_all_i(da),.redirect_keep_pivot_i(dk),
     .redirect_pivot_i(pivot),.redirect_accepted_o(accepted),.redirect_kill_o(kills),
     .redirect_kill_generation_o(gens),.recovery_survivor_count_o(scount),
-    .recovery_survivor_packet_o(survivors),.recovery_survivor_tag_o(stags));
+    .recovery_survivor_packet_o(survivors),.recovery_survivor_tag_o(stags),
+    // Legacy oracle consumes compact survivors; optional metadata is unused.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .recovery_rename_o(), .recovery_remove_o()
+    /* verilator lint_on PINCONNECTEMPTY */);
   task automatic check(input bit ok,input string why);
     checks++; if(!ok)$fatal(1,"check%0d scenario%0d: %s",checks,scenarios,why);
   endtask

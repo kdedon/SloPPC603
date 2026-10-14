@@ -40,6 +40,7 @@ module ppc_lsu_pipe #(
   parameter bit STORE_QUEUE = 1'b0,
   parameter bit BASE_SNOOP = 1'b0,
   parameter bit BASE_WAIT = 1'b0,
+  parameter bit ENABLE_DATA_PAGE_PROJECTION = 1'b0,
   parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
   // 602: a doubleword FP access spends a cycle in P1 before its offer or
   // queueing, for 3:2 timing (602 UM Table 6-6).
@@ -101,6 +102,7 @@ module ppc_lsu_pipe #(
   input  logic req_ready_i,
   output logic req_write_o,
   output logic [31:0] req_addr_o,
+  output ppc_pkg::dtlb_projection_t data_page_projection_o,
   output logic [DMEM_BITS-1:0] req_wdata_o,
   output logic [DMEM_BITS/8-1:0] req_wstrb_o,
   // An older access may still fault. An unaccepted speculative request may
@@ -145,6 +147,194 @@ module ppc_lsu_pipe #(
 );
   import ppc_pkg::*;
 
+  // Memory adoption retains every uop field except the rotate mask and
+  // branch displacement: LOAD/STORE/ALIGNMENT never consume either in the
+  // serialized lane. FP accesses answer the FPU rather than being adopted.
+  // Keep source registers, the full immediate and sequencer/update metadata.
+  typedef struct packed {
+    alu_op_t op;
+    logic invert_a;
+    carry_in_t carry_in;
+    logic illegal;
+    logic [4:0] src_a;
+    logic [4:0] src_b;
+    logic [4:0] src_c;
+    logic [4:0] dst;
+    logic gpr_write;
+    logic mem_update;
+    logic zero_a;
+    logic use_imm;
+    logic [31:0] imm;
+    logic [4:0] shift;
+    special_op_t special_op;
+    fetch_fault_t fetch_fault;
+    esa_enable_t esa;
+    logic branch_aa;
+    logic branch_lk;
+    logic [4:0] branch_bo;
+    logic [4:0] branch_bi;
+    logic [9:0] spr;
+    logic [3:0] sr_index;
+    logic sr_indexed;
+    logic [2:0] cr_field;
+    logic [2:0] cr_source_field;
+    logic write_cr_fields;
+    logic [7:0] cr_mask;
+    logic write_cr_bit;
+    logic [4:0] cr_bit;
+    logic [4:0] cr_bit_a;
+    logic [4:0] cr_bit_b;
+    cr_logic_op_t cr_logic;
+    mem_size_t mem_size;
+    logic mem_signed;
+    logic mem_reverse;
+    logic mem_left;
+    logic [1:0] mem_bytes;
+    mem_seq_t mem_seq;
+    logic mem_reserve;
+    logic mem_conditional;
+    logic mem_external;
+    logic mem_skip;
+    logic seq_partial;
+    logic cache_probe;
+    logic block_zero;
+    cache_op_t cache_op;
+    logic privileged;
+    logic [16:0] alignment_dsisr;
+    logic read_ca;
+    logic read_so;
+    logic needs_flags;
+    logic write_xer;
+    logic write_ca;
+    logic write_ov_so;
+    logic write_cr_field;
+  } memory_uop_t;
+
+  /* verilator lint_off UNUSEDSIGNAL */  // omits rotate and branch fields
+  function automatic memory_uop_t memory_uop(input uop_t source);
+    memory_uop_t control;
+    control.op = source.op;
+    control.invert_a = source.invert_a;
+    control.carry_in = source.carry_in;
+    control.illegal = source.illegal;
+    control.src_a = source.src_a;
+    control.src_b = source.src_b;
+    control.src_c = source.src_c;
+    control.dst = source.dst;
+    control.gpr_write = source.gpr_write;
+    control.mem_update = source.mem_update;
+    control.zero_a = source.zero_a;
+    control.use_imm = source.use_imm;
+    control.imm = source.imm;
+    control.shift = source.shift;
+    control.special_op = source.special_op;
+    control.fetch_fault = source.fetch_fault;
+    control.esa = source.esa;
+    control.branch_aa = source.branch_aa;
+    control.branch_lk = source.branch_lk;
+    control.branch_bo = source.branch_bo;
+    control.branch_bi = source.branch_bi;
+    control.spr = source.spr;
+    control.sr_index = source.sr_index;
+    control.sr_indexed = source.sr_indexed;
+    control.cr_field = source.cr_field;
+    control.cr_source_field = source.cr_source_field;
+    control.write_cr_fields = source.write_cr_fields;
+    control.cr_mask = source.cr_mask;
+    control.write_cr_bit = source.write_cr_bit;
+    control.cr_bit = source.cr_bit;
+    control.cr_bit_a = source.cr_bit_a;
+    control.cr_bit_b = source.cr_bit_b;
+    control.cr_logic = source.cr_logic;
+    control.mem_size = source.mem_size;
+    control.mem_signed = source.mem_signed;
+    control.mem_reverse = source.mem_reverse;
+    control.mem_left = source.mem_left;
+    control.mem_bytes = source.mem_bytes;
+    control.mem_seq = source.mem_seq;
+    control.mem_reserve = source.mem_reserve;
+    control.mem_conditional = source.mem_conditional;
+    control.mem_external = source.mem_external;
+    control.mem_skip = source.mem_skip;
+    control.seq_partial = source.seq_partial;
+    control.cache_probe = source.cache_probe;
+    control.block_zero = source.block_zero;
+    control.cache_op = source.cache_op;
+    control.privileged = source.privileged;
+    control.alignment_dsisr = source.alignment_dsisr;
+    control.read_ca = source.read_ca;
+    control.read_so = source.read_so;
+    control.needs_flags = source.needs_flags;
+    control.write_xer = source.write_xer;
+    control.write_ca = source.write_ca;
+    control.write_ov_so = source.write_ov_so;
+    control.write_cr_field = source.write_cr_field;
+    return control;
+  endfunction
+
+  /* verilator lint_on UNUSEDSIGNAL */
+  function automatic uop_t adopted_uop(input memory_uop_t control);
+    uop_t restored;
+    restored = '0;
+    restored.op = control.op;
+    restored.invert_a = control.invert_a;
+    restored.carry_in = control.carry_in;
+    restored.illegal = control.illegal;
+    restored.src_a = control.src_a;
+    restored.src_b = control.src_b;
+    restored.src_c = control.src_c;
+    restored.dst = control.dst;
+    restored.gpr_write = control.gpr_write;
+    restored.mem_update = control.mem_update;
+    restored.zero_a = control.zero_a;
+    restored.use_imm = control.use_imm;
+    restored.imm = control.imm;
+    restored.shift = control.shift;
+    restored.special_op = control.special_op;
+    restored.fetch_fault = control.fetch_fault;
+    restored.esa = control.esa;
+    restored.branch_aa = control.branch_aa;
+    restored.branch_lk = control.branch_lk;
+    restored.branch_bo = control.branch_bo;
+    restored.branch_bi = control.branch_bi;
+    restored.spr = control.spr;
+    restored.sr_index = control.sr_index;
+    restored.sr_indexed = control.sr_indexed;
+    restored.cr_field = control.cr_field;
+    restored.cr_source_field = control.cr_source_field;
+    restored.write_cr_fields = control.write_cr_fields;
+    restored.cr_mask = control.cr_mask;
+    restored.write_cr_bit = control.write_cr_bit;
+    restored.cr_bit = control.cr_bit;
+    restored.cr_bit_a = control.cr_bit_a;
+    restored.cr_bit_b = control.cr_bit_b;
+    restored.cr_logic = control.cr_logic;
+    restored.mem_size = control.mem_size;
+    restored.mem_signed = control.mem_signed;
+    restored.mem_reverse = control.mem_reverse;
+    restored.mem_left = control.mem_left;
+    restored.mem_bytes = control.mem_bytes;
+    restored.mem_seq = control.mem_seq;
+    restored.mem_reserve = control.mem_reserve;
+    restored.mem_conditional = control.mem_conditional;
+    restored.mem_external = control.mem_external;
+    restored.mem_skip = control.mem_skip;
+    restored.seq_partial = control.seq_partial;
+    restored.cache_probe = control.cache_probe;
+    restored.block_zero = control.block_zero;
+    restored.cache_op = control.cache_op;
+    restored.privileged = control.privileged;
+    restored.alignment_dsisr = control.alignment_dsisr;
+    restored.read_ca = control.read_ca;
+    restored.read_so = control.read_so;
+    restored.needs_flags = control.needs_flags;
+    restored.write_xer = control.write_xer;
+    restored.write_ca = control.write_ca;
+    restored.write_ov_so = control.write_ov_so;
+    restored.write_cr_field = control.write_cr_field;
+    return restored;
+  endfunction
+
   typedef struct packed {
     logic killed;
     logic fast;
@@ -171,7 +361,7 @@ module ppc_lsu_pipe #(
     logic [31:0] ea, data, pc, insn;
     // XORed into the EA's low bits to form the access address.
     logic [2:0] munge;
-    uop_t uop;
+    memory_uop_t uop;
   } entry_t;
 
   entry_t p1_q [2], p2_q [2];
@@ -314,12 +504,10 @@ module ppc_lsu_pipe #(
   assign base_sum0 = wake_early_value_i + p1_head.offset;
   assign base_sum1 = wake1_early_value_i + p1_head.offset;
   assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
-  // A waiting head is neither fast nor offered until its base arrives, so its
-  // registered EA stands in. The sum is selected on the tag compare alone:
-  // the wake's valid, which a recovery's cancel reaches late, matters only
-  // through head_base_ready.
-  assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_match0) ? base_sum0 :
-                   (BASE_SNOOP && p1_head.base_wait && head_match1) ? base_sum1 : p1_head.ea;
+  // Inactive producer metadata can alias a live owner after generation wrap.
+  // Select only a valid wake, retaining port-zero priority when both arrive.
+  assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :
+                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 : p1_head.ea;
   assign head_fast = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.fast :
     (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
      !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
@@ -425,6 +613,55 @@ module ppc_lsu_pipe #(
   assign req_wstrb_o = sq_offer ? sq_head.wstrb : p1_wstrb;
   assign req_bytes_o = sq_offer ? sq_head.bytes : p1_nbytes;
   assign req_fp_o = sq_offer ? sq_head.fp : p1_head.fp;
+  // BEGIN LSU DATA PAGE PROJECTION: hints have no request side effects.
+  // Word alignment/endian munge changes only page-offset bits.
+  generate
+    if (ENABLE_DATA_PAGE_PROJECTION) begin : g_data_page_projection
+      assign data_page_projection_o.page[0] = p1_head.ea[31:12];
+      assign data_page_projection_o.page[1] = base_sum0[31:12];
+      assign data_page_projection_o.page[2] = base_sum1[31:12];
+      assign data_page_projection_o.page[3] = sq_head.addr[31:12];
+      always_comb begin
+        data_page_projection_o.use_lookup = 1'b0;
+        data_page_projection_o.source = 2'd0;
+        case (sq_offer)
+          1'b1: begin
+            data_page_projection_o.use_lookup = 1'b1;
+            data_page_projection_o.source = 2'd3;
+          end
+          1'b0: begin
+            case (BASE_SNOOP && p1_head.base_wait && head_base0)
+              1'b1: begin
+                data_page_projection_o.use_lookup = 1'b1;
+                data_page_projection_o.source = 2'd1;
+              end
+              1'b0: begin
+                case (BASE_SNOOP && p1_head.base_wait && head_base1)
+                  1'b1: begin
+                    data_page_projection_o.use_lookup = 1'b1;
+                    data_page_projection_o.source = 2'd2;
+                  end
+                  1'b0: data_page_projection_o.use_lookup = 1'b1;
+                  default: begin end
+                endcase
+              end
+              default: begin end
+            endcase
+          end
+          default: begin end
+        endcase
+      end
+    end else begin : g_no_data_page_projection
+      assign data_page_projection_o = '0;
+    end
+  endgenerate
+  // END LSU DATA PAGE PROJECTION
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (ENABLE_DATA_PAGE_PROJECTION && data_page_projection_o.use_lookup)
+      assert (data_page_projection_o.page[data_page_projection_o.source] === req_addr_o[31:12])
+        else $error("LSU projected page does not own the actual request address");
+  // synthesis translate_on
   logic _unused_sq_young;
   assign _unused_sq_young = sq_head.young;
   // The two beats of one doubleword do not make each other speculative.
@@ -503,7 +740,7 @@ module ppc_lsu_pipe #(
   assign _unused_entries = ^{q_q, adopted};
   always_comb begin
     adopted = p2_adopt ? p2_head : redo_adopt ? redo_q : p1_head;
-    adopt_uop_o = adopted.uop;
+    adopt_uop_o = adopted_uop(adopted.uop);
     adopt_producer_o = adopted.producer;
     adopt_pc_o = adopted.pc;
     adopt_insn_o = adopted.insn;
@@ -566,7 +803,7 @@ module ppc_lsu_pipe #(
     incoming.offset = offset_i;
     incoming.pc = pc_i;
     incoming.insn = insn_i;
-    incoming.uop = uop_i;
+    incoming.uop = memory_uop(uop_i);
     if (incoming.base_wait) incoming.fast = 1'b0;
     else if (BASE_ANY && base_snoop_i && int_trap(uop_i.mem_size, ea_i[11:0], dr_i)) begin
       incoming.fast = 1'b0;
@@ -583,6 +820,19 @@ module ppc_lsu_pipe #(
   logic [31:0] base_ea [3];
   logic data_hit [3], data_late [3], src_launch [3], src_kill [3];
   logic [31:0] data_value [3];
+  logic [31:0] incoming_wake_ea0, incoming_wake_ea1;
+  logic incoming_trap0, incoming_trap1, incoming_fast0, incoming_fast1;
+  // Form incoming alignment/page predicates before the late wake identity select.
+  // Full-width expressions preserve arithmetic X/Z poisoning from high bits;
+  // only low12/low2 are used, so binary synthesis can prune high adder bits.
+  logic unused_incoming_sum_upper;
+  assign unused_incoming_sum_upper = ^{incoming_wake_ea0[31:12],incoming_wake_ea1[31:12]};
+  assign incoming_wake_ea0 = wake_i.value + offset_i;
+  assign incoming_wake_ea1 = wake1_i.value + offset_i;
+  assign incoming_trap0 = int_trap(uop_i.mem_size, incoming_wake_ea0[11:0], dr_i);
+  assign incoming_trap1 = int_trap(uop_i.mem_size, incoming_wake_ea1[11:0], dr_i);
+  assign incoming_fast0 = int_fast(uop_i.mem_size, incoming_wake_ea0[1:0]) && !incoming_trap0;
+  assign incoming_fast1 = int_fast(uop_i.mem_size, incoming_wake_ea1[1:0]) && !incoming_trap1;
   always_comb begin
     base_src[0] = p1_q[0];
     base_src[1] = p1_q[1];
@@ -607,6 +857,18 @@ module ppc_lsu_pipe #(
       base_ea[s] = (hit0 ? wake_i.value : wake1_i.value) + base_src[s].offset;
       base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
       base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
+      if (s == 2) begin
+        // hit0 retains accepted-valid/tag/generation priority over hit1.
+        // Unknown identity controls use the original merged EA predicates.
+        case (hit0)
+          1'b0: begin base_trap[s] = incoming_trap1; base_fast[s] = incoming_fast1; end
+          1'b1: begin base_trap[s] = incoming_trap0; base_fast[s] = incoming_fast0; end
+          default: begin
+            base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
+            base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
+          end
+        endcase
+      end
     end
   end
 
@@ -866,6 +1128,24 @@ module ppc_lsu_pipe #(
     (store_done_q && (queue_head_i == store_done_index_q));
 
   // synthesis translate_off
+  initial begin
+    assert ($bits(memory_uop_t) == $bits(uop_t) - 64)
+      else $error("memory uop descriptor width changed");
+  end
+  always @(posedge clk_i)
+    if (rst_ni && dispatch_valid_i && dispatch_ready_o && !fp_i) begin
+      assert (uop_i.mask == 32'b0 && uop_i.branch_disp == 32'b0)
+        else $error("memory dispatch carries rotate or branch metadata");
+      assert (adopted_uop(memory_uop(uop_i)) == uop_i)
+        else $error("memory descriptor changed dispatch metadata");
+    end
+  always @(posedge clk_i)
+    if (rst_ni && adopt_valid_o)
+      assert (!adopted.fp &&
+              ((adopt_uop_o.special_op == SPECIAL_LOAD) ||
+               (adopt_uop_o.special_op == SPECIAL_STORE) ||
+               (adopt_uop_o.special_op == SPECIAL_ALIGNMENT)))
+        else $error("nonmemory instruction reached compact memory adoption");
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     req_valid_o && !req_ready_i && !req_spec_o |=>
       req_valid_o && $stable({req_write_o, req_addr_o, req_wdata_o, req_wstrb_o}))
@@ -896,8 +1176,9 @@ module ppc_lsu_pipe #(
         (p1_check || offer))
       assert (0) else $error("waiting head checked or offered without its base");
   always @(posedge clk_i)
-    if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && head_base1 && head_match0)
-      assert (head_base0) else $error("waiting head's base selected from an invalid wake");
+    if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && (head_base0 || head_base1))
+      assert (head_ea === (head_base0 ? base_sum0 : base_sum1))
+        else $error("waiting head did not select the valid wake's base");
   // +LSU_STATS reports store-queue use at the end of simulation.
   int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,
       stat_redo = 0, stat_cancelled = 0;

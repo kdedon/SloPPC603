@@ -68,7 +68,11 @@ module tb_completion_flags;
     .redirect_kill_generation_o(redirect_kill_generation),
     .recovery_survivor_count_o(survivor_count),
     .recovery_survivor_packet_o(survivor_packets),
-    .recovery_survivor_tag_o(survivor_tags)
+    .recovery_survivor_tag_o(survivor_tags),
+    // Legacy oracle consumes compact survivors; optional metadata is unused.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .recovery_rename_o(), .recovery_remove_o()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
 
   logic flags_waiter, flags_handoff;

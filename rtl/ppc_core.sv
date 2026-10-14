@@ -50,6 +50,8 @@ module ppc_core #(
   parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
   // Cache-block instructions, lwarx/stwcx. and sync go to a data cache.
   parameter bit ENABLE_DATA_CACHE = 1'b0,
+  // Coherent producer/consumer wiring is selected by the translated core.
+  parameter bit ENABLE_DATA_PAGE_PROJECTION = 1'b0,
   // lhbrx/lwbrx/sthbrx/stwbrx.
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   // lmw/stmw/lswi/lswx/stswi/stswx, cracked at dispatch.
@@ -210,6 +212,7 @@ module ppc_core #(
   input logic dmem_req_ready_i,
   output logic dmem_req_write_o,
   output logic [31:0] dmem_req_addr_o,
+  output ppc_pkg::dtlb_projection_t data_page_projection_o,
   output logic [DMEM_BITS-1:0] dmem_req_wdata_o,
   output logic [DMEM_BITS/8-1:0] dmem_req_wstrb_o,
   // Cache-block probe: translate and check permission, transfer nothing.
@@ -304,6 +307,7 @@ module ppc_core #(
   wake_packet_t wake, cq_wake;
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
+  logic cq_result_valid, cq_result1_valid, cq_iu_port1_offer;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
   logic special_port1_ok, special_late;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
@@ -320,6 +324,7 @@ module ppc_core #(
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
+  ppc_pkg::dtlb_projection_t lsu_page_projection;
   logic [DMEM_BITS-1:0] lsu_req_wdata;
   logic [DMEM_BITS/8-1:0] lsu_req_wstrb;
   result_packet_t lsu_result;
@@ -481,6 +486,8 @@ module ppc_core #(
   logic [$clog2(CQ_DEPTH+1)-1:0] recovery_count;
   retire_packet_t recovery_packets [CQ_DEPTH];
   completion_tag_t recovery_tags [CQ_DEPTH];
+  rename_recovery_entry_t recovery_rename [CQ_DEPTH];
+  logic [1:0] recovery_remove;
   rename_tag_t alloc_tag;
   logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
   logic [31:0] special_early_value, wake_early_value, wake1_early_value;
@@ -650,9 +657,9 @@ module ppc_core #(
     .stop_i(fault_pending || frontend_fence || power_stop || (fetch_hold_q && !frontend_clear)),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q || fstop_q || rel_fold),
-    .redirect_target_i(rel_fold ? fold_target : frontend_target),
+    .redirect_target_i(rel_fold ? fold0_target : frontend_target),
     .early_i(early_q || bs_now || rel_fold), .early_ok_i(bs_now || early_ok || rel_fold),
-    .early_target_i(bs_now ? bs_alt_q : rel_fold ? fold_target : early_target_q),
+    .early_target_i(bs_now ? bs_alt_q : rel_fold ? fold0_target : early_target_q),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
@@ -780,11 +787,11 @@ module ppc_core #(
   // A branch on a CR bit that is final, its CTR known, is resolved instead
   // of predicted (UM 6.4.1.1).
   function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok,
-                                 logic cr_final, logic [31:0] crv, logic ctr_one);
+                                 logic cr_final, logic cr_bit, logic ctr_one);
     logic predict, bo_ok, xl_ok;
     predict = (p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]);
     if (!p.insn[25] && cr_final)
-      predict = (crv[5'd31 - p.insn[20:16]] == p.insn[24]) &&
+      predict = (cr_bit == p.insn[24]) &&
                 (p.insn[23] || (ctr_one == p.insn[22]));
     // On the CTR alone, known when queued: resolved.
     if (p.insn[25] && !p.insn[23])
@@ -827,6 +834,7 @@ module ppc_core #(
   // lr_pending_q and ctr_pending_q until they retire.
   logic [2:0] lr_iq_q, ctr_iq_q, lk_iq_q;
   logic [1:0] push_writes, push1_writes, pop_writes, pop1_writes;
+  logic [2:0] push_lr_ctr, push1_lr_ctr;
   logic lr_free, ctr_free, lk_free, push_lk, push1_lk, pop_lk, pop1_lk;
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q && !lkp_q;
   // Linking branches queued or uncompleted.
@@ -898,7 +906,7 @@ module ppc_core #(
   // starts no earlier than the resolution.
   /* verilator lint_off UNUSEDSIGNAL */
   function automatic logic bc_not_taken(fetch_packet_t p);
-    return (p.insn[31:26] == 6'd16) && !folds(p, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0);
+    return (p.insn[31:26] == 6'd16) && !folds(p, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0);
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   assign wait0_cr = crb0 && cr_unres;
@@ -907,19 +915,35 @@ module ppc_core #(
   assign wait0 = waits(queued, lr_ok, lk_free, ctr_free, ctr_fe_ok);
   // The CR also becomes final as the last owner's result arrives, which
   // resolves a predicted branch on it in the same cycle (UM Figure 6-5).
-  logic [31:0] cr_now;
+  // Quartus 17 resolves packet members only after their declaration.
+  fetch_packet_t queued1;
+  logic cr0_now, cr1_now;
+  logic [3:0] owner_cr0;
+  // Project the owner's CR merge onto the requested BI before selection.
+  // Capture falls back to committed CR, not a previously captured owner.
+  function automatic logic selected_cr_bit(input logic [4:0] bi,
+                                            input logic capture,
+                                            input logic field_valid,
+                                            input logic [2:0] field,
+                                            input logic [31:0] committed,
+                                            input logic [31:0] previous,
+                                            input logic [3:0] incoming);
+    return capture ?
+      ((field_valid && (field == bi[4:2])) ? incoming[2'd3 - bi[1:0]] :
+                                           committed[5'd31 - bi]) :
+      previous[5'd31 - bi];
+  endfunction
   assign cr_final = (!cr_dep && !bs_busy) ||
     (bu_cr_capture && !flags_waiter && (crw_left_q == '0) && (bs_valid_q || !bs_busy));
-  assign cr_now = bu_cr_capture ? bu_cr_d : bu_cr;
-  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free, cr_final, cr_now, ctr_one) &&
+  assign owner_cr0 = sru_cr_offer ? sru_result.cr0 : iu_result.cr0;
+  assign cr0_now = selected_cr_bit(queued.insn[20:16], bu_cr_capture,
+    owner_crf_valid_q, owner_crf_q, cr, bu_cr, owner_cr0);
+  assign cr1_now = selected_cr_bit(queued1.insn[20:16], bu_cr_capture,
+    owner_crf_valid_q, owner_crf_q, cr, bu_cr, owner_cr0);
+  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free, cr_final, cr0_now, ctr_one) &&
     !wait0;
   // Lane 1: the second FD word.
-  fetch_packet_t queued1;
-  logic [31:0] fold_pc;
-  // The LK bit does not change the target.
-  /* verilator lint_off UNUSEDSIGNAL */
-  logic [31:0] fold_insn;
-  /* verilator lint_on UNUSEDSIGNAL */
+  logic [31:0] fold0_target, fold1_target;
   uop_t push_uop1;
   logic fold_predict1, iq_push0, iq_push1;
   logic [3:0] push_branch1;
@@ -971,18 +995,27 @@ module ppc_core #(
           ctr_free && !push_writes[0], ctr_fe_ok && !push_writes[0]);
   assign fold_predict1 = (FETCH_WIDTH == 2) && !wait0 && !wait1 &&
     folds(queued1, trace_mode, lr_ok && !push_writes[1], ctr_free && !push_writes[0],
-          cr_final && !crw0, cr_now, ctr_one);
+          cr_final && !crw0, cr1_now, ctr_one);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
   assign iq_push1 = iq_push0 && fd1_valid && !fold_predict && !cr_hold1;
-  assign fold_pc = fold_predict ? queued.pc : queued1.pc;
-  assign fold_insn = fold_predict ? queued.insn : queued1.insn;
-  assign fold_target = (fold_insn[31:26] == 6'd19) ?
-    {(fold_insn[10] ? ctr_arch : lr_fold[31:2]), 2'b00} :
-    (fold_insn[1] ? 32'b0 : fold_pc) +
-    ((fold_insn[31:26] == 6'd18) ?
-      {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
-      {{16{fold_insn[15]}}, fold_insn[15:2], 2'b00});
+  // Form both targets before the late CR decision selects the fetch lane.
+  /* verilator lint_off UNUSEDSIGNAL */  // target formation uses only branch fields
+  function automatic logic [31:0] folded_target(input logic [31:0] pc,
+                                                 input logic [31:0] insn,
+                                                 input logic [31:2] lr_target,
+                                                 input logic [31:2] ctr_target);
+    return (insn[31:26] == 6'd19) ?
+      {(insn[10] ? ctr_target : lr_target), 2'b00} :
+      (insn[1] ? 32'b0 : pc) +
+      ((insn[31:26] == 6'd18) ?
+        {{6{insn[25]}}, insn[25:2], 2'b00} :
+        {{16{insn[15]}}, insn[15:2], 2'b00});
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign fold0_target = folded_target(queued.pc, queued.insn, lr_fold[31:2], ctr_arch);
+  assign fold1_target = folded_target(queued1.pc, queued1.insn, lr_fold[31:2], ctr_arch);
+  assign fold_target = fold_predict ? fold0_target : fold1_target;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       fold_q <= 1'b0;
@@ -1009,7 +1042,20 @@ module ppc_core #(
   logic [IQ_COUNT_WIDTH-1:0] iq_pops, stop_left_q;
   assign iq_pops = IQ_COUNT_WIDTH'(dispatch && iq_pop) + IQ_COUNT_WIDTH'(dispatch1);
   assign fetch_stop = ((iq_push0 && wait0) || (iq_in1 && wait1)) && !frontend_clear;
-  assign stop_resume = {fd_packet.pc[31:2] + (iq_push1 ? 30'd2 : 30'd1), 2'b00};
+  logic [29:0] stop_word1, stop_word2;
+  // Arithmetic depends only on the current packet PC; the late pair push
+  // selects the completed word increment, preserving 30-bit modular wrap.
+  assign stop_word1 = fd_packet.pc[31:2] + 30'd1;
+  assign stop_word2 = fd_packet.pc[31:2] + 30'd2;
+  always_comb begin
+    case (iq_push1)
+      1'b0: stop_resume = {stop_word1, 2'b00};
+      1'b1: stop_resume = {stop_word2, 2'b00};
+      // A ternary X/Z increment poisons addition more broadly than merging
+      // the completed sums. Preserve the original four-state expression.
+      default: stop_resume = {fd_packet.pc[31:2] + (iq_push1 ? 30'd2 : 30'd1), 2'b00};
+    endcase
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) begin
       fstop_q <= 1'b0;
@@ -1028,15 +1074,36 @@ module ppc_core #(
     end
   end
   // The youngest waiting branch, for the CTR release below.
-  logic [31:0] stop_pc_q;
+  logic [31:0] stop_target_q, stop_target0, stop_target1;
+  logic stop_lane1;
+  // Capture the completed BC target with its stopped instruction. Release
+  // selects registered targets, without putting iq_pops ahead of arithmetic.
+  /* verilator lint_off UNUSEDSIGNAL */  // BC uses only AA and displacement
+  function automatic logic [31:0] stopped_bc_target(input logic [31:0] pc,
+                                                     input logic [31:0] insn);
+    return (insn[1] ? 32'b0 : pc) +
+      {{16{insn[15]}}, insn[15:2], 2'b00};
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign stop_lane1 = iq_in1 && wait1;
+  assign stop_target0 = stopped_bc_target(queued.pc, queued.insn);
+  assign stop_target1 = stopped_bc_target(queued1.pc, queued1.insn);
   // A CTR-only bc ignores BO[1] and BI.
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] stop_insn_q;
   /* verilator lint_on UNUSEDSIGNAL */
   always_ff @(posedge clk_i)
     if (fetch_stop) begin
-      stop_pc_q <= (iq_in1 && wait1) ? queued1.pc : queued.pc;
-      stop_insn_q <= (iq_in1 && wait1) ? queued1.insn : queued.insn;
+      case (stop_lane1)
+        1'b0: stop_target_q <= stop_target0;
+        1'b1: stop_target_q <= stop_target1;
+        // Merge operands before adding when the selector is unknown, exactly
+        // as the original separate stopped PC/instruction captures did.
+        default: stop_target_q <= stopped_bc_target(
+          stop_lane1 ? queued1.pc : queued.pc,
+          stop_lane1 ? queued1.insn : queued.insn);
+      endcase
+      stop_insn_q <= stop_lane1 ? queued1.insn : queued.insn;
     end
   // A bc on the CTR alone waiting behind an mtctr executes once the mtctr
   // has retired and leaves CTR final (UM 6.4.1.1): fetch restarts after it,
@@ -1048,8 +1115,7 @@ module ppc_core #(
     (ctr_iq_q == 3'd1) && !ctr_pending_q && !cshadow_valid_q &&
     (iq_count == stop_left_q) && (iq_pops < stop_left_q);
   assign ctr_rel_taken = ctr_rel && ((ctr != 32'd1) ^ stop_insn_q[22]);
-  assign ctr_rel_target = (stop_insn_q[1] ? 32'b0 : stop_pc_q) +
-    {{16{stop_insn_q[15]}}, stop_insn_q[15:2], 2'b00};
+  assign ctr_rel_target = stop_target_q;
   function automatic logic [IQ_COUNT_WIDTH-1:0] left_after(logic [IQ_COUNT_WIDTH-1:0] left,
                                                           logic [IQ_COUNT_WIDTH-1:0] pops);
     return (left > pops) ? left - pops : '0;
@@ -1131,12 +1197,12 @@ module ppc_core #(
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq3;
   /* verilator lint_on UNUSEDSIGNAL */
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
-  // An entry keeps a rotate mask and a branch displacement as their forms;
-  // the word holds the values.
+  // An entry keeps immediate, rotate-mask and branch-displacement forms;
+  // the word holds their values.
   /* verilator lint_off UNUSEDSIGNAL */  // each reads only the fields it needs
   function automatic uop_t iq_pack(uop_t u, logic [31:0] insn);
     uop_t q;
-    q = u;
+    q = iq_pack_imm(u, insn[31:26], insn[10:1]);
     q.mask = {31'b0, (insn[31:26] == 6'd20) || (insn[31:26] == 6'd21) ||
                      (insn[31:26] == 6'd23)};
     q.branch_disp = {30'b0, (insn[31:26] == 6'd16) && valid_bo(insn[25:21]),
@@ -1145,7 +1211,7 @@ module ppc_core #(
   endfunction
   function automatic uop_t iq_unpack(uop_t u, logic [31:0] insn);
     uop_t q;
-    q = u;
+    q = iq_unpack_imm(u, insn[15:0]);
     q.mask = u.mask[0] ? make_rotate_mask(insn[10:6], insn[5:1]) : 32'b0;
     q.branch_disp = u.branch_disp[0] ? {{6{insn[25]}}, insn[25:2], 2'b0} :
                     u.branch_disp[1] ? {{16{insn[15]}}, insn[15:2], 2'b0} : 32'b0;
@@ -1197,19 +1263,19 @@ module ppc_core #(
   // as it is queued is resolved and retired the same way (UM 6.4.1.1,
   // 6.3.1): it takes no dispatch slot. Returns {resolved, taken}.
   function automatic logic [1:0] resolved(fetch_packet_t p, logic lr_rdy, logic cr_fin,
-                                          logic [31:0] crv);
+                                          logic cr_bit);
     logic bc, bclr;
     bc = p.insn[31:26] == 6'd16;
     bclr = (p.insn[31:26] == 6'd19) && (p.insn[10:1] == 10'd16) &&
            (p.insn[15:11] == 5'd0) && lr_rdy;
     return {(p.fault == FETCH_OK) && (bc || bclr) && !p.insn[0] && p.insn[23] &&
               (p.insn[25] || cr_fin),
-            p.insn[25] || (crv[5'd31 - p.insn[20:16]] == p.insn[24])};
+            p.insn[25] || (cr_bit == p.insn[24])};
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   logic [1:0] res0, res1;
-  assign res0 = resolved(queued, lr_ok, cr_final, cr_now);
-  assign res1 = resolved(queued1, lr_ok && !push_writes[1], cr_final && !crw0, cr_now);
+  assign res0 = resolved(queued, lr_ok, cr_final, cr0_now);
+  assign res1 = resolved(queued1, lr_ok && !push_writes[1], cr_final && !crw0, cr1_now);
   // A taken one folds. Beside one not taken, the second word moves to the
   // first lane and counts both removals.
   assign push_remove0 = BRANCH_REMOVAL && !trace_mode && (fetch_removed_q != 2'd3) &&
@@ -1320,12 +1386,26 @@ module ppc_core #(
   end
   // Later micro-ops of a cracked instruction carry no count.
   assign iq_rb_first = seq_active ? 2'd0 : iq_rb;
-  assign push_writes = lr_ctr_writes(push_uop);
-  assign push1_writes = lr_ctr_writes(push_uop1);
+  assign push_lr_ctr = fetch_lr_ctr_projection(queued.insn);
+  assign push1_lr_ctr = fetch_lr_ctr_projection(queued1.insn);
+  assign push_writes = push_lr_ctr[2:1];
+  assign push1_writes = push1_lr_ctr[2:1];
   assign pop_writes = lr_ctr_writes(iq_uop);
   assign pop1_writes = lr_ctr_writes(dq1_uop);
-  assign push_lk = push_writes[1] && (push_uop.special_op != SPECIAL_MTSPR);
-  assign push1_lk = push1_writes[1] && (push_uop1.special_op != SPECIAL_MTSPR);
+  assign push_lk = push_lr_ctr[0];
+  assign push1_lk = push1_lr_ctr[0];
+  // synthesis translate_off
+  always @(posedge clk_i) if (rst_ni) begin
+    if (fd_valid)
+      assert (push_lr_ctr == {lr_ctr_writes(push_uop),
+        (|(lr_ctr_writes(push_uop) & 2'b10)) && push_uop.special_op != SPECIAL_MTSPR})
+        else $error("raw frontend LR/CTR projection differs from decoder");
+    if (fd1_valid)
+      assert (push1_lr_ctr == {lr_ctr_writes(push_uop1),
+        (|(lr_ctr_writes(push_uop1) & 2'b10)) && push_uop1.special_op != SPECIAL_MTSPR})
+        else $error("raw second-word LR/CTR projection differs from decoder");
+  end
+  // synthesis translate_on
   assign pop_lk = pop_writes[1] && (iq_uop.special_op != SPECIAL_MTSPR);
   assign pop1_lk = pop1_writes[1] && (dq1_uop.special_op != SPECIAL_MTSPR);
   always_ff @(posedge clk_i) begin
@@ -1666,7 +1746,7 @@ module ppc_core #(
   end
   // A predicted branch takes its static prediction (UM 6.4.1.2); one that
   // waited at fetch was not folded.
-  assign bu_pred = folds(iq_head, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0);
+  assign bu_pred = folds(iq_head, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0);
   assign bu_taken = bu_spec ? bu_pred :
     ((uop.special_op == SPECIAL_B) || (bu_ctr_ok && bu_cond_ok));
   // Speculative branch (UM 6.4.1.2): a branch whose CR producer has not
@@ -1695,10 +1775,15 @@ module ppc_core #(
   logic [4:0] bs_bi_q;
   logic [31:0] bs_cr;
   logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit;
+  logic bs_incoming_bit;
   assign bs_cr_ready = bs_owner_done_q ||
     (flags_busy && bu_cr_valid_q && (flags_owner == bs_owner_q));
   assign bs_cr = bs_owner_done_q ? cr : bu_cr_q;
   assign bs_taken = bs_ctr_ok_q && (bs_cr[5'd31 - bs_bi_q] == bs_bo3_q);
+  // Project bu_cr_d even when capture is cancelled: bs_cap_offer uses
+  // offers before cancellation; the other consumers retain capture gates.
+  assign bs_incoming_bit = selected_cr_bit(bs_bi_q, 1'b1,
+    owner_crf_valid_q, owner_crf_q, cr, cr, owner_cr0);
   assign bs_resolve = bs_valid_q && bs_cr_ready;
   assign bs_busy = bs_valid_q || bs_miss_q || bs_fix_q;
   // An older branch still waits on CR: predicted, or queued while its CR
@@ -1736,17 +1821,17 @@ module ppc_core #(
   // result off the retirement path.
   assign bs_early_miss = BS_EARLY && bs_valid_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) &&
-    ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) != bs_pred_q);
+    ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) != bs_pred_q);
   // An anchored branch whose owner's CR arrives matching the prediction
   // is resolved; a held branch released by that CR may replace it.
   assign bs_cap_hit = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
-    ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) == bs_pred_q);
+    ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) == bs_pred_q);
   // An instruction behind the branch may complete in its resolve cycle
   // (UM 6.6.1.3, Figure 6-5).
   assign bs_cap_offer = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready &&
     (sru_cr_offer || iu_cr_offer) && (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
-    ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) == bs_pred_q);
+    ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) == bs_pred_q);
   assign bs_young_hold = bs_anch_q && ((bs_valid_q && !bs_hit && !bs_cap_offer) || bs_miss_q);
   assign bs_hold = (bs_valid_q && !bs_anch_q && !bs_hit && (retire_producer == bs_tag_q)) ||
     (bs_young_hold && bs_anch_done_q) || bs_redirect_q;
@@ -2150,7 +2235,7 @@ module ppc_core #(
     .write1_value_i(gpr_port1_value),
     .ready_o(gpr_ready)
   );
-  ppc_rename rename (
+  ppc_rename #(.USE_UNSHIFTED_RECOVERY(1'b1)) rename (
     .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
     .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
@@ -2188,7 +2273,8 @@ module ppc_core #(
     .release2_i(commit && retire_o.update_owned), .release2_reg_i(retire_o.update_gpr),
     .release2_tag_i(retire_o.update_tag), .release2_producer_i(retire_producer),
     .recovery_i(recovery_accepted), .recovery_survivor_count_i(recovery_count),
-    .recovery_survivor_packet_i(recovery_packets), .recovery_survivor_tag_i(recovery_tags)
+    .recovery_survivor_packet_i(recovery_packets), .recovery_survivor_tag_i(recovery_tags),
+    .recovery_rename_i(recovery_rename), .recovery_remove_i(recovery_remove)
   );
   always_comb begin
     operand_a = src_a;
@@ -2466,12 +2552,20 @@ module ppc_core #(
   assign lsu_port0 = lsu_result_offer && !lsu_result_store;
   assign result_valid = (lsu_result_valid && !lsu_result_store) ||
     (!lsu_port0 && (special_result_valid || (iu_result_valid && !special_result_select)));
+  // Retain the cancel-qualified signal for stage/event observations.
+  logic _unused_result_valid;
+  assign _unused_result_valid = result_valid;
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
   // Integer work overlapping a plain load or store waits one cycle when both
   // finish together.
   // A pipelined access result goes first; the lane never has one then.
+  // CQ checks the same accepted exact-generation recovery kill itself.
+  // Its IU/SRU candidate validity need not traverse the unit's cancel loop.
+  // Actual unit handshakes and all payload/owner selections stay unchanged.
+  assign cq_result_valid = (lsu_result_valid && !lsu_result_store) ||
+    (!lsu_port0 && (special_result_valid || (iu_result_offer && !special_result_select)));
   assign result = lsu_port0 ? lsu_result :
                   special_result_select ? special_result : iu_result;
   // The SRU has its own result bus (UM 6.3.3): a special result that meets
@@ -2498,6 +2592,11 @@ module ppc_core #(
   // second result's identity and value.
   assign result1 = sru_result_offer ? sru_result : special_port1_sel ? special_result : iu_result;
   assign result1_offer = sru_result_offer || iu_result_offer || special_port1;
+  // This is the existing IU second-port ownership condition using its raw
+  // offer. Do not use result1_offer: it also includes IU offers on port 0.
+  assign cq_iu_port1_offer = ENABLE_LSU_PIPE && iu_result_offer && lsu_port0 &&
+                            !special_result_select && !sru_result_offer;
+  assign cq_result1_valid = sru_result_offer || cq_iu_port1_offer || special_port1;
   // synthesis translate_off
   always @(posedge clk_i)
     if (rst_ni && special_port1_sel)
@@ -2636,7 +2735,7 @@ module ppc_core #(
   // same way, and the unit performs its access.
   assign fp_uop = (ENABLE_FPU && !trace_mode && !fp_replay_q && !bu_branch &&
     !dispatch_pre.illegal && (dispatch_pre.special_op == SPECIAL_FPU) &&
-    ((iq_head.insn[31:26] == 6'd59) || (iq_head.insn[31:26] == 6'd63))) || fp_mem_pipe;
+    (iq_pair.unit == UNIT_FPU)) || fp_mem_pipe;
   assign fp_mem_pipe = ENABLE_LSU_PIPE && dispatch_fp_mem_plain && !bu_branch &&
     !dispatch_pre.illegal && (dispatch_pre.special_op == SPECIAL_FPU);
   // Its sources are committed, and a load waits for older FP work that can
@@ -2699,14 +2798,15 @@ module ppc_core #(
   assign dispatch_fp_mem_plain = ENABLE_FPU && !trace_mode && !fp_replay_q &&
     msr[MSR_FP] && !uop.illegal && (iq_head.fault == FETCH_OK) &&
     (uop.special_op == SPECIAL_FPU) && (ENABLE_LSU_PIPE || !uop.mem_update) &&
-    (iq_head.insn[31:26] != 6'd59) && (iq_head.insn[31:26] != 6'd63) &&
-    ((iq_head.insn[31:26] != 6'd31) || iq_head.insn[10]);
-  assign mem_sources_committed = (uop.special_op == SPECIAL_FPU) ?
-    (((iq_head.insn[20:16] == 5'd0) || !gpr_mapped[uop.src_a]) &&
-     ((iq_head.insn[31:26] != 6'd31) || !gpr_mapped[uop.src_b])) :
-    ((uop.zero_a || !gpr_mapped[uop.src_a]) &&
-     (uop.use_imm || !gpr_mapped[uop.src_b]) &&
-     ((uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]));
+    (iq_pair.unit == UNIT_LSU) && (uop.use_imm || iq_head.insn[10]);
+  /* verilator lint_off UNUSEDSIGNAL */  // reads source-use metadata only
+  function automatic logic sources_committed(uop_t u, logic [31:0] mapped);
+    return (u.zero_a || !mapped[u.src_a]) &&
+           (u.use_imm || !mapped[u.src_b]) &&
+           ((u.special_op != SPECIAL_STORE) || !mapped[u.src_c]);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign mem_sources_committed = sources_committed(uop, gpr_mapped);
   // The unit takes its base registers from rename, including a value written
   // this cycle (UM 6.3.3.1); store data may follow later.
   assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
@@ -2744,12 +2844,7 @@ module ppc_core #(
     if (dispatch_uop.gpr_write) mapped[dispatch_uop.dst] = 1'b1;
     next_sources_committed = ENABLE_LSU_PIPE && iq_peek_valid && iq_pop &&
       !dispatch_uop.mem_update && (iq_peek_head.fault == FETCH_OK) &&
-      ((iq_peek_uop.special_op == SPECIAL_FPU) ?
-       (((iq_peek_head.insn[20:16] == 5'd0) || !mapped[iq_peek_head.insn[20:16]]) &&
-        ((iq_peek_head.insn[31:26] != 6'd31) || !mapped[iq_peek_head.insn[15:11]])) :
-       ((iq_peek_uop.zero_a || !mapped[iq_peek_uop.src_a]) &&
-        (iq_peek_uop.use_imm || !mapped[iq_peek_uop.src_b]) &&
-        ((iq_peek_uop.special_op != SPECIAL_STORE) || !mapped[iq_peek_uop.src_c])));
+      sources_committed(iq_peek_uop, mapped);
   end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) mem_sources_committed_q <= 1'b0;
@@ -2762,7 +2857,7 @@ module ppc_core #(
   // the special lane busy, so plain accesses wait for FP work to retire.
   // A store writes only at the completion-queue head, so it may dispatch
   // behind FP work that can still fault; recovery then cancels it.
-  assign fp_mem_store = (iq_head.insn[31:26] == 6'd31) ? iq_head.insn[8] : iq_head.insn[28];
+  assign fp_mem_store = !iq_pair.cq1_ok;
   assign special_drained = sru_move ? sru_move_ready : lsu_route ?
     ((mem_base_ready || base_snoop) && !fp_unsafe_pending) :
     (lsu_empty && ((cq_empty && normal_idle) ||
@@ -2916,7 +3011,7 @@ module ppc_core #(
   assign after0_iu = iq_valid1 ?
     ((dq1_pair.unit != UNIT_BPU) ? needs_iu(dq1_pair.unit, dq1_pair.sru) : after1_iu) : fd_next_iu;
   assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready &&
-    (!rs_ready || (d1_iu && !dq1_pair.sru) || after0_iu);
+    (!rs_ready || after0_iu);
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   // An LR or CTR move is completion-serialized, not dispatch-serialized, so
@@ -2963,7 +3058,7 @@ module ppc_core #(
   // in the cycle the older prediction resolves correctly.
   assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && (!bs_busy || bs_hit) &&
     flags_tok0 && c0_iu &&
-    (folds(dq1_head, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0) == dq1_folded);
+    (folds(dq1_head, 1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0) == dq1_folded);
   assign d1_bc_target = d1_bclr ? {lr[31:2], 2'b00} :
                         dq1_uop.branch_aa ? dq1_uop.branch_disp :
                                             dq1_head.pc + dq1_uop.branch_disp;
@@ -3230,6 +3325,7 @@ module ppc_core #(
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
                      .BASE_SNOOP(LSU_BASE_SNOOP), .BASE_WAIT(LSU_BASE_WAIT),
+                     .ENABLE_DATA_PAGE_PROJECTION(ENABLE_DATA_PAGE_PROJECTION),
                      .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
                      .FP_DOUBLE_HOLD(FP_DOUBLE_HOLD), .FP_SINGLE_DENORM(!FP_DOUBLE_HOLD)) lsu (
         .clk_i, .rst_ni,
@@ -3258,6 +3354,7 @@ module ppc_core #(
         .lane_idle_i(lane_mem_idle),
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
         .req_write_o(lsu_req_write), .req_addr_o(lsu_req_addr),
+        .data_page_projection_o(lsu_page_projection),
         .req_wdata_o(lsu_req_wdata), .req_wstrb_o(lsu_req_wstrb),
         .req_spec_o(lsu_req_spec), .req_bytes_o(lsu_req_bytes), .req_fp_o(lsu_req_fp),
         .rsp_valid_i(dmem_rsp_valid_i), .rsp_ready_o(lsu_rsp_ready),
@@ -3282,6 +3379,7 @@ module ppc_core #(
       assign lsu_req_valid = 1'b0;
       assign lsu_req_write = 1'b0;
       assign lsu_req_addr = '0;
+      assign lsu_page_projection = '0;
       assign lsu_req_wdata = '0;
       assign lsu_req_wstrb = '0;
       assign lsu_req_spec = 1'b0;
@@ -3364,6 +3462,37 @@ module ppc_core #(
     end
     dmem_rsp_ready_o = lsu_rsp_owner ? lsu_rsp_ready : sp_rsp_ready;
   end
+  // BEGIN CORE DATA PAGE PROJECTION: registered lane selection owns bank0.
+  generate
+    if (ENABLE_DATA_PAGE_PROJECTION) begin : g_data_page_projection
+      assign data_page_projection_o.page[0] = lsu_req_sel ?
+        lsu_page_projection.page[0] : sp_req_addr[31:12];
+      assign data_page_projection_o.page[3:1] = lsu_page_projection.page[3:1];
+      always_comb begin
+        data_page_projection_o.use_lookup = 1'b0;
+        data_page_projection_o.source = 2'd0;
+        case (lsu_req_sel)
+          1'b0: data_page_projection_o.use_lookup = 1'b1;
+          1'b1: begin
+            data_page_projection_o.use_lookup = lsu_page_projection.use_lookup;
+            data_page_projection_o.source = lsu_page_projection.source;
+          end
+          default: begin end
+        endcase
+      end
+    end else begin : g_no_data_page_projection
+      logic _unused_lsu_page_projection;
+      assign _unused_lsu_page_projection = ^lsu_page_projection;
+      assign data_page_projection_o = '0;
+    end
+  endgenerate
+  // END CORE DATA PAGE PROJECTION
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (ENABLE_DATA_PAGE_PROJECTION && data_page_projection_o.use_lookup)
+      assert (data_page_projection_o.page[data_page_projection_o.source] === dmem_req_addr_o[31:12])
+        else $error("core projected page does not own the actual request address");
+  // synthesis translate_on
   // synthesis translate_off
   always @(posedge clk_i)
     if (rst_ni) begin
@@ -3656,17 +3785,17 @@ module ppc_core #(
     .alloc1_valid_i(dispatch1 && !d1_remove), .alloc1_at_tail_i(bu_remove),
     .alloc1_ready_o(cq1_ready), .alloc1_i(allocation1),
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
-    .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
+    .result_valid_i(cq_result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
     .result_retire_i(lsu_port0 || !special_result_select),
     .wake_sel_i({lsu_port0, !lsu_port0 && special_result_select,
                  !lsu_port0 && !special_result_select}),
     .wake_cand_valid_i({lsu_result_valid && !lsu_result_store, special_result_valid,
-                        iu_result_valid}),
+                        iu_result_offer}),
     .wake_cand_i({lsu_result, special_result, iu_result}),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(cq_wake),
-    .result1_valid_i(sru_result_valid || iu_port1 || special_port1), .result1_i(result1),
+    .result1_valid_i(cq_result1_valid), .result1_i(result1),
     // Special results retire a cycle after they finish on either port.
     .result1_retire_i(!special_port1_sel),
     .wake1_valid_o(wake1_valid), .wake1_o(cq_wake1),
@@ -3688,7 +3817,8 @@ module ppc_core #(
     .redirect_accepted_o(recovery_accepted), .redirect_kill_o(recovery_kill),
     .redirect_kill_generation_o(recovery_kill_generation),
     .recovery_survivor_count_o(recovery_count),
-    .recovery_survivor_packet_o(recovery_packets), .recovery_survivor_tag_o(recovery_tags)
+    .recovery_survivor_packet_o(recovery_packets), .recovery_survivor_tag_o(recovery_tags),
+    .recovery_rename_o(recovery_rename), .recovery_remove_o(recovery_remove)
   );
   // At most one of a pair takes the flag token or retires with flags.
   logic flags_commit1;
@@ -3723,13 +3853,16 @@ module ppc_core #(
   // special-unit state on the edge after commit, when the serialized machine
   // is empty; they win over an external test redirect. Stores and committed
   // exceptions suppress external cuts while their external effect is pending.
+  // A full-queue redirect does not consume a pivot. Select its source
+  // independently so serialized redirects do not precede pivot age logic.
+  assign selected_redirect_pivot = ENABLE_TEST_REDIRECT ?
+    (bs_recover ? bs_tag_q : redirect_pivot_i) : bs_tag_q;
   always_comb begin
     if (special_exception_redirect || special_branch_redirect || fp_replay ||
         bs_redirect_q) begin
       selected_redirect_valid = 1'b1;
       selected_redirect_all = 1'b1;
       selected_redirect_keep = 1'b0;
-      selected_redirect_pivot = '0;
       selected_redirect_target = bs_redirect_q ? bs_alt_q :
         special_exception_redirect ? special_exception_target :
         special_branch_redirect ? special_branch_target : cq_retire.pc;
@@ -3737,7 +3870,6 @@ module ppc_core #(
       selected_redirect_valid = 1'b1;
       selected_redirect_all = bs_anch_q && bs_anch_done_q;
       selected_redirect_keep = 1'b1;
-      selected_redirect_pivot = bs_tag_q;
       selected_redirect_target = bs_alt_q;
     end else begin
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
@@ -3747,7 +3879,6 @@ module ppc_core #(
       // A disabled test port must not reach recovery logic.
       selected_redirect_all = !ENABLE_TEST_REDIRECT || redirect_all_i;
       selected_redirect_keep = ENABLE_TEST_REDIRECT && redirect_keep_pivot_i;
-      selected_redirect_pivot = ENABLE_TEST_REDIRECT ? redirect_pivot_i : '0;
       selected_redirect_target = redirect_target_i;
     end
   end
@@ -3886,6 +4017,15 @@ module ppc_core #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && ENABLE_FPU) begin
+      if (iq_valid && dispatch_fp_mem_plain) begin
+        assert (fp_mem_store == ((iq_head.insn[31:26] == 6'd31) ?
+                                  iq_head.insn[8] : iq_head.insn[28]))
+          else $error("FP memory direction metadata disagrees with instruction");
+        assert (mem_sources_committed ==
+          (((iq_head.insn[20:16] == 5'd0) || !gpr_mapped[uop.src_a]) &&
+           ((iq_head.insn[31:26] != 6'd31) || !gpr_mapped[uop.src_b])))
+          else $error("FP memory source metadata disagrees with instruction");
+      end
       // An FPU result (an FP load's) can be valid, matching a stale head
       // tag, while a non-FP instruction retires.
       if (fp_head && fp_head_ok && cq_retire.write_cr_field)

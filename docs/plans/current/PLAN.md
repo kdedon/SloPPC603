@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-06. This is the active planning entry point. The target for
+Updated: 2026-10-13. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -136,6 +136,165 @@ is the floor, 66 MHz the target). All five tops meet 50 MHz; 66 MHz misses by
 
 In progress on branches: Doom and Quake timedemos (`doom-timedemo`,
 `quake-timedemo`, `quake-le-asm`).
+
+Timing priority, 2026-10-13: the requested full MiSTer 66 MHz fit passed
+synthesis but failed routing at 96% ALM utilization, before TimeQuest.
+[The review](../../FMAX_66_REVIEW.md) identifies instruction-queue storage,
+completion/rename metadata and hold-delay routing as the next targets. The
+focused checks pass; no higher-clock release or frequency gain is accepted.
+The [architecture audit](../../DESIGN_REVIEW_2026-10-13.md) adds LSU payload,
+dispatch lookahead and repeated FP classification concerns. The [IQ/rename
+candidate review](../../IQ_RENAME_REVIEW_2026-10-13.md) records passing checks
+but increased synthesis logic; both RTL candidates were reverted, with their
+stronger tests retained.
+The following [payload/metadata pass](../../PAYLOAD_WIDTH_REVIEW_2026-10-13.md)
+reduced whole-board synthesis logic by 595 ALUTs and 294 registers, with
+passing decode, exact-cycle, LSU/FP/cache and 602 checks.
+The CQ pass saves another 332 synthesis ALUTs (927 combined). The following
+normal-effort full-board fit still failed routing at an estimated 38,853 ALMs
+(93%), before timing analysis. Retain the smaller, verified implementation;
+continue matched [CPU/FPU isolation](../../FIT_ISOLATION_2026-10-13.md). The fresh
+CPU-only fit routes but misses 66 MHz by 15.205 ns: SRU result/CR forwarding
+through branch folding, instruction translation and I-cache response enable.
+Address that CPU/frontend cone without restoring the extra fetch/decode cycle
+removed for manual accuracy. The [CPU control-path pass](../../CPU_CONTROL_PATH_REVIEW_2026-10-13.md)
+specializes the SRU statically, computes targets before late selection, and
+projects the requested CR bit. Strict lint, unchanged exact-cycle/branch/recovery
+checks and four translated held-CR request cases pass. The matched CPU-only fit
+improves restricted Fmax from 32.94 to 36.07 MHz and saves 213 fitted ALMs,
+with all hold corners passing. Setup still misses 66 MHz by 12.572 ns. The new
+path runs from the primary IU shift result through CR, speculative-branch
+resolution, translation and the I-cache response enable; continue there. Backend BI-bit projection now passes the same
+lint, spec, exact-cycle and branch/recovery checks. Cache metadata/response
+captures pass old/new equivalence at all supported geometries and the retained
+cache/bus/managed tests. Derived shift/rotate record masks pass full/restricted
+unit equivalence and all four retained oracle profiles, exact-cycle/branch and
+translated-cache integration gates. These changes preserve the existing
+issue/fetch cycles. The matched CPU-only fit improves 36.07 to 38.31 MHz,
+with positive holds and 347 additional ALMs; setup still misses 66 MHz by
+10.952 ns. The completed detailed report now places exception redirect,
+cancellation, immediate completion/retirement and rename reconstruction on the
+worst path. The recovery pass preserves precise faults, generation checks and
+same-edge retirement, fixes a killed CQ1 fresh/stored-pair retirement corner,
+and improves the matched CPU-only fit to 39.23 MHz (23,183 ALMs), with all
+hold corners passing and zero unconstrained paths. Setup still misses 66 MHz
+by 10.342 ns. The new worst path is IU forwarding → LSU address → data
+translation → cache acceptance → tag/state lookup. Shorten late acceptance
+before the metadata read, and the secondary instruction-decode → dispatch
+late-wake capture path, without changing any verified cycle boundary.
+The next station/cache/writer batch preserves focused accuracy gates but
+fits at 38.95 MHz (23,333 ALMs), below the 39.23 MHz best. All holds and
+constraint coverage pass; worst setup is -10.522 ns. Its detailed report now prioritizes recovery→special-result ownership→rename
+forwarding→alignment→incoming LSU base wake/trap capture. Separate identity and
+trap calculation from late qualification, preserving exact accepted ownership;
+evaluate component retention before claiming any new timing gain.
+The raw incoming-base selection and CNTLZW record-only MSB predicate now pass
+focused independent/core gates, including required renamed-base DQ1 coverage,
+all count/control values and unchanged stage/branch/cache edges. A matched
+66 MHz CPU-only fit completed at 36.54 MHz, below the 39.23 MHz best. Holds and
+constraint coverage pass, but the combined timing candidate was rejected.
+Both functional changes are now reverted (50 RTL source hashes match the
+station/cache/writer predecessor), and the independent tests remain. The next
+experiment targets the measured checkstop→router payload→dispatch→late PC
+increment path. Paired-router reset/response checks and fresh chip/core gates
+pass for reset-independent payload, parallel stop-resume sums and captured
+CTR-release targets. A new mandatory AA/outcome/stopped-lane matrix covers all
+eight width-two bins; public traces and existing manual-backed cycles match
+baseline exactly. The serialized CPU-only 66 MHz fit completes at 39.13 MHz
+(23,303 ALMs), gaining 0.18 MHz over its 38.95 MHz predecessor but remaining
+0.10 MHz below the 39.23 MHz best. All holds pass and unconstrained paths are
+zero. The reset/CTR-target route is absent from the top 20; the new worst
+path is special-result/CQ wake identity→rename readiness→incoming LSU
+EA/trap capture (24.993 ns, 19 levels, 71% wire delay). Validate parallel
+incoming trap predicates and earlier owner-identity projection next, retaining
+exact fault qualification, full EA, queued wake behavior and verified cycles.
+The frontend batch was provisional at this point. The subsequent batch also
+fixes a pre-existing generation-wrap bug: an invalid wake0 alias could override
+valid wake1 and offer the wrong queued-load address. Valid-qualified selection
+passes `test-core-lsu-wake-wrap` with the required alias and six controls,
+without adding a cycle. Fresh manual-backed LSU, 602/FP, cache, dual-dispatch,
+branch/reset/chip and recovery/coherence gates pass. Its fit reaches a new best
+of 39.82 MHz at the limiting slow -40 C corner (40.11 MHz at slow 100 C), with
+all holds passing and zero unconstrained paths. The 66 MHz target remains unmet.
+
+That fit's 24-level worst path runs through CQ recovery/pivot, LSU address and
+translation, then store-queue movement/classification. The next live trial
+compares pivot generations at fixed slots and classifies existing/incoming SQ
+entries before movement, preserving same-edge kill/commit/error and every
+physical slot. Private SQ comparison and its canonical independent oracle pass;
+the CQ four-state semantic proof passes. Broad integration now passes with unchanged manual-backed cycles and wrap
+coverage; its matched fit completes at 39.70 MHz, below the 39.82 MHz corrected-source
+best, with all holds passing and no unconstrained paths. It remains provisional.
+Detailed paths now end in LSU P1 capture: frontend/CR eligibility into EA at
+slow 100 C, and recovery/address/translation readiness into data at slow -40 C.
+SQ and SRU endpoints are absent from both slow-corner top twenties. The private
+SRU lane-capture comparison passes but is deferred. An isolated preservation
+attribute on the existing two head-address sums yields exactly the same 39.70 MHz
+timing/resources and is removed. P1 classification before movement now passes
+both private temporal profiles and 263,680 four-state composition cases,
+preserving simultaneous advance/base-wake priority. Its permanent public oracle
+passes split EA wrap, incoming alignment/cancellation and late operands. It is
+provisionally adopted with primary-word CR eligibility (five-profile semantic
+proof, independent decoded-predicate assertion). Broad core integration passes
+with unchanged manual timing, wrap, recovery, cache, FP-memory and held-CR
+counts; its matched fit reaches 39.55 MHz, not a gain. New worst endpoints are
+IQ payload movement and I-cache response-way capture. The core CR helper is
+removed byte-exactly; P1 alone reaches 39.75 MHz (39.85 MHz at the other slow
+corner), still below the corrected-source best and using more logic. P1,
+SQ classification and fixed CQ pivot are removed, restoring all applicable
+archived CPU RTL files byte-exactly to the 39.82 MHz source. Their focused
+regression coverage is retained. Astra finds no correctness blocker, but the core CR
+projection's decode-once maintenance exception is not retained without a gain.
+A package-owned alternative is prepared privately, unbuilt. The next live
+experiment removed redundant fetch-lookahead dependence from IU/SRU station
+readiness, sharing one eligibility predicate and preserving unknown-state
+behavior. Optional `test-iu-station-readiness` passes 256 binary and 65,536
+four-state source-extracted expression comparisons. Focused core integration
+passed with unchanged branch, CTR, dual dispatch, LSU timing, owner-wrap,
+FP-memory and recovery counts. Its fit reaches only 38.64 MHz (38.74 MHz at
+the other slow corner), so it is removed back to the exact 39.82 MHz CPU
+source. Its candidate-specific optional proof target is also removed.
+The next provisional live batch cuts router miss arbitration and main-IU
+input selection. The router's strict old/new comparison passes both data
+pipeline settings with all public outputs matching each edge; canonical
+four-state expression targets also pass. Strict lint/specification and
+production router/core gates pass with unchanged verified cycles, owner-wrap
+and exception counts. Its matched CPU-only fit reaches 39.33 MHz (39.38 MHz at the other slow
+corner), below the 39.82 MHz best, so router/core hardware changes and their
+optional expression targets are removed. The truthful dispatch comment is
+retained. The next candidate projects D-uTLB page matches before late address
+selection: private four/eight-entry leaf temporal and four-state checks pass;
+Astra layout review finds no source-level blocker. The typed interface is
+provisionally integrated with coherent assembly enable and lower defaults off.
+Fresh typed-leaf and 131,072 source-composition cases pass, as do strict lint
+and specification checks. Full-core enabled/disabled gates pass with the same 105,303 checks and
+12,112 cycles; manual/wrap counts remain unchanged. The private held-OFFER
+comparison also passes both pipeline settings with exact public-output and
+independent payload checks. The matched CPU-only fit completes at **40.66 MHz**
+at the limiting slow -40 C corner (40.69 MHz at slow 100 C), improving the
+39.82 MHz predecessor. Hold checks pass and all unconstrained categories are
+zero; 23,725 ALMs, 18,515 registers, 42 M10Ks and two DSPs are fitted.
+Projection is retained provisionally; this is not 66 MHz or board closure.
+All 80 reported detailed setup paths traverse `fd_next_iu` and `c0_sru`.
+Prepared SQ overlap and isolated IQ fixed-pop fits are deferred: IQ alone
+leaves a station path with an approximately 40.82 MHz unchanged-delay ceiling.
+The next private proposal stores instruction classification atomically in
+I-cache rows and carries it through existing fetch/FD boundaries, preserving
+all scalar/refill/fault provenance, four-state behavior and manual cycles.
+Implementation and physical measurement of that proposal remain pending.
+The 39.82 MHz result measures the SQ/pivot trial's predecessor. The separate rename
+readiness proposal passes private RTL differential and four-state semantic
+checks but remains unadopted and unfitted. Full CI, X-randomization and reference
+release acceptance remain pending for the final batch. A separate false GPR overlap-hazard proposal is private and
+requires older-load fault/branch-shadow acceptance before adoption.
+Parallel read-only fetch/translation/
+tag probes remain a prepared candidate for the former branch path; they have
+not passed integrated simulation or a fit. Further FPU optimization is deferred at the user's request. A controlled board fit with aggressive routability
+optimization remains a physical experiment after the critical-path work. The architecture
+audit found CPU-domain hold insertion and local congestion, without establishing
+a missing-clock cause. Preserve 66 MHz, seed 2, normal router effort and the
+existing setup/hold constraints for that experiment. No higher-clock release or
+manual timing relaxation is accepted.
 
 Queued, in order:
 

@@ -61,23 +61,27 @@ module ppc_dispatch (
   // A late wake (UM 6.3.3.2) is captured now and ready a cycle later, so
   // its reader issues two cycles after it, as after a retired result.
   logic late_a, late_b;
-  operand_t late_src_a, late_src_b;
-  assign late_src_a = (dispatch_valid_i && dispatch_ready_o) ? entry_i.a : entry.a;
-  assign late_src_b = (dispatch_valid_i && dispatch_ready_o) ? entry_i.b : entry.b;
-  // The value comes from the wake bus.
-  logic _unused_late;
-  assign _unused_late = ^{late_src_a.value, late_src_b.value};
-  logic late_a0, late_a1, late_b0, late_b1, late_a_hit, late_b_hit;
-  assign late_a0 = wake_valid_i && wake_i.late && (late_src_a.tag == wake_i.tag) &&
-                   (late_src_a.producer == wake_i.producer);
-  assign late_a1 = wake1_valid_i && wake1_i.late && (late_src_a.tag == wake1_i.tag) &&
-                   (late_src_a.producer == wake1_i.producer);
-  assign late_b0 = wake_valid_i && wake_i.late && (late_src_b.tag == wake_i.tag) &&
-                   (late_src_b.producer == wake_i.producer);
-  assign late_b1 = wake1_valid_i && wake1_i.late && (late_src_b.tag == wake1_i.tag) &&
-                   (late_src_b.producer == wake1_i.producer);
-  assign late_a_hit = !late_src_a.ready && (late_a0 || late_a1);
-  assign late_b_hit = !late_src_b.ready && (late_b0 || late_b1);
+  logic capture_fire;
+  logic [1:0] old_late_a, old_late_b, new_late_a, new_late_b;
+  logic late_a_hit, late_b_hit;
+  assign capture_fire = dispatch_valid_i && dispatch_ready_o;
+  // Compare stored and incoming packets independently before capture chooses
+  // the final hit/value. The core's cross-lane selection still precedes the
+  // incoming packet's exact tag/generation comparisons.
+  function automatic logic [1:0] late_matches(input logic operand_ready,
+                                             input rename_tag_t tag,
+                                             input completion_tag_t producer);
+    return {wake1_valid_i && wake1_i.late && tag == wake1_i.tag &&
+            producer == wake1_i.producer,
+            wake_valid_i && wake_i.late && tag == wake_i.tag &&
+            producer == wake_i.producer} & {2{!operand_ready}};
+  endfunction
+  assign old_late_a = late_matches(entry.a.ready, entry.a.tag, entry.a.producer);
+  assign old_late_b = late_matches(entry.b.ready, entry.b.tag, entry.b.producer);
+  assign new_late_a = late_matches(entry_i.a.ready, entry_i.a.tag, entry_i.a.producer);
+  assign new_late_b = late_matches(entry_i.b.ready, entry_i.b.tag, entry_i.b.producer);
+  assign late_a_hit = capture_fire ? |new_late_a : |old_late_a;
+  assign late_b_hit = capture_fire ? |new_late_b : |old_late_b;
   // Held operand: take a matching IU result or wake.
   function automatic operand_t snoop(input operand_t pending, input logic bypass);
     operand_t operand;
@@ -105,10 +109,19 @@ module ppc_dispatch (
   assign issue_valid_o = !cancel_i && occupied && ready_a && ready_b;
   assign issue_fire = issue_valid_o && issue_ready_i;
   assign issue_o.ctrl = entry.ctrl;
-  assign issue_o.a = bypass_a ? iu_value_i : lsu_a ? lsu_value_i :
-                     fwd_a ? fwd_value_i : entry.a.value;
-  assign issue_o.b = bypass_b ? iu_value_i : lsu_b ? lsu_value_i :
-                     fwd_b ? fwd_value_i : entry.b.value;
+  // Parallel data masks retain IU, LSU, forward, held priority.
+  // LSU and forward selects retain done and exact-owner qualification.
+  function automatic logic [31:0] select_operand(input logic iu_select,
+                                                input logic lsu_select,
+                                                input logic fwd_select,
+                                                input logic [31:0] captured);
+    return ({32{iu_select}} & iu_value_i) |
+           ({32{!iu_select && lsu_select}} & lsu_value_i) |
+           ({32{!iu_select && !lsu_select && fwd_select}} & fwd_value_i) |
+           ({32{!iu_select && !lsu_select && !fwd_select}} & captured);
+  endfunction
+  assign issue_o.a = select_operand(bypass_a, lsu_a, fwd_a, entry.a.value);
+  assign issue_o.b = select_operand(bypass_b, lsu_b, fwd_b, entry.b.value);
   assign dispatch_ready_o = !cancel_i && (!occupied || issue_fire);
   // The payload is unreset; occupied gates every use of it.
   always_ff @(posedge clk_i) begin
@@ -116,9 +129,13 @@ module ppc_dispatch (
     entry.b <= snoop(entry.b, bypass_b);
     if (late_a) entry.a.ready <= 1'b1;
     if (late_b) entry.b.ready <= 1'b1;
-    if (dispatch_valid_i && dispatch_ready_o) entry <= entry_i;
-    if (late_a_hit) entry.a.value <= late_a1 ? wake1_i.value : wake_i.value;
-    if (late_b_hit) entry.b.value <= late_b1 ? wake1_i.value : wake_i.value;
+    if (|old_late_a) entry.a.value <= old_late_a[1] ? wake1_i.value : wake_i.value;
+    if (|old_late_b) entry.b.value <= old_late_b[1] ? wake1_i.value : wake_i.value;
+    if (capture_fire) begin
+      entry <= entry_i;
+      if (|new_late_a) entry.a.value <= new_late_a[1] ? wake1_i.value : wake_i.value;
+      if (|new_late_b) entry.b.value <= new_late_b[1] ? wake1_i.value : wake_i.value;
+    end
   end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin

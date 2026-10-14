@@ -52,7 +52,11 @@ module tb_core_memory_reference #(
     .ENABLE_CACHE_INSTRUCTIONS(EXTENSIONS), .ENABLE_BYTE_REVERSE(EXTENSIONS),
     .ENABLE_MULTIPLE_STRING(EXTENSIONS), .ENABLE_RESERVATION(EXTENSIONS),
     .ENABLE_MISALIGNED_ACCESS(EXTENSIONS)
-  ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+  ) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .data_page_projection_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),

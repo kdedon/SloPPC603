@@ -18,6 +18,14 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
 - **Forward-valid carries no handshake/stall terms.** A forward computed on a cycle that does not
   capture is simply discarded; gating it on `mem_ready`/`ack` puts a late bus input at the head of
   the forwarding cone. ARM7 [`core:970-977`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L970-L977).
+- **Keep result ownership separate from retained payload.** An inactive unit may retain an old
+  producer tag as well as data. Tag equality alone cannot qualify that source, especially after
+  generation reuse. Remove a late handshake from a mux only when an independent valid/ownership
+  contract excludes stale sources; otherwise preserve completion qualification and flatten the
+  data mux while retaining priority.
+  Distinct live owners do not exclude an inactive producer alias after generation wrap.
+  Test an invalid higher-priority alias alongside a valid lower-priority wake; check
+  the consumed value or public address, rather than asserting that the alias is impossible.
 - **Priority youngest-first**, one input per real producer stage, `r0`/no-write excluded by a
   registered flag, never by comparing to zero in the loop. PSX [`cpu.vhd:1084-1097`](https://github.com/MiSTer-devel/PSX_MiSTer/blob/cd17b5a0ad261005c321d9d5ba41b8dbe313a7d3/rtl/cpu.vhd#L1084-L1097).
 - **Add one forwarding stage after writeback when the regfile RAM has no read-during-write
@@ -58,6 +66,17 @@ one-hot select. Intra-pair dependencies in dual dispatch are resolved at decode,
   request FIFO `>= 4 of 8` ([`cpu.vhd:807`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu.vhd#L807)).
 
 ## 4. Load-use and long-latency ops
+
+- **One dependency contract for every operation.** Drive comparisons from decoded source-use
+  and destination-write declarations, including hidden sequencer temporaries; carry readiness
+  separately from register identity. DSPPC604 [GPR/FPR forwarding and one load-use condition](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604.sv#L510-L544)
+  is an in-order example. For a CQ/rename design, keep the existing tag/readiness mechanism;
+  do not reduce all waits to its single outstanding load assumption.
+- **Long-latency units own arithmetic state, not architectural state.** Keep one request/result
+  contract and share the actual unit between standalone tests and pipeline integration.
+  DSPPC604 [documents stable operands until response and flush abort](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604_int_unit.sv#L10-L21).
+  Preserve our accepted-request ownership, backpressure and stale-result suppression rules;
+  moving latency inside a unit must not create per-opcode stall or cancellation paths.
 
 - **Stall only true dependents.** PSX non-blocking load: pipeline releases once the request is
   accepted; a scoreboard (`lateReadTarget`) is checked against precomputed "reads rs/rt" bits

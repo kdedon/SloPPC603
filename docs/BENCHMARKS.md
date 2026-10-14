@@ -235,9 +235,12 @@ copies `DOOM1.WAD` to `build/mister/images/`).
 - **Engine.** doomgeneric's sources unchanged, built `-O2 -fsigned-char` with
   `CMAP256` at 320 × 200: the engine's own 8-bit indexed frame and the `PLAYPAL`
   palette, which match the framebuffer's format. No sound, no input.
-- **Platform** (`platform.c`). Each frame goes to the framebuffer at the largest
-  integer scale up to 3 that leaves room for the result lines (3 at 1920 × 1080, 1 at
-  320 × 240); the copy is part of the frame time, as the VGA copy is on a PC. The
+- **Platform** (`platform.c`). Each 320 × 200 frame is copied once to the framebuffer
+  at 1× on every display, including 1920 × 1080. The copy remains part of the
+  frame time; the CPU does no pixel enlargement. The result header records
+  `320x200 1x`. On the 320 × 240 native output, the remaining 40 rows hold text.
+  Earlier images enlarged the picture up to 3× in software (nine times the
+  pixel writes), so their FPS cannot isolate CPU gains against this baseline. The
   palette goes to the palette registers when it changes. Time comes from the time base
   (a quarter of the clock in `MODE`), so `I_GetTime` runs at 35 Hz.
 - **C library** (`libc.c`, `include/`): our own, freestanding: strings, a first-fit
@@ -321,7 +324,7 @@ copies `pak0.pak` to `build/mister/images/`).
   layer (`qport.c`) replaces `vid_null.c`, which fixes 320 × 240, with the classic
   320 × 200; its system layer replaces `sys_null.c`. No sound, no input, no network.
   The engine's 8 MiB heap, a 600 KiB surface cache, and `d_subdiv16 1`.
-- **Platform** (`platform.c`): the framebuffer copy, scale and palette as for Doom; time
+- **Platform** (`platform.c`): the 320 × 200, 1× framebuffer copy and palette as for Doom; time
   from the time base. pak0.pak is read in place at `0x01800000`.
 - **C library**: the Doom port's (`doom/libc.c`), whose `fopen` serves `pak0.pak` from
   memory and whose `fscanf` reads the demo's track number, plus `setjmp.S` (no

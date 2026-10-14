@@ -72,6 +72,13 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
 
 ## 4. Multi-cycle instructions as microcode in decode
 
+- **Normalize multi-result instructions into ordinary operations where the contract permits.**
+  DSPPC604 [expands update, multiple, string and conditional-store forms](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604_seq.sv#L5-L18)
+  so each emitted uop uses the shared operand/hazard/execute paths. Preserve the original PC,
+  first/last markers and the manual's partial-effect/restart semantics. A base update or CR0
+  follow-up must not escape after a faulting memory step. Its [step register](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604_seq.sv#L175-L179)
+  advances only when accepted and resets on flush; stalled uops must keep their payload stable.
+
 - **`decode(IR, STATE)` with an `lst` field**: a small state counter in decode steps the instruction;
   each step emits a full normal decode record down the ordinary pipeline, reusing ALU/AGU/LSU.
   Fetch holds, and the next fetched word parks in a save register. SH2 [`SH_core.sv:235-249`](https://github.com/MiSTer-devel/Saturn_MiSTer/blob/a23bbb22c8c9a43926ee2196875e257d225291b7/rtl/SH/core/SH_core.sv#L235-L249), [`306`](https://github.com/MiSTer-devel/Saturn_MiSTer/blob/a23bbb22c8c9a43926ee2196875e257d225291b7/rtl/SH/core/SH_core.sv#L306), [`345-346`](https://github.com/MiSTer-devel/Saturn_MiSTer/blob/a23bbb22c8c9a43926ee2196875e257d225291b7/rtl/SH/core/SH_core.sv#L345-L346).

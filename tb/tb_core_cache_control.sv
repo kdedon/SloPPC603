@@ -48,7 +48,11 @@ module tb_core_cache_control;
   ppc_core #(
     .RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1)
-  ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+  ) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .data_page_projection_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),

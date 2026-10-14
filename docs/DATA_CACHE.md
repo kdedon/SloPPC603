@@ -47,6 +47,11 @@ One operation at a time. The request is registered on `req_valid_i && req_ready_
 exactly one response follows (`rsp_valid_o`, held until `rsp_ready_i`). A new request
 is accepted only when no response is pending.
 
+Metadata reads may pre-read the offered address while ready, even when valid is
+low. This does not accept a request or change cache state. An incoming snoop has
+priority; active requests and registered snoops retain their captured address.
+Same-edge tag/state bypasses and response timing are unchanged.
+
 | Signal | Meaning |
 |---|---|
 | `req_op_i[3:0]` | `dc_op_e`: LOAD, STORE, LWARX, STWCX, DCBZ, DCBF, DCBST, DCBI, DCBT, DCBTST, SYNC |

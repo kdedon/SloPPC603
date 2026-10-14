@@ -1,6 +1,17 @@
 # Recovery contract preparation (P06a)
 
-Status: independently reviewed interface proposal and executable policy model for the current single-GPR foundation. This is not recovery RTL or a 603e branch/exception implementation. [TIMING_DECISIONS.md](TIMING_DECISIONS.md) admits bounded current-width-one recovery work using the reviewed ownership edges; full source/timing conformance gates remain open. The policy below is an implementation decision to review, not a claim that the manual specifies these internal interfaces.
+Historical scope: independently reviewed P06a interface proposal and executable
+policy model for the single-GPR foundation. The model is not the complete
+current branch/exception implementation. [TIMING_DECISIONS.md](TIMING_DECISIONS.md)
+records that foundation's admission; [CORE_RECOVERY.md](CORE_RECOVERY.md) and
+later feature contracts record integration. These internal policies do not by
+themselves establish full source/timing conformance.
+
+Current supersession, 2026-10-13: the [finish/retirement edge
+table](EXECUTION_CONTRACT.md#current-finish-and-retirement-edges) replaces the
+proposal's prohibition on same-edge finish/commit. It preserves pre-edge age
+classification and killed-result suppression. The P06a model's recorded results
+remain evidence for its original scope, not for the later bypass.
 
 ## Redirect identity and age
 
@@ -15,11 +26,20 @@ All classifications use pre-edge state:
 1. Reset cancels all internal state; the environment must cancel old memory transactions, as already required by the scaffold. This is stronger than redirect and is not an ordinary branch operation.
 2. Validate the redirect and derive the surviving prefix. An accepted redirect prevents dispatch/allocation on that edge and clears every IQ entry.
 3. Transport may consume a result even when its instruction is killed. Only an active, unfinished **surviving** owner may accept a finish or wake an operand. An issued result cannot finish on its own issue edge.
-4. The pre-edge finished head may commit on the same edge only if it survives and the retirement consumer is ready. A new finish does not bypass into commitment. A killed head has no architectural side effect.
+4. A surviving head may commit when retirement is allowed and the consumer is ready: either it was finished before the edge, or an eligible clean result finishes on this edge. Faulting and serialized special-lane results do not bypass. P06a originally allowed only the pre-edge finished case; the current execution contract supersedes that restriction. A killed result cannot authorize an architectural side effect.
 5. Surviving issued work may continue. Internal killed reservation/IU contents cancel atomically. External or future uncancellable producers must drain explicitly.
 6. Rebuild the latest-writer map by walking remaining survivors oldest to youngest, after any same-edge commitment. Younger surviving writers replace older mappings. Preserve surviving rename readiness, values and source identities; remove only killed/retired slots.
 
-An invalid redirect acts as no redirect; it cannot suppress otherwise legal progress. A redirect cancelling a stalled public retirement offer requires a protocol extension: the current irrevocable valid/ready interface cannot retract that packet. P06b must either disallow a cut that kills an offered head, or add an explicit cancellation handshake for the retirement consumer. The reference policy conservatively rejects a cut that kills any pre-edge finished head, whether ready or stalled; fault-style entry at such a head needs a separate P14 interface decision. Keeping a stalled head is permitted. This also prevents redirect priority from silently violating the existing stable-retirement assertion.
+An invalid redirect acts as no redirect; it cannot suppress otherwise legal
+progress. The P06a reference policy conservatively rejects a cut killing any
+pre-edge finished head, whether ready or stalled. Current arbitrary-pivot test
+recovery (`ENABLE_PIVOT_RECOVERY`) rejects a cut killing an unheld, pre-edge done
+head, and protects an eligible pre-edge done CQ[1] when its ready is asserted.
+Those guards use registered completion state, not newly arriving results, so
+recovery acceptance does not depend on the finish-to-retirement bypass.
+Architectural redirects have the core's separate retirement holds and
+irrevocability gates. This does not authorize retracting a stalled public
+retirement packet; preserving that interface remains a verification obligation.
 
 ## Producer lifetime and finite identities
 

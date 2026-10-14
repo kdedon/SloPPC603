@@ -436,6 +436,52 @@ test-completion:
 	./$(BUILD_DIR)/completion/Vtb_completion $(SIM_ARGS)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_completion_pair --Mdir $(BUILD_DIR)/completion-pair ../rtl/ppc_pkg.sv ../rtl/ppc_completion.sv ../tb/tb_completion_pair.sv
 	./$(BUILD_DIR)/completion-pair/Vtb_completion_pair $(SIM_ARGS)
+
+# Recovery must remove killed work even when a clean head arrives on this edge.
+.PHONY: test-completion-mixed-pair-cut test-rename-recovery test-completion-arrival
+test: test-completion-mixed-pair-cut test-rename-recovery test-completion-arrival
+test-completion-arrival:
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 -MAKEFLAGS "OPT_FAST=-O0 OPT_SLOW=-O0 OPT_GLOBAL=-O0" --top-module tb_completion_arrival_oracle --Mdir $(BUILD_DIR)/completion-arrival ../rtl/ppc_pkg.sv ../rtl/ppc_completion.sv ../tb/tb_completion_arrival_oracle.sv
+	./$(BUILD_DIR)/completion-arrival/Vtb_completion_arrival_oracle $(SIM_ARGS)
+test-completion-mixed-pair-cut:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_completion_mixed_pair_cut --Mdir $(BUILD_DIR)/completion-mixed-pair-cut ../rtl/ppc_pkg.sv ../rtl/ppc_completion.sv ../tb/tb_completion_mixed_pair_cut.sv
+	./$(BUILD_DIR)/completion-mixed-pair-cut/Vtb_completion_mixed_pair_cut $(SIM_ARGS)
+	./$(BUILD_DIR)/completion-mixed-pair-cut/Vtb_completion_mixed_pair_cut +RUN_TO_COUNT_ASSERT=1 $(SIM_ARGS)
+test-rename-recovery:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_rename_recovery --Mdir $(BUILD_DIR)/rename-recovery ../rtl/ppc_pkg.sv ../rtl/ppc_rename.sv ../tb/tb_rename_recovery.sv
+	./$(BUILD_DIR)/rename-recovery/Vtb_rename_recovery $(SIM_ARGS)
+# Record predicates share the existing issue edge, with full packet and edge checks.
+.PHONY: test-iu-shift-record
+test-iu-shift-record: test-iu-shift-record-r0-m0 test-iu-shift-record-r0-m1 test-iu-shift-record-r1-m0 test-iu-shift-record-r1-m1
+test: test-iu-shift-record
+
+define IU_SHIFT_RECORD_PROFILE
+.PHONY: test-iu-shift-record-r$(1)-m$(2)
+test-iu-shift-record-r$(1)-m$(2):
+	$$(VERILATOR) --binary --timing --assert -Wall --top-module tb_iu_shift_record \
+	  "-GRESTRICTED=1'b$(1)" "-GMUL602=1'b$(2)" -GDIV_LATENCY=$(3) \
+	  --Mdir $$(BUILD_DIR)/iu-shift-record-r$(1)-m$(2) ../rtl/ppc_pkg.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_iu_shift_record.sv
+	./$$(BUILD_DIR)/iu-shift-record-r$(1)-m$(2)/Vtb_iu_shift_record $$(SIM_ARGS)
+endef
+$(eval $(call IU_SHIFT_RECORD_PROFILE,0,0,20))
+$(eval $(call IU_SHIFT_RECORD_PROFILE,0,1,37))
+$(eval $(call IU_SHIFT_RECORD_PROFILE,1,0,20))
+$(eval $(call IU_SHIFT_RECORD_PROFILE,1,1,37))
+
+.PHONY: test-dispatch-late
+test: test-dispatch-late
+.PHONY: test-fetch-writer-projection
+test: test-fetch-writer-projection
+test-fetch-writer-projection:
+	for variant in 0 1 2 3 4; do \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_fetch_writer_projection -GVARIANT=$$variant --Mdir $(BUILD_DIR)/fetch-writer-projection ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_fetch_writer_projection.sv || exit 1; \
+	  ./$(BUILD_DIR)/fetch-writer-projection/Vtb_fetch_writer_projection $(SIM_ARGS) || exit 1; \
+	done
+# Exact station late-result capture, ownership and replacement edges.
+test-dispatch-late:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_dispatch_late --Mdir $(BUILD_DIR)/dispatch-late ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../tb/tb_dispatch_late.sv
+	./$(BUILD_DIR)/dispatch-late/Vtb_dispatch_late $(SIM_ARGS)
+
 test-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_execution --Mdir $(BUILD_DIR)/execution ../rtl/ppc_pkg.sv ../rtl/ppc_rename.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_execution.sv
 	./$(BUILD_DIR)/execution/Vtb_execution $(SIM_ARGS)
@@ -444,6 +490,12 @@ test-stage:
 	./$(BUILD_DIR)/stage/Vtb_stage_timing $(SIM_ARGS) +TRACE=$(BUILD_DIR)/stage/trace.jsonl +DISPATCH_TRACE=$(BUILD_DIR)/stage/events.txt
 	python3 tools/check_stage_timing.py $(BUILD_DIR)/stage/trace.jsonl
 	python3 tools/check_dispatch_trace.py $(BUILD_DIR)/stage/events.txt spec/schedules/stage.txt --stage $(BUILD_DIR)/stage/trace.jsonl
+.PHONY: test-iq
+test: test-iq
+test-iq:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_iq --Mdir $(BUILD_DIR)/iq ../rtl/ppc_iq.sv ../tb/tb_iq_case.sv ../tb/tb_iq.sv
+	./$(BUILD_DIR)/iq/Vtb_iq $(SIM_ARGS)
+
 check-spec:
 	python3 tools/check_licence.py
 	python3 spec/check_timing.py
@@ -481,6 +533,17 @@ test-core-dual:
 	./$(BUILD_DIR)/core-dual-w2/Vtb_core_dual $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-dual-w2/retire.txt
 	cmp $(BUILD_DIR)/core-dual-w1/retire.txt $(BUILD_DIR)/core-dual-w2/retire.txt
 	@echo "PASS: widths 1 and 2 retire $$(wc -l < $(BUILD_DIR)/core-dual-w1/retire.txt) identical packets"
+.PHONY: test-core-dual-lsu-pipe
+test: test-core-dual-lsu-pipe
+# Includes a required DQ1 access whose base is the preceding rename allocation.
+test-core-dual-lsu-pipe:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 --top-module tb_core_dual -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/core-dual-pipe-w1 $(RTL) ../tb/tb_core_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 --top-module tb_core_dual -GDISPATCH_WIDTH=2 --Mdir $(BUILD_DIR)/core-dual-pipe-w2 $(RTL) ../tb/tb_core_dual.sv
+	./$(BUILD_DIR)/core-dual-pipe-w1/Vtb_core_dual $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-dual-pipe-w1/retire.txt
+	./$(BUILD_DIR)/core-dual-pipe-w2/Vtb_core_dual $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-dual-pipe-w2/retire.txt
+	cmp $(BUILD_DIR)/core-dual-pipe-w1/retire.txt $(BUILD_DIR)/core-dual-pipe-w2/retire.txt
+	@echo "PASS: pipelined LSU widths 1 and 2 retire $$(wc -l < $(BUILD_DIR)/core-dual-pipe-w1/retire.txt) identical packets"
 .PHONY: test-core-fetch2
 test: test-core-fetch2
 test-core-fetch2:
@@ -620,7 +683,14 @@ test-core-branch-fold: build-control-memory
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
 	mkdir -p $(BUILD_DIR)/control-memory-w2
 	PPC_VERILATOR_FLAGS='$(filter-out +define+PPC_DISPATCH_WIDTH=%,$(PPC_VERILATOR_FLAGS))' $(VERILATOR) --binary --timing --assert -Wall +define+PPC_DISPATCH_WIDTH=2 -GFETCH_WIDTH=2 --top-module tb_core_control_memory --Mdir $(BUILD_DIR)/control-memory-w2 $(RTL) ../tb/tb_core_control_memory.sv
-	./$(BUILD_DIR)/control-memory-w2/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
+	./$(BUILD_DIR)/control-memory-w2/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold +REQUIRE_STOP_BOTH=1
+
+# Optional true four-state proof; Verilator's two-state runtime cannot cover X/Z.
+.PHONY: test-ctr-target-capture-equivalence
+test-ctr-target-capture-equivalence:
+	mkdir -p $(BUILD_DIR)/ctr-target-capture-equivalence
+	iverilog -g2012 -s tb_ctr_target_capture_equivalence -o $(BUILD_DIR)/ctr-target-capture-equivalence/proof ../tb/tb_ctr_target_capture_equivalence.sv
+	timeout 30s vvp $(BUILD_DIR)/ctr-target-capture-equivalence/proof
 
 .PHONY: test-core-compare test-compare-execution
 test-core-compare: build-control-memory
@@ -1109,6 +1179,18 @@ test-bat-memory-router:
 test-core-bat:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat --Mdir $(BUILD_DIR)/core-bat $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_bat.sv
 	./$(BUILD_DIR)/core-bat/Vtb_core_bat $(SIM_ARGS)
+
+.PHONY: test-core-translated-held-cr
+test: test-core-translated-held-cr
+# Observe the effective target offer on the CR owner's finish edge, then its
+# physical BAT translation. Both widths and both outcomes must exercise a hold.
+test-core-translated-held-cr:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_translated_held_cr -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/translated-held-cr-w1 $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_translated_held_cr.sv
+	./$(BUILD_DIR)/translated-held-cr-w1/Vtb_translated_held_cr $(SIM_ARGS) +TAKEN=1
+	./$(BUILD_DIR)/translated-held-cr-w1/Vtb_translated_held_cr $(SIM_ARGS) +TAKEN=0
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_translated_held_cr -GDISPATCH_WIDTH=2 --Mdir $(BUILD_DIR)/translated-held-cr-w2 $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_translated_held_cr.sv
+	./$(BUILD_DIR)/translated-held-cr-w2/Vtb_translated_held_cr $(SIM_ARGS) +TAKEN=1
+	./$(BUILD_DIR)/translated-held-cr-w2/Vtb_translated_held_cr $(SIM_ARGS) +TAKEN=0
 
 # Round40: bounded supervisor scratch-register access.
 .PHONY: test-sprg-decode test-core-sprg
@@ -1762,6 +1844,17 @@ test-core-dcache-lsu-pipe:
 	mkdir -p $(BUILD_DIR)/core-dcache-lsu-pipe
 	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 --top-module tb_core_dcache --Mdir $(BUILD_DIR)/core-dcache-lsu-pipe $(DCACHE_CORE_TB)
 	./$(BUILD_DIR)/core-dcache-lsu-pipe/Vtb_core_dcache $(SIM_ARGS)
+# The same independent cache/core oracle with the page projection disabled.
+.PHONY: test-core-dcache-lsu-pipe-projection-off
+test-core-dcache-lsu-pipe-projection-off:
+	mkdir -p $(BUILD_DIR)/core-dcache-lsu-pipe-projection-off
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 -GDATA_PAGE_PROJECTION=0 --top-module tb_core_dcache --Mdir $(BUILD_DIR)/core-dcache-lsu-pipe-projection-off $(DCACHE_CORE_TB)
+	./$(BUILD_DIR)/core-dcache-lsu-pipe-projection-off/Vtb_core_dcache $(SIM_ARGS)
+
+# Optional actual-source four-state page-source coherence, before fitting.
+.PHONY: test-dtlb-projection-composition
+test-dtlb-projection-composition:
+	python3 tools/dtlb_projection_composition.py --build-dir $(BUILD_DIR)/dtlb-projection-composition
 test-core-dcache-negative:
 	mkdir -p $(BUILD_DIR)/core-dcache-negative
 	for m in 1 2 3 4 5 7 101 102 103; do \
@@ -2219,6 +2312,12 @@ VARIANT_REJECTED := 4
 # Variants the core builds; the 603e pin top still rejects the 602.
 VARIANT_CORE_IDS := 0 1 2 3 4
 VARIANT_ALL := 0 1 2 3 4
+.PHONY: test-decode-iq-fpu
+test: test-decode-iq-fpu
+test-decode-iq-fpu: $(addprefix decode-iq-fpu-,$(VARIANT_ALL))
+decode-iq-fpu-%:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_decode_sweep -GVARIANT=$* "-GFPU_ENABLED=1'b1" --Mdir $(BUILD_DIR)/decode-iq-fpu-$* ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_decode_sweep.sv
+	./$(BUILD_DIR)/decode-iq-fpu-$*/Vtb_decode_sweep $(SIM_ARGS)
 # Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
 # ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
 VARIANT_PLL_REJECTS := 0-0 0-12 1-7
@@ -2312,6 +2411,18 @@ DCACHE_MUTATIONS := 1 2 3 4 5 6 7 8
 DCACHE_SEEDS := 2 3
 .PHONY: test-dcache test-dcache-mutations
 test: test-dcache test-dcache-mutations
+
+.PHONY: test-dcache-preread
+test: test-dcache-preread
+# Reuse one build directory across geometries and fast-hit profiles.
+test-dcache-preread:
+	for geometry in '128 4' '128 2' '64 2'; do \
+	  set -- $$geometry; \
+	  for fast in 0 1; do \
+	    $(VERILATOR) --binary --timing --assert -Wall -MAKEFLAGS 'OPT_FAST=-O0 OPT_SLOW=-O0 OPT_GLOBAL=-O0' --top-module tb_dcache_ready_preread_oracle -GSETS=$$1 -GWAYS=$$2 "-GFAST_LOAD_HIT=1'b$$fast" --Mdir $(BUILD_DIR)/dcache-preread $(DCACHE_RTL) ../tb/tb_dcache_ready_preread_oracle.sv || exit 1; \
+	    timeout 30s ./$(BUILD_DIR)/dcache-preread/Vtb_dcache_ready_preread_oracle $(SIM_ARGS) || exit 1; \
+	  done; \
+	done
 
 test-dcache:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_dcache --Mdir $(BUILD_DIR)/dcache $(DCACHE_RTL) ../tb/tb_dcache.sv
@@ -2737,3 +2848,54 @@ cache-geo-%:
 	for r in $(CACHE_GEO_RUNS_$(call geo_bench,$*)); do \
 	  ./$(BUILD_DIR)/cache-geo-$*/V$(CACHE_GEO_TOP_$(call geo_bench,$*)) $(SIM_ARGS) $$r || exit 1; done
 	rm -rf $(BUILD_DIR)/cache-geo-$*
+
+# Queued wake validity and generation wrap through the real core.
+.PHONY: test-core-lsu-wake-wrap
+test: test-core-lsu-wake-wrap
+test-core-lsu-wake-wrap:
+	mkdir -p $(BUILD_DIR)/core-lsu-wake-wrap
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 --top-module tb_core_head_wake_alias --Mdir $(BUILD_DIR)/core-lsu-wake-wrap -I../tb $(RTL) ../tb/tb_core_head_wake_alias.sv
+	timeout 30s ./$(BUILD_DIR)/core-lsu-wake-wrap/Vtb_core_head_wake_alias $(SIM_ARGS)
+	for warm in 1270 1277 1279 1285 1530 1542; do \
+	  timeout 30s ./$(BUILD_DIR)/core-lsu-wake-wrap/Vtb_core_head_wake_alias $(SIM_ARGS) +WARM=$$warm +EXPECT_ALIAS=0 || exit 1; done
+
+.PHONY: test-core-ctr-target-capture
+test: test-core-ctr-target-capture
+test-core-ctr-target-capture: build-control-memory
+	python3 tools/control_memory_program.py --ctr-target-capture --output $(BUILD_DIR)/ctr-target-capture
+	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/ctr-target-capture +REQUIRE_CTR_CAPTURE_MATRIX=1
+	mkdir -p $(BUILD_DIR)/control-memory-w2
+	PPC_VERILATOR_FLAGS='$(filter-out +define+PPC_DISPATCH_WIDTH=%,$(PPC_VERILATOR_FLAGS))' $(VERILATOR) --binary --timing --assert -Wall +define+PPC_DISPATCH_WIDTH=2 -GFETCH_WIDTH=2 --top-module tb_core_control_memory --Mdir $(BUILD_DIR)/control-memory-w2 $(RTL) ../tb/tb_core_control_memory.sv
+	./$(BUILD_DIR)/control-memory-w2/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/ctr-target-capture +REQUIRE_CTR_CAPTURE_MATRIX=1 +REQUIRE_CTR_RELEASE_BOTH=1
+
+# Incoming/base-wake acceptance; reuse one build directory sequentially.
+.PHONY: test-lsu-incoming-trap
+test: test-lsu-incoming-trap
+test-lsu-incoming-trap:
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 -CFLAGS -O0 --top-module tb_lsu_incoming_trap -GALLOW_MISALIGNED="1'b1" --Mdir $(BUILD_DIR)/lsu-incoming-trap ../rtl/ppc_pkg.sv ../rtl/ppc_lsu_pipe.sv ../tb/tb_lsu_incoming_trap.sv
+	timeout 30s $(abspath $(BUILD_DIR))/lsu-incoming-trap/Vtb_lsu_incoming_trap $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 -CFLAGS -O0 --top-module tb_lsu_incoming_trap -GALLOW_MISALIGNED="1'b0" --Mdir $(BUILD_DIR)/lsu-incoming-trap ../rtl/ppc_pkg.sv ../rtl/ppc_lsu_pipe.sv ../tb/tb_lsu_incoming_trap.sv
+	timeout 30s $(abspath $(BUILD_DIR))/lsu-incoming-trap/Vtb_lsu_incoming_trap $(SIM_ARGS)
+
+# A killed accepted response remains suppressed across complete owner reuse.
+.PHONY: test-core-lsu-response-wrap
+test: test-core-lsu-response-wrap
+test-core-lsu-response-wrap:
+	mkdir -p $(BUILD_DIR)/core-lsu-response-wrap
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 -CFLAGS -O0 --top-module tb_core_cancelled_response_wrap --Mdir $(BUILD_DIR)/core-lsu-response-wrap -I../tb $(RTL) ../tb/tb_core_cancelled_response_wrap.sv
+	timeout 90s $(abspath $(BUILD_DIR))/core-lsu-response-wrap/Vtb_core_cancelled_response_wrap $(SIM_ARGS)
+	timeout 90s $(abspath $(BUILD_DIR))/core-lsu-response-wrap/Vtb_core_cancelled_response_wrap $(SIM_ARGS) +OLD_FAULT=1
+
+# Optional true four-state check; the default CQ suites use Verilator.
+.PHONY: test-cq-fixed-pivot-equivalence
+test-cq-fixed-pivot-equivalence:
+	mkdir -p $(BUILD_DIR)/cq-fixed-pivot
+	iverilog -g2012 -gassertions -s tb_cq_fixed_pivot_generation -o $(BUILD_DIR)/cq-fixed-pivot/equivalence.vvp ../tb/tb_cq_fixed_pivot_generation.sv
+	vvp $(BUILD_DIR)/cq-fixed-pivot/equivalence.vvp
+
+# Public FIFO oracle for STORE_QUEUE1,32-bit603e/SQdepth4/ALLOW1.
+.PHONY: test-lsu-store-queue-order
+test: test-lsu-store-queue-order
+test-lsu-store-queue-order:
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 -CFLAGS -O0 --top-module tb_lsu_store_queue_order --Mdir $(BUILD_DIR)/lsu-store-queue-order ../rtl/ppc_pkg.sv ../rtl/ppc_lsu_pipe.sv ../tb/tb_lsu_store_queue_order.sv
+	timeout 30s $(abspath $(BUILD_DIR))/lsu-store-queue-order/Vtb_lsu_store_queue_order $(SIM_ARGS)

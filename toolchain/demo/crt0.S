@@ -86,7 +86,7 @@ _reset:
     lis 5,0xfff0
     ori 5,5,0x001e
     mtspr 536,5
-    /* IBAT0: the same RAM block; real-mode fetches are not cached. */
+    /* IBAT0: the same RAM block, cacheable with translation enabled. */
     lis 5,0xfff0
     ori 5,5,0x0002
     mtspr 529,5

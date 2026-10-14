@@ -642,6 +642,47 @@ def make_branch_fold():
     p.label('body');e('addi',21,21,3);e('stw',21,1,64);e('lwz',25,1,64);e('bclr',20,0,0)
     return p
 
+def make_ctr_target_capture():
+    # Extend only this distinct mode; the established branch-fold fixture is
+    # unchanged. Insert at its final main-path diagnostic, before leaf body.
+    p = make_branch_fold()
+    insert_at = p.labels['body']//4 - 1
+    assert p.ops[insert_at] == ('illegal', ())
+    q = Program(); e = q.emit
+    for phase in range(8):
+        for _ in range(phase): e('ori', 0, 0, 0)
+        for aa in (0, 1):
+            for taken in (0, 1):
+                for lane in (0, 1):
+                    name = f'capture_{phase}_{aa}_{taken}_{lane}'
+                    # Six setup words precede BC; deliberately place its PC in
+                    # each physical fetch lane. Actual stopped-lane coverage is
+                    # independently required by the read-only RTL observer.
+                    if (insert_at + len(q.ops) + 6) % 2 != lane:
+                        e('ori', 0, 0, 0)
+                    e('addi', 6, 0, 100); e('addi', 7, 0, 7)
+                    e('divw', 8, 6, 7, 0, 0)
+                    # True dependency keeps mtctr pending behind the divider.
+                    e('addi', 5, 8, (2 if taken else 1) - 14)
+                    e('mtctr', 5)
+                    # A delayed load holds dispatch while the older CTR becomes
+                    # final, so the stopped branch exercises actual early release.
+                    e('lwz', 0, 1, 32)
+                    e('bc', 16, 0, name+'_target', aa, 0)
+                    e('addi', 21, 21, 1); e('b', name+'_join', 0, 0)
+                    q.label(name+'_target'); e('addi', 21, 21, 2)
+                    q.label(name+'_join')
+                    e('mfctr', 24); e('stw', 24, 1, 32)
+                    e('lwz', 25, 1, 32); e('stw', 21, 1, 36)
+    delta = 4*len(q.ops)
+    p.ops[insert_at:insert_at] = q.ops
+    p.labels = {name: addr + (delta if addr >= insert_at*4 else 0)
+                for name, addr in p.labels.items()}
+    p.labels.update({name: insert_at*4 + addr for name, addr in q.labels.items()})
+    p.folds = [pc + (delta if pc >= insert_at*4 else 0) for pc in p.folds]
+    assert len(p.ops) <= 4096 and max(p.labels.values()) < 0x8000
+    return p
+
 def make_shifts():
     p=make_program()
     # Prefix real SO=0 record shifts; relocation uses symbolic labels.
@@ -1069,9 +1110,9 @@ def make_lsu_update():
     for _ in range(8):e('lwzu',6,4,4);e('add',7,6,4)
     e('illegal');return p
 
-def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False, branch_recovery=False, branch_fold=False):
+def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False, branch_recovery=False, branch_fold=False, ctr_target_capture=False):
     output.mkdir(parents=True,exist_ok=True)
-    p=make_branch_fold() if branch_fold else make_branch_recovery() if branch_recovery else make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
+    p=make_ctr_target_capture() if ctr_target_capture else make_branch_fold() if branch_fold else make_branch_recovery() if branch_recovery else make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
     assert p.encode(0,'mflr',(3,))==0x7c6802a6
     assert p.encode(0,'mtctr',(3,))==0x7c6903a6
     assert p.encode(0,'bclr',(20,0,0))==0x4e800020
@@ -1131,9 +1172,10 @@ if __name__=='__main__':
     ap.add_argument('--compare',action='store_true')
     ap.add_argument('--branch-recovery',action='store_true')
     ap.add_argument('--branch-fold',action='store_true')
+    ap.add_argument('--ctr-target-capture',action='store_true')
     # Both fixtures fit signed D-form immediates; 0x6000 separates unified
     # bus data RAM from the instruction image below 0x4000.
     ap.add_argument('--memory-base',type=lambda x:int(x,0),choices=(0x1000,0x6000),default=BASE)
     args=ap.parse_args()
     BASE=args.memory_base
-    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare,args.branch_recovery,args.branch_fold)
+    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare,args.branch_recovery,args.branch_fold,args.ctr_target_capture)

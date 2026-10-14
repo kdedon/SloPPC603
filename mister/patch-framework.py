@@ -5,7 +5,8 @@
 
 sys_top's audio_out is placed only when MISTER_DISABLE_AUDIO is undefined;
 otherwise its outputs are tied low. This core produces no audio, and the block
-costs about 700 ALMs the core needs to fit. Usage: patch-framework.py <sys_top.v>
+costs about 700 ALMs the core needs to fit. The scaler mode port has five
+bits; its reserved bit 4 is tied low. Usage: patch-framework.py <sys_top.v>
 """
 import sys
 
@@ -27,4 +28,8 @@ assign analog_r   = 1'b0;
 `else
 """
 text = text.replace(head, off + head).replace(tail, tail + "`endif\n")
+mode = ".mode     ({~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),"
+if text.count(mode) != 1:
+    sys.exit("patch-framework: scaler mode connection not found exactly once")
+text = text.replace(mode, ".mode     ({1'b0,~lowlat,LFB_EN ? LFB_FLT : |scaler_flt,2'b00}),")
 open(path, "w").write(text)

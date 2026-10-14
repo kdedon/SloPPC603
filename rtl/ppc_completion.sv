@@ -98,7 +98,9 @@ module ppc_completion #(
     redirect_kill_generation_o [ppc_pkg::CQ_DEPTH],
   output logic [$clog2(ppc_pkg::CQ_DEPTH+1)-1:0] recovery_survivor_count_o,
   output ppc_pkg::retire_packet_t recovery_survivor_packet_o [ppc_pkg::CQ_DEPTH],
-  output ppc_pkg::completion_tag_t recovery_survivor_tag_o [ppc_pkg::CQ_DEPTH]
+  output ppc_pkg::completion_tag_t recovery_survivor_tag_o [ppc_pkg::CQ_DEPTH],
+  output ppc_pkg::rename_recovery_entry_t recovery_rename_o [ppc_pkg::CQ_DEPTH],
+  output logic [1:0] recovery_remove_o
 );
   import ppc_pkg::*;
   localparam int COUNT_WIDTH = $clog2(CQ_DEPTH + 1);
@@ -117,6 +119,9 @@ module ppc_completion #(
   retire_packet_t finish0_packet, finish1_packet, finish2_packet;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
+  logic pending_head, pending_head1, pivot_at_head, pivot_at_head1;
+  logic pending_head_kill, pending_head1_kill, head_recovery_protected;
+  logic [2:0] head_result_match, head1_result_match;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
   logic [COUNT_WIDTH-1:0] redirect_candidate_survivors;
   logic [CQ_INDEX_WIDTH-1:0] redirect_candidate_tail;
@@ -352,6 +357,10 @@ module ppc_completion #(
         assert (retire_valid_o) else $error("CQ memory retire without retire");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
       assert (int'(count_q) <= CQ_DEPTH) else $error("CQ count out of range");
+      if (redirect_accepted_o)
+        assert (COUNT_WIDTH'(retire_fire) + COUNT_WIDTH'(retire1_fire) <=
+                redirect_candidate_survivors)
+          else $error("CQ retirement extends beyond recovery survivor prefix");
     end
   end
   // synthesis translate_on
@@ -490,23 +499,85 @@ module ppc_completion #(
   assign retire_settled_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
   assign head_o = packets_q[head_q];
   assign head1_o = packets_q[head1_q];
+  // A pending head has age zero. If its arrival could be killed, neither
+  // irrevocable-settled guard can reject recovery: both require done(head).
+  // A pending CQ[1] cannot trigger the settled-pair guard; only a protected
+  // done head can reject an all/head-drop recovery that would kill it.
+  // These predicates are meaningful only for the pending arrival terms.
+  assign pending_head = (count_q != '0) && active_q[head_q] && !done_q[head_q];
+  assign pending_head1 = (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
+                         !done_q[head1_q];
+  assign pivot_at_head = (count_q != '0) && active_q[head_q] &&
+    (redirect_pivot_i.index == head_q) &&
+    (redirect_pivot_i.generation == generations_q[head_q]);
+  assign pivot_at_head1 = (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
+    (redirect_pivot_i.index == head1_q) &&
+    (redirect_pivot_i.generation == generations_q[head1_q]);
+  assign pending_head_kill = redirect_valid_i &&
+    (!PIVOT || redirect_all_i || (pivot_at_head && !redirect_keep_pivot_i));
+  assign head_recovery_protected = ENABLE_PIVOT_RECOVERY && (count_q != '0) &&
+    (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) && !retire_hold_i && done_q[head_q];
+  assign pending_head1_kill = redirect_valid_i &&
+    (!PIVOT || redirect_all_i || pivot_at_head ||
+     (pivot_at_head1 && !redirect_keep_pivot_i)) &&
+    !(head_recovery_protected && pending_head_kill);
+  // Compare the candidate directly with each fixed retirement lane. Full
+  // indexed finish/write/wake qualification below is otherwise unchanged.
+  assign head_result_match[0] = pending_head && (result_i.producer.index == head_q) &&
+    (result_i.producer.generation == generations_q[head_q]);
+  assign head_result_match[1] = pending_head && (result1_i.producer.index == head_q) &&
+    (result1_i.producer.generation == generations_q[head_q]);
+  assign head_result_match[2] = pending_head && (result2_i.producer.index == head_q) &&
+    (result2_i.producer.generation == generations_q[head_q]);
+  assign head1_result_match[0] = pending_head1 && (result_i.producer.index == head1_q) &&
+    (result_i.producer.generation == generations_q[head1_q]);
+  assign head1_result_match[1] = pending_head1 && (result1_i.producer.index == head1_q) &&
+    (result1_i.producer.generation == generations_q[head1_q]);
+  assign head1_result_match[2] = pending_head1 && (result2_i.producer.index == head1_q) &&
+    (result2_i.producer.generation == generations_q[head1_q]);
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni && pending_head) begin
+      assert (pending_head_kill == redirect_kill_o[head_q]);
+      assert (head_now0 == (result_clean && (result_i.producer.index == head_q)));
+      assert (head_now1 == (finish1_accept && result1_retire_i &&
+                           (result1_i.producer.index == head_q)));
+      assert (head_now2 == (finish2_accept && !result2_fault &&
+                           (result2_i.producer.index == head_q)));
+    end
+    if (rst_ni && pending_head1) begin
+      assert (pending_head1_kill == redirect_kill_o[head1_q]);
+      assert (head1_now0 == (result_clean && (result_i.producer.index == head1_q)));
+      assert (head1_now1 == (finish1_accept && result1_retire_i &&
+                            (result1_i.producer.index == head1_q)));
+      assert (head1_now2 == (finish2_accept && !result2_fault &&
+                            (result2_i.producer.index == head1_q)));
+    end
+  end
+  // synthesis translate_on
   // A clean finish changes no field pair_ok reads.
   assign retire1_settled = ENABLE_PAIR_RETIRE && rst_ni && (count_q > COUNT_WIDTH'(1)) &&
     active_q[head_q] && done_q[head_q] && active_q[head1_q] &&
     done_q[head1_q] && pair_ok(packets_q[head_q], packets_q[head1_q]);
   always_comb begin
-    // Finishing this cycle (finish_accept implies active and not done).
-    head_now0 = result_clean && (result_i.producer.index == head_q);
-    head_now1 = finish1_accept && result1_retire_i && (result1_i.producer.index == head_q);
-    head1_now0 = result_clean && (result_i.producer.index == head1_q);
-    head1_now1 = finish1_accept && result1_retire_i && (result1_i.producer.index == head1_q);
-    head_now2 = finish2_accept && !result2_fault && (result2_i.producer.index == head_q);
-    head1_now2 = finish2_accept && !result2_fault && (result2_i.producer.index == head1_q);
+    // Same-edge arrival bypass avoids the full indexed recovery kill scan.
+    // Faulting first/third-port results retain the original delayed retirement.
+    head_now0 = result_valid_i && result_retire_i && !result_fault &&
+                head_result_match[0] && !pending_head_kill;
+    head_now1 = result1_valid_i && result1_retire_i &&
+                head_result_match[1] && !pending_head_kill;
+    head1_now0 = result_valid_i && result_retire_i && !result_fault &&
+                 head1_result_match[0] && !pending_head1_kill;
+    head1_now1 = result1_valid_i && result1_retire_i &&
+                 head1_result_match[1] && !pending_head1_kill;
+    head_now2 = result2_valid_i && !result2_fault && head_result_match[2] &&
+                !pending_head_kill;
+    head1_now2 = result2_valid_i && !result2_fault && head1_result_match[2] &&
+                 !pending_head1_kill;
     retire_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
                                           (head_now0 || head_now1 || head_now2));
-    head_mem0 = result_lsu_valid_i && (result_i.producer.index == head_q) && !done_q[head_q] &&
-                (generations_q[head_q] == result_i.producer.generation) &&
-                !redirect_kill_o[head_q] && !result_fault;
+    head_mem0 = result_lsu_valid_i && head_result_match[0] &&
+                !pending_head_kill && !result_fault;
     retire_mem_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
                                               (head_mem0 || head_now2));
     retire_o = '0;
@@ -521,9 +592,13 @@ module ppc_completion #(
       retire_tag_o.index = head_q;
       retire_tag_o.generation = generations_q[head_q];
     end
+    // A fresh head finish can make a pair possible on an accepted cut.
+    // Stored CQ[1] must also survive; settled-pair protection alone covers
+    // only a head that was already done before this edge.
     retire1_valid_o = ENABLE_PAIR_RETIRE && retire_valid_o &&
                       (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
-                      (done_q[head1_q] || head1_now0 || head1_now1 || head1_now2) &&
+                      ((done_q[head1_q] && !redirect_kill_o[head1_q]) ||
+                       head1_now0 || head1_now1 || head1_now2) &&
                       pair_ok(packets_q[head_q], packets_q[head1_q]);
     retire1_o = '0;
     if (retire1_valid_o)
@@ -570,6 +645,30 @@ module ppc_completion #(
               !(result1_valid_i && (result1_i.producer == result2_i.producer)))
         else $error("third finish port took a register result or a shared producer");
   // synthesis translate_on
+
+  // Unshifted narrow metadata: the expensive packet/tag/owner selection
+  // never depends on a finish or same-edge retirement. Retire only removes
+  // age 0 and optionally age 1; the legacy compact bus remains unchanged.
+  always_comb begin
+    logic [CQ_INDEX_WIDTH-1:0] slot;
+    slot = '0;
+    recovery_remove_o = {retire1_fire, retire_fire};
+    for (int age = 0; age < CQ_DEPTH; age++) begin
+      recovery_rename_o[age] = '0;
+      begin
+        slot = ring_offset(head_q, COUNT_WIDTH'(age));
+        recovery_rename_o[age].retained = PIVOT && age < int'(redirect_candidate_survivors);
+        recovery_rename_o[age].gpr_write = packets_q[slot].gpr_write;
+        recovery_rename_o[age].gpr = packets_q[slot].gpr;
+        recovery_rename_o[age].tag = packets_q[slot].tag;
+        recovery_rename_o[age].update_owned = packets_q[slot].update_owned;
+        recovery_rename_o[age].update_gpr = packets_q[slot].update_gpr;
+        recovery_rename_o[age].update_tag = packets_q[slot].update_tag;
+        recovery_rename_o[age].producer.index = slot;
+        recovery_rename_o[age].producer.generation = generations_q[slot];
+      end
+    end
+  end
 
   // Rename reconstruction consumes post-commit survivors in oldest-first
   // order. Same-edge finish value/readiness travels independently on wake_o.
@@ -682,12 +781,20 @@ module ppc_completion #(
         end
       end
       for (int i = 0; i < CQ_DEPTH; i++) begin
-        if (finish_accept && (result_i.producer.index == CQ_INDEX_WIDTH'(i)))
-          packets_q[i] <= merge_fault(packets_q[i], finish0_packet);
+        if (finish_accept && (result_i.producer.index == CQ_INDEX_WIDTH'(i))) begin
+          if (result_fault)
+            packets_q[i] <= merge_fault(packets_q[i], finish0_packet);
+          else
+            packets_q[i] <= merge_finish(packets_q[i], finish0_packet);
+        end
         if (finish1_accept && (result1_i.producer.index == CQ_INDEX_WIDTH'(i)))
           packets_q[i] <= merge_finish(packets_q[i], finish1_packet);
-        if (finish2_accept && (result2_i.producer.index == CQ_INDEX_WIDTH'(i)))
-          packets_q[i] <= merge_fault(packets_q[i], finish2_packet);
+        if (finish2_accept && (result2_i.producer.index == CQ_INDEX_WIDTH'(i))) begin
+          if (result2_fault)
+            packets_q[i] <= merge_fault(packets_q[i], finish2_packet);
+          else
+            packets_q[i] <= merge_finish(packets_q[i], finish2_packet);
+        end
       end
       if (finish_accept) done_q[result_i.producer.index] <= 1'b1;
       if (finish1_accept) done_q[result1_i.producer.index] <= 1'b1;

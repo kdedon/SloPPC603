@@ -52,7 +52,7 @@ module tb_recovery_storage;
     .release_i(release_slot),.release_reg_i(5'd4),.release_tag_i(second_tag),
     .release_producer_i(release_owner),.recovery_i(recovery),
     .recovery_survivor_count_i(survivors),.recovery_survivor_packet_i(packets),
-    .recovery_survivor_tag_i(tags));
+    .recovery_survivor_tag_i(tags), .recovery_rename_i('{default:'0}), .recovery_remove_i(2'b00));
   task automatic check(input logic yes,input string msg);
     if (!yes) $fatal(1,"%s",msg);
     checks++;

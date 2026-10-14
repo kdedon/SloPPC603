@@ -32,6 +32,8 @@ module ppc_core_bat #(
   parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
   // Cache-block instructions, lwarx/stwcx. and sync go to a data cache.
   parameter bit ENABLE_DATA_CACHE = 1'b0,
+  // Coherent producer/consumer wiring is selected by the translated core.
+  parameter bit ENABLE_DATA_PAGE_PROJECTION = 1'b1,
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
@@ -212,6 +214,10 @@ module ppc_core_bat #(
   ppc_pkg::dmem_attr_t dmem_req_attr, attr_q;
   logic router_pdmem_req_ds, router_pdmem_req_now;
   logic [25:0] router_pdmem_req_ds_tag;
+  // One assembly knob enables the coherent producer and consumer together.
+  localparam bit DATA_PAGE_PROJECTION = ENABLE_DATA_PAGE_PROJECTION &&
+    ENABLE_LSU_PIPE && ENABLE_MICRO_TLB;
+  ppc_pkg::dtlb_projection_t data_page_projection;
   logic router_pdmem_req_valid, router_pdmem_req_ready;
   logic router_pdmem_rsp_valid, router_pdmem_rsp_ready;
   logic context_valid, context_ready, memory_quiescent;
@@ -272,6 +278,7 @@ module ppc_core_bat #(
   ppc_core #(
     .RESET_PC(RESET_PC),
     .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
+    .ENABLE_DATA_PAGE_PROJECTION(DATA_PAGE_PROJECTION),
     .FETCH_WIDTH(FETCH_WIDTH),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
@@ -361,6 +368,7 @@ module ppc_core_bat #(
     .dmem_req_valid_o(dmem_req_valid),
     .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write), .dmem_req_addr_o(dmem_req_addr),
+    .data_page_projection_o(data_page_projection),
     .dmem_req_wdata_o(dmem_req_wdata), .dmem_req_wstrb_o(dmem_req_wstrb),
     .dmem_req_probe_o(dmem_req_probe),
     .dmem_rsp_valid_i(dmem_rsp_valid), .dmem_rsp_ready_o(dmem_rsp_ready),
@@ -391,6 +399,7 @@ module ppc_core_bat #(
     .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
+    .ENABLE_DATA_PAGE_PROJECTION(DATA_PAGE_PROJECTION),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .TLB_SETS(TLB_SETS_EFFECTIVE),
     .HAS_602(ppc_pkg::cpu_has_602_ext(CPU_VARIANT)),
@@ -517,6 +526,7 @@ module ppc_core_bat #(
                     !pin_status_o.dcache_lock),
     .dmem_req_write_i(dmem_req_write), .dmem_req_attr_i(dmem_req_attr),
     .dmem_req_addr_i(dmem_req_addr),
+    .data_page_projection_i(data_page_projection),
     .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),
     .dmem_rsp_valid_o(router_dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready && !sync_wait_q),

@@ -137,7 +137,9 @@ module tb_micro_tlb_harness #(
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .TLB_SETS(TLB_SETS), .HAS_602(HAS_602)
-  ) dut (.imem_rsp_esa_o(imem_rsp_esa), .dmem_req_attr_i('0),
+  ) dut (
+    .data_page_projection_i('0),
+    .imem_rsp_esa_o(imem_rsp_esa), .dmem_req_attr_i('0),
     /* verilator lint_off PINCONNECTEMPTY */
     .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(), .pdmem_req_now_o(), .store_check_ok_o(), .store_check_page_i(20'b0),
     /* verilator lint_on PINCONNECTEMPTY */

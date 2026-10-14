@@ -220,3 +220,56 @@ There is no MMU, translation fault, cache enable/disable bypass, cache lock,
 `icbi` address operation, HID0 register, early restart, snooping, parity,
 hit-under-miss, or core integration in this bounded controller.  Only one
 lookup is outstanding; streaming comes from accepting on the consume edge.
+
+## Lookup metadata and inactive response payload, 2026-10-13
+
+Recorded: private strict cache comparison, commit b9f52ae8ef3b52159c341c7aa2ecaa565074da76 plus uncommitted candidate and bench changes, 2026-10-13.
+
+The optimization captures miss address, set, tag, word and way-valid metadata on every accepted idle lookup. Alignment errors, hits and locked bypasses may therefore change inactive metadata. Only a real miss consumes that tuple, and the refill states cannot accept another lookup before it is used. Pending hit LRU updates continue to use their separate captured set. Victim selection and capture remain on the following `IC_REFILL_REQUEST` edge.
+
+The raw response word also clears on every accepted idle lookup. For a miss, that word is inactive until the refill writes its response; for a hit, error or locked bypass, the clear reproduces the existing value. A stalled response prevents acceptance, so this change cannot overwrite a held valid packet. It changes neither valid response payloads nor acceptance, response, refill, cancellation or drain cycles. Geometry, replacement policy and stage boundaries are unchanged.
+
+The private comparison instantiated the original controller, metadata-only change, response-clear-only change and combined change under identical stimulus. Strict `sim/tools/verilate --binary --timing --assert -Wall -j 1` runs used `OBJCACHE=`, `MAKEFLAGS=-j1` and `/tmp/ppc603e-sim.lock`. Each compared pre-edge and settled post-edge interface control, valid response and refill payloads, active tag/data writes, pending LRU writes and the active refill tuple. The independent cache oracle checked data, hit/miss classification, replacement, response stability and cancellation rather than deriving expectations from candidate helpers.
+
+| Sets × ways | Fetch words | Base oracle checks | Accepted fetches | Hits | Misses | Accepted line requests | Pair responses |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 128 × 4 | 1 | 60,884 | 5,205 | 4,642 | 562 | 549 | 0 |
+| 128 × 4 | 2 | 65,390 | 5,205 | 4,642 | 562 | 549 | 4,506 |
+| 128 × 2 | 1 | 31,855 | 2,858 | 2,571 | 286 | 275 | 0 |
+| 128 × 2 | 2 | 34,267 | 2,858 | 2,571 | 286 | 275 | 2,412 |
+| 64 × 2 | 1 | 17,647 | 1,706 | 1,547 | 158 | 147 | 0 |
+| 64 × 2 | 2 | 19,035 | 1,706 | 1,547 | 158 | 147 | 1,388 |
+
+All six passed the same-cycle differential checks and additional locked hit/miss, alignment-over-lock, subsequent normal refill and legal set-invalidation cases. Each retained 200 streamed hits in 201 observed cycles. The table records the base-oracle summary before the additional cases; its 229,078 checks are not the total after those additions. The retained canonical bench prints its final summary after all cases.
+
+Inactive miss metadata, invalid response payload and idle asynchronous LRU reads are deliberately outside the equivalence comparison. The experiment is bounded simulation, not a formal proof, full CPU conformance test or translated branch-timing gate. Its private comparison harness is exploratory and is not a retained regression. Architectural numbers and cycle acceptance continue to come from the cache contract and independent canonical tests. No mapped or fitted timing result is established by this comparison.
+
+Recorded: `OBJCACHE= make -C sim -j1 test-icache cache-geo-icache-128x2
+cache-geo-icache-64x2 test-icache-bus60x test-icache-managed`, same commit plus
+changes, 2026-10-13. All canonical standalone checks passed: 128 × 4 one/two-word
+responses passed 61,031/65,545 checks, with 5,214 fetches, 552 line requests and
+4,514 pair responses for width two. The 128 × 2 and 64 × 2 one-word runs passed
+32,002/17,794 checks. All retained 200 streamed hits in 201 cycles. Physical
+burst integration passed 3,805 checks/89 responses/21 bursts; managed-cache
+checks passed 267/20 fetches/8 line requests/3 bypasses/5 maintenance operations.
+These final canonical counts include the supplemental cases.
+
+Recorded: `OBJCACHE= make -C sim -j1 lint check-spec
+ test-core-bat-cached-bus60x-drain test-core-bat-cached-bus60x-coherence`, same
+commit plus changes, 2026-10-13, within the combined integer/core batch. Strict
+lint, all 288 Python checks, translated drain (701 checks/47 retirements) and
+coherence (1,311 checks/65 retirements) passed. The combined batch also passes
+unchanged translated held-CR request timing. Full release gates and a fresh
+matched fit remain outstanding.
+
+The complete focused reproduction command is:
+
+```sh
+flock /tmp/ppc603e-sim.lock env OBJCACHE= make -C sim -j1 \
+  test-icache cache-geo-icache-128x2 cache-geo-icache-64x2 \
+  test-icache-bus60x test-icache-managed \
+  test-core-bat-cached-bus60x-drain \
+  test-core-bat-cached-bus60x-coherence lint check-spec
+```
+
+`test-icache` covers the 128 × 4 cache with one- and two-word responses; the listed geometry targets cover the other supported organizations. This focused command does not run the full regression or all translated-CPU cases. A fresh fit with reviewed setup, hold and constraints remains necessary before any frequency claim.

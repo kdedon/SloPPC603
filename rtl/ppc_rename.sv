@@ -7,7 +7,9 @@
 // beside lane 0 and takes the second free slot, and it wins a same-register
 // map update. Port 2 takes the third free slot, only beside ports 0 and 1,
 // and is the youngest.
-module ppc_rename (
+module ppc_rename #(
+  parameter bit USE_UNSHIFTED_RECOVERY = 1'b0
+) (
   input logic clk_i, rst_ni,
   input logic [4:0] read_a_i, read_b_i,
   input logic [31:0] arch_a_i, arch_b_i,
@@ -71,7 +73,9 @@ module ppc_rename (
   input logic recovery_i,
   input logic [$clog2(ppc_pkg::CQ_DEPTH+1)-1:0] recovery_survivor_count_i,
   input ppc_pkg::retire_packet_t recovery_survivor_packet_i [ppc_pkg::CQ_DEPTH],
-  input ppc_pkg::completion_tag_t recovery_survivor_tag_i [ppc_pkg::CQ_DEPTH]
+  input ppc_pkg::completion_tag_t recovery_survivor_tag_i [ppc_pkg::CQ_DEPTH],
+  input ppc_pkg::rename_recovery_entry_t recovery_rename_i [ppc_pkg::CQ_DEPTH],
+  input logic [1:0] recovery_remove_i
 );
   import ppc_pkg::*;
   logic [GPR_RENAME_DEPTH-1:0] valid, ready;
@@ -204,6 +208,107 @@ module ppc_rename (
     if (alloc2_fire) owners[alloc2_tag_o] <= alloc2_producer_i;
   end
 
+  localparam int RECOVERY_AGE_WIDTH = $clog2(CQ_DEPTH);
+  logic [GPR_RENAME_DEPTH-1:0] rebuilt_valid, rebuilt_ready;
+  logic [31:0] rebuilt_map_valid;
+  rename_tag_t rebuilt_map_tag [32];
+  genvar recovery_map_reg, recovery_unused_age;
+  generate if (USE_UNSHIFTED_RECOVERY) begin : g_unshifted_recovery
+    logic [GPR_RENAME_DEPTH-1:0] pre_valid, pre_ready;
+    logic [31:0] pre_map_valid;
+    rename_tag_t pre_map_tag [32];
+    logic [RECOVERY_AGE_WIDTH-1:0] pre_slot_age [GPR_RENAME_DEPTH];
+    logic [RECOVERY_AGE_WIDTH-1:0] pre_map_age [32];
+    logic [CQ_DEPTH-1:0] main_owned, update_owned;
+    // These comparisons precede the retirement-dependent selection. The
+    // existing flops, exact generation, and same-edge wake qualification are
+    // identical to the compact-path reconstruction.
+    always_comb begin
+      for (int age = 0; age < CQ_DEPTH; age++) begin
+        main_owned[age] = recovery_rename_i[age].retained &&
+          recovery_rename_i[age].gpr_write &&
+          (int'(recovery_rename_i[age].tag) < GPR_RENAME_DEPTH) &&
+          valid[recovery_rename_i[age].tag] &&
+          owners[recovery_rename_i[age].tag] == recovery_rename_i[age].producer;
+        update_owned[age] = recovery_rename_i[age].retained &&
+          recovery_rename_i[age].update_owned &&
+          valid[recovery_rename_i[age].update_tag] &&
+          owners[recovery_rename_i[age].update_tag] == recovery_rename_i[age].producer;
+      end
+      pre_valid = '0;
+      pre_ready = '0;
+      pre_map_valid = '0;
+      for (int r = 0; r < 32; r++) begin
+        pre_map_tag[r] = '0;
+        pre_map_age[r] = '0;
+      end
+      for (int slot = 0; slot < GPR_RENAME_DEPTH; slot++) pre_slot_age[slot] = '0;
+      for (int age = 0; age < CQ_DEPTH; age++) begin
+        if (main_owned[age]) begin
+          pre_valid[recovery_rename_i[age].tag] = 1'b1;
+          pre_ready[recovery_rename_i[age].tag] = ready[recovery_rename_i[age].tag] ||
+            (wake_match && wake_i.tag == recovery_rename_i[age].tag &&
+             wake_i.producer == recovery_rename_i[age].producer) ||
+            (wake1_match && wake1_i.tag == recovery_rename_i[age].tag &&
+             wake1_i.producer == recovery_rename_i[age].producer);
+          pre_slot_age[recovery_rename_i[age].tag] = RECOVERY_AGE_WIDTH'(age);
+          pre_map_valid[recovery_rename_i[age].gpr] = 1'b1;
+          pre_map_tag[recovery_rename_i[age].gpr] = recovery_rename_i[age].tag;
+          pre_map_age[recovery_rename_i[age].gpr] = RECOVERY_AGE_WIDTH'(age);
+        end
+        // Update ownership follows the main write at the same age, just as
+        // the legacy walk. Its EA was ready at allocation.
+        if (update_owned[age]) begin
+          pre_valid[recovery_rename_i[age].update_tag] = 1'b1;
+          pre_ready[recovery_rename_i[age].update_tag] = 1'b1;
+          pre_slot_age[recovery_rename_i[age].update_tag] = RECOVERY_AGE_WIDTH'(age);
+          pre_map_valid[recovery_rename_i[age].update_gpr] = 1'b1;
+          pre_map_tag[recovery_rename_i[age].update_gpr] = recovery_rename_i[age].update_tag;
+          pre_map_age[recovery_rename_i[age].update_gpr] = RECOVERY_AGE_WIDTH'(age);
+        end
+      end
+      // Removing an oldest prefix cannot expose another writer when the
+      // youngest winner is itself removed: all alternatives are also older.
+      for (int slot = 0; slot < GPR_RENAME_DEPTH; slot++) begin
+        rebuilt_valid[slot] = pre_valid[slot] &&
+          !(pre_slot_age[slot] == RECOVERY_AGE_WIDTH'(0) && recovery_remove_i[0]) &&
+          !(pre_slot_age[slot] == RECOVERY_AGE_WIDTH'(1) && recovery_remove_i[1]);
+        rebuilt_ready[slot] = rebuilt_valid[slot] && pre_ready[slot];
+      end
+      for (int r = 0; r < 32; r++) begin
+        rebuilt_map_valid[r] = pre_map_valid[r] &&
+          !(pre_map_age[r] == RECOVERY_AGE_WIDTH'(0) && recovery_remove_i[0]) &&
+          !(pre_map_age[r] == RECOVERY_AGE_WIDTH'(1) && recovery_remove_i[1]);
+        rebuilt_map_tag[r] = rebuilt_map_valid[r] ? pre_map_tag[r] : '0;
+      end
+    end
+    // synthesis translate_off
+    always @(posedge clk_i) if (rst_ni && recovery_i) begin
+      assert (!recovery_remove_i[1] || recovery_remove_i[0])
+        else $error("recovery removal must be an oldest prefix");
+      for (int age = 0; age < CQ_DEPTH; age++)
+        if (recovery_rename_i[age].retained && recovery_rename_i[age].gpr_write &&
+            int'(recovery_rename_i[age].tag) < GPR_RENAME_DEPTH &&
+            !(age == 0 && recovery_remove_i[0]) && !(age == 1 && recovery_remove_i[1]))
+          assert (main_owned[age]) else $error("recovery survivor lacks exact rename ownership");
+    end
+    // synthesis translate_on
+  end else begin : g_legacy_recovery
+    logic unused_unshifted_inputs;
+    assign rebuilt_valid = '0;
+    assign rebuilt_ready = '0;
+    assign rebuilt_map_valid = '0;
+    for (recovery_map_reg = 0; recovery_map_reg < 32; recovery_map_reg++) begin : g_zero_map
+      assign rebuilt_map_tag[recovery_map_reg] = '0;
+    end
+    // Explicitly consume optional inactive inputs in the compatibility path.
+    assign unused_unshifted_inputs = ^recovery_remove_i;
+    for (recovery_unused_age = 0; recovery_unused_age < CQ_DEPTH; recovery_unused_age++) begin : g_unused
+      logic unused_entry;
+      assign unused_entry = ^recovery_rename_i[recovery_unused_age];
+    end
+  end endgenerate
+
   // synthesis translate_off
   for (genvar slot = 0; slot < GPR_RENAME_DEPTH; slot++) begin : owner_invariants
     assert property (@(posedge clk_i) disable iff (!rst_ni)
@@ -267,6 +372,12 @@ module ppc_rename (
       assert (!alloc_i && !alloc1_i && !alloc2_i)
         else $error("rename allocation attempted on accepted recovery");
       // synthesis translate_on
+      if (USE_UNSHIFTED_RECOVERY) begin
+        valid <= rebuilt_valid;
+        ready <= rebuilt_ready;
+        map_valid <= rebuilt_map_valid;
+        for (int r = 0; r < 32; r++) map_tag[r] <= rebuilt_map_tag[r];
+      end else begin
       valid <= '0;
       ready <= '0;
       map_valid <= '0;
@@ -316,6 +427,7 @@ module ppc_rename (
           map_tag[recovery_survivor_packet_i[age].update_gpr] <=
             recovery_survivor_packet_i[age].update_tag;
         end
+      end
       end
     end else begin
       if (wake_match) begin

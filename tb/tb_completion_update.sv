@@ -46,7 +46,11 @@ module tb_completion_update;
     .redirect_kill_generation_o(kill_gen),
     .recovery_survivor_count_o(survivor_count),
     .recovery_survivor_packet_o(survivors),
-    .recovery_survivor_tag_o(survivor_tags)
+    .recovery_survivor_tag_o(survivor_tags),
+    // Legacy oracle consumes compact survivors; optional metadata is unused.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .recovery_rename_o(), .recovery_remove_o()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
   for (genvar g = 0; g < CQ_DEPTH; g++) begin : gen_kill_reduction
     assign kill_gen_reduction[g] = ^kill_gen[g];

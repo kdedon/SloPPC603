@@ -1,6 +1,6 @@
 ---
 name: cpu-reference-cores
-description: Load when you need precedent for a CPU microarchitecture decision (pipeline, forwarding, regfile, cache, TLB, exceptions, mul/div, FPU, bus, trace/savestate) and want to see how a shipping MiSTer/FPGA CPU did it. Indexes six mined cores — N64 VR4300, PSX R3000A, Saturn SH-2, SparcStation SPARC V8, Atari7800 ARM7TDMI, z486 with x87 FPU — with per-core reports carrying file:line evidence and ranked 603e lessons.
+description: Load when you need precedent for a CPU microarchitecture decision (pipeline, forwarding, regfile, cache, TLB, exceptions, mul/div, FPU, bus, trace/savestate). Indexes six mined FPGA cores plus a focused DSPPC604 pipeline comparison, with pinned source evidence and applicability limits for the 603e.
 ---
 
 # Reference CPU cores — index and citation key
@@ -19,6 +19,39 @@ Links are pinned to the reviewed commits; line numbers refer to those commits.
 | **Z486** | i486-class x86 + x87 FPU | [nand2mario/z486](https://github.com/nand2mario/z486/tree/53dc450e01302c174f75fc9280417a4dc5884863) | SystemVerilog | 57.95 MHz DE10-Nano fit; MiSTer release at 85 MHz | `references/z486-x87.md` |
 
 Line numbers were spot-checked, not all re-verified; open the source before quoting a line as fact.
+
+## DSPPC604: shared pipeline contracts
+
+The additional PowerPC reference is [MacPPC7300_MiSTer at
+8697f64](https://github.com/danifunker/MacPPC7300_MiSTer/tree/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604).
+This is a focused comparison, not a seventh full mined report. Its
+[six design rules](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/docs/DSPPC604_plan.md#L21-L57)
+offer these single-core options:
+
+- Declare operands and destinations once; share dependency comparisons across GPR/FPR
+  operations. Its [forwarding and load-use check](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604.sv#L510-L544)
+  consume decoded declarations rather than adding instruction-specific interlocks.
+- Expand update, multiple, string and conditional-store instructions into ordinary uops
+  in [a decode sequencer](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604_seq.sv#L5-L18).
+  Keep the architectural instruction PC and restart/partial-effect rules across the sequence.
+- Use one accepted request/response protocol for long operations and one recovery contract
+  for redirects. Its [integer-unit interface](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/rtl/DSPPC604/DSPPC604_int_unit.sv#L10-L21)
+  documents operand stability and flush; the response depends on the request staying asserted.
+  Do not transplant that detail into a decoupled interface with different ownership rules.
+- Keep execution units independent of architectural register storage and instantiate the
+  same units in vector tests and the pipeline. “Stateless” means architectural-state-free;
+  a multiply/divide implementation can still contain protocol and arithmetic state.
+- Put model-specific constants/tables in parameters and distinct MMU behavior in whole modules.
+  The 604's hardware table walk does not replace the 603e's software TLB reload contract.
+- Its status-at-EX and data-at-MEM/WB commit relies on blocking EX behind every older fault
+  and separating memory from status writes. Our CQ-based completion contract remains in force;
+  eliminating status forwarding requires a new proof of irrevocability, not copying EX writes.
+
+Timing is reported as [64.6 MHz with the 66 MHz gate still open](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/docs/DSPPC604_plan.md#L1208-L1209).
+Its [timing campaign](https://github.com/danifunker/MacPPC7300_MiSTer/blob/8697f64edee5d19eaeeca59542bb7262659f0efb/docs/DSPPC604_plan.md#L945-L1023)
+supports predecoded read indexes, per-source checks beside bypass data, and one-hot cache
+selection as candidates. They moved critical-path families but sometimes reduced overall
+Fmax through placement variance; measure our fitted design before claiming a gain.
 
 ## What each core is good evidence for
 

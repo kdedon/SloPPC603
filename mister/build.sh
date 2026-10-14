@@ -22,6 +22,10 @@
 # analysis and elaboration only. --seed N sets the fitter seed. --sys-mhz N
 # sets the system clock (processor, DDR3 port, video) to N MHz, 10 to 99;
 # the default, 45, is the clock the published core closes timing at.
+# --jobs N caps Quartus threads and container CPU use (default 2, range 1–8).
+# Quartus containers are limited to 8 GiB without swap.
+# --routability always enables aggressive fitter routability optimization;
+# auto (the default) preserves the project's existing setting.
 set -euo pipefail
 clean=0
 native=0
@@ -33,8 +37,10 @@ analyze=0
 suite=""
 seed=""
 router_normal=0
+routability=auto
 sys_mhz=45
-usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N] [--router-normal]" >&2; exit 2; }
+quartus_jobs=2
+usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N] [--jobs N] [--router-normal] [--routability auto|always]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
@@ -45,10 +51,19 @@ while (($#)); do
     --dual) dual=1 ;;
     --lsu-pipe) lsu_pipe=1 ;;
     --router-normal) router_normal=1 ;;
+    --routability)
+      shift
+      case "${1:-}" in auto|always) routability="$1" ;; *) usage ;; esac
+      ;;
     --seed)
       shift
       [[ "${1:-}" =~ ^[0-9]+$ ]] || usage
       seed="$1"
+      ;;
+    --jobs)
+      shift
+      [[ "${1:-}" =~ ^[1-8]$ ]] || usage
+      quartus_jobs="$1"
       ;;
     --sys-mhz)
       shift
@@ -77,6 +92,11 @@ here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "${here}/.." && pwd)"
 . "${here}/../ci/pins.env"
 image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
+# Protect source/config generation and reports as well as the Quartus commands.
+# Do not wrap this script in another flock on the same lock.
+exec {quartus_lock_fd}>/tmp/ppc603e-quartus.lock
+flock "${quartus_lock_fd}"
+python3 "${repo}/quartus/check_disk_space.py" "${repo}" /tmp
 short="$(git -C "${repo}" rev-parse --short HEAD)"
 if [[ -n "$(git -C "${repo}" status --porcelain -- rtl mister toolchain/demo)" ]]; then
   short="${short}+"
@@ -108,7 +128,24 @@ rm -rf "${here}/output_files" "${here}/build_id.v"
 printf '`define MISTER_SYS_MHZ %s\n`define MISTER_PLL_FREQ "%s.000000 MHz"\n' "${sys_mhz}" "${sys_mhz}" \
   > "${here}/sys_clock.vh"
 # Quartus writes every sourced assignment back into the project file.
-cp "${here}/ppc603e.qsf" "${here}/ppc603e.qsf.keep"
+qsf_backup="$(mktemp "${here}/ppc603e.qsf.keep.XXXXXX")"
+cp "${here}/ppc603e.qsf" "${qsf_backup}"
+restore_qsf() {
+  if [[ -n "${qsf_backup}" ]]; then
+    cp "${qsf_backup}" "${here}/ppc603e.qsf" || return
+    rm -f "${qsf_backup}" || return
+    qsf_backup=""
+  fi
+}
+on_exit() {
+  local exit_status=$?
+  restore_qsf || exit_status=1
+  exit "${exit_status}"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+sed -i "s/^set_global_assignment -name NUM_PARALLEL_PROCESSORS .*/set_global_assignment -name NUM_PARALLEL_PROCESSORS ${quartus_jobs}/" "${here}/ppc603e.qsf"
 if [[ "${native}" == 1 ]]; then
   sed -i '/VERILOG_MACRO "MISTER_FB/d' "${here}/ppc603e.qsf"
 fi
@@ -131,6 +168,10 @@ fi
 if [[ "${router_normal}" == 1 ]]; then
   sed -i "s/^set_global_assignment -name ROUTER_TIMING_OPTIMIZATION_LEVEL .*/set_global_assignment -name ROUTER_TIMING_OPTIMIZATION_LEVEL NORMAL/" "${here}/ppc603e.qsf"
 fi
+if [[ "${routability}" == always ]]; then
+  sed -i '/^set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION /d' "${here}/ppc603e.qsf"
+  echo 'set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS' >> "${here}/ppc603e.qsf"
+fi
 if [[ -n "${seed}" ]]; then
   sed -i "s/^set_global_assignment -name SEED .*/set_global_assignment -name SEED ${seed}/" "${here}/ppc603e.qsf"
 fi
@@ -142,12 +183,12 @@ if [[ "${analyze}" == 1 ]]; then
 else
   flow=(quartus_sh --flow compile ppc603e -c ppc603e)
 fi
-# One Quartus build at a time on a shared machine.
-flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
+echo "fitter routability: ${routability} (auto preserves project settings)"
+docker run --rm --network none --cpus "${quartus_jobs}" --memory 8g --memory-swap 8g --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
   --workdir /work/mister "${image}" \
   "/opt/intelFPGA_lite/quartus/bin/${flow[0]}" "${flow[@]:1}" \
   > "${here}/output_files.log" 2>&1 || status=$?
-mv "${here}/ppc603e.qsf.keep" "${here}/ppc603e.qsf"
+restore_qsf
 if [[ "${analyze}" == 1 ]]; then
   grep -E "^(Error|Critical Warning)|Info: Quartus.*Analysis & Synthesis was successful" "${here}/output_files.log" || true
   echo "quartus exit status ${status}"
@@ -190,7 +231,7 @@ if [[ -f "${out}/ppc603e.sta.summary" ]]; then
     echo "timing: negative slack" >&2
     status=1
     # Name the failing paths in the log, so a missed seed needs no refit.
-    flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
+    docker run --rm --network none --cpus "${quartus_jobs}" --memory 8g --memory-swap 8g --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
       --workdir /work/mister "${image}" /opt/intelFPGA_lite/quartus/bin/quartus_sta \
       -t failing_paths.tcl ppc603e output_files/ppc603e.failing.txt > "${here}/failing_paths.log" 2>&1 || true
     if [[ -f "${out}/ppc603e.failing.txt" ]]; then

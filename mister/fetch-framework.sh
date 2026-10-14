@@ -9,7 +9,7 @@
 set -euo pipefail
 commit=3ea1134cf05d62c2b1db30362277a823d739ced2
 digest=d1fe0cfea73e7870a28c683ddcac427f09951a2d69aaa666dd61b11a95e77170
-patched=68f156fa7d54023604579f9295972cfffb740fb64b81fe31de52e15ab693a308
+patched=460bd2c782719be52beb5e501da90917ec45f1220b0304006c5b5235b8a3cdc7
 url="https://github.com/MiSTer-devel/Template_MiSTer/archive/${commit}.tar.gz"
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 

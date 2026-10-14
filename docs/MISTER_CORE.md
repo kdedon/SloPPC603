@@ -272,12 +272,19 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N]
+mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N] [--jobs N] [--routability auto|always]
 mister/build.sh --clean --fpu-compact --dual --lsu-pipe   # the test core, 45 MHz
 ```
 
 The test core is the one to load programs into: COMPACT FPU, dual dispatch and the
 pipelined load/store unit. Every build has `Load program`.
+`--jobs N` caps Quartus threads and container CPU use (default 2, range 1–8).
+Quartus containers have an 8 GiB memory limit with swap disabled.
+`--routability always` enables `FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS`
+for a controlled fit; the default `auto` preserves existing project settings.
+The script holds `/tmp/ppc603e-quartus.lock` across generation, QSF changes,
+build and diagnostic STA. Run it directly without an outer lock. Temporary QSF
+settings restore after compilation and on exit, INT or TERM.
 `--analyze` stops after Quartus analysis and elaboration, a quick check of RTL
 changes against Quartus 17.
 
@@ -696,3 +703,11 @@ the commit, so a rebuild at another commit gives a different digest.
 Not covered: running on a DE10-Nano (1080p picture, `Save screen` with a real SD image),
 the `--native` build (not fitted), and the `quartus/demo` project, which also compiles
 `soc_ram_sp_be` and the demo SoC and was not rebuilt.
+
+### 66 MHz attempt, 2026-10-13
+
+The full COMPACT-FPU, dual-dispatch, pipelined-LSU configuration passed synthesis
+but failed routing at 66 MHz with 96% ALM utilization and excessive hold-delay
+routing demand. TimeQuest did not run, so this establishes no Fmax. The
+[review](FMAX_66_REVIEW.md) records the command, resource estimates, focused
+checks and next optimization targets. The published default stays at 45 MHz.

@@ -1,6 +1,6 @@
 ---
 name: hdl-coding-guidelines
-description: Load for any RTL/SystemVerilog/VHDL design, review, timing-closure, CDC, FSM, handshake, arbiter/memory-controller, BRAM/M10K/MLAB/DSP inference, SDC or Quartus-report work on Cyclone V / MiSTer cores (5CSEBA6U23I7, Quartus 18.1); encodes the project's HDL guidelines as checkable rules, anti-pattern and bring-up checklists.
+description: Load for any RTL/SystemVerilog/VHDL design, review, timing-closure, CDC, FSM, handshake, arbiter/memory-controller, BRAM/M10K/MLAB/DSP inference, SDC or Quartus-report work on Cyclone V / MiSTer cores (5CSEBA6U23I7, Quartus 17.0.2); encodes the project's HDL guidelines as checkable rules, anti-pattern and bring-up checklists.
 ---
 
 # HDL Coding Guidelines — Operating Manual (Cyclone V / MiSTer)
@@ -10,10 +10,10 @@ Pointers below are written `see references/source/<file>#section`. `references/R
 file so you can pick the right depth doc. Rule labels: **[C]** contract (violating breaks correctness),
 **[V]** convention, **[I]** inference/judgment. When a [C] and a convenience conflict, [C] wins.
 
-Target: Cyclone V SoC `5CSEBA6U23I7` (DE10-Nano): ~110K ALMs, 5.6 Mbit M10K+MLAB, 112 DSP, 16 GCLK,
+Target: Cyclone V SoC `5CSEBA6U23I7` (DE10-Nano): 41,910 ALMs (about 110K logic elements), 5.6 Mbit M10K+MLAB, 112 DSP, 16 GCLK,
 6 PLLs. Flops power up to **0** (an `initial q = 1` does not survive to silicon; reset anything whose
-post-power-up value matters). Resource budget is rarely the constraint; **cycle accuracy and correctness
-under stall/CDC are.**
+post-power-up value matters). Budget ALMs and routing headroom from the fitted configuration. **Cycle accuracy and
+correctness under stall/CDC remain requirements when reducing area or meeting timing.**
 
 ---
 
