@@ -5,7 +5,7 @@
 
 Reads <revision>.fit.summary or .fit.rpt, <revision>.sta.summary or .sta.rpt,
 and, with --target-period, the re-timing written by report-target-paths.sh. The FPU
-harness reports (setup.txt, hold.txt, clocks.txt) stand in for STA files.
+harness reports (setup.txt, hold.txt, clocks.txt) stand in for absent STA files.
 """
 import argparse
 import datetime
@@ -91,7 +91,11 @@ def sta_slack(directory, revision):
                 kind = match.groups() if match else None
             elif line.startswith("Slack") and kind and kind[1].lower() in ANALYSES:
                 where, analysis, clock = kind
-                slack.setdefault(clock, {}).setdefault(analysis.lower(), {})[corner(where)] = number(line.split(":", 1)[1])
+                value = number(line.split(":", 1)[1])
+                # Recovery/removal may have no applicable paths (N/A).
+                # Missing setup/hold still fails standard-report validation.
+                if value is not None:
+                    slack.setdefault(clock, {}).setdefault(analysis.lower(), {})[corner(where)] = value
     else:
         for match in re.finditer(r"^; (.*) Model (\w+) Summary\s*;\n(?:[+;].*\n)*?", report, re.MULTILINE):
             where, analysis = match.groups()
@@ -109,6 +113,19 @@ def sta_slack(directory, revision):
         if len(cells) > 3 and cells[1] in ("Base", "Generated") and number(cells[2]) is not None:
             periods[cells[0]] = number(cells[2])
     return slack, periods
+
+
+def validate_standard(slack, periods):
+    """Require paired setup/hold coverage where either has timed paths."""
+    if not slack or not periods:
+        raise ValueError("standard STA report lacks timing or clock periods")
+    for clock, analyses in slack.items():
+        if clock not in periods or periods[clock] <= 0:
+            raise ValueError(f"standard STA report lacks a valid period for {clock}")
+        setup = analyses.get("setup", {}).keys()
+        hold = analyses.get("hold", {}).keys()
+        if setup != hold:
+            raise ValueError(f"standard STA report has unmatched setup/hold corners for {clock}")
 
 
 def harness_slack(directory):
@@ -179,10 +196,17 @@ def main():
 
     repo = Path(__file__).resolve().parent.parent
     values = fitter(args.dir, args.revision)
-    if (args.dir / "setup.txt").is_file():
-        slack, periods = harness_slack(args.dir)
-    else:
+    standard_present = any((args.dir / f"{args.revision}.sta.{suffix}").is_file()
+                           for suffix in ("summary", "rpt"))
+    if standard_present:
         slack, periods = sta_slack(args.dir, args.revision)
+        try:
+            validate_standard(slack, periods)
+        except ValueError as error:
+            print(f"fit_summary: {error}", file=sys.stderr)
+            return 1
+    else:
+        slack, periods = harness_slack(args.dir)
     if not values or not slack:
         print(f"fit_summary: no fitter or timing report for {args.revision} in {args.dir}", file=sys.stderr)
         return 1

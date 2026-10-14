@@ -44,8 +44,6 @@ extern const uint8_t font8x8[95][8];
 
 #define DOOM_W 320
 #define DOOM_H 200
-/* Largest screen scale; the copy to the screen is part of each frame. */
-#define MAX_SCALE 3
 /* Doom palette indices for text. */
 #define TEXT_FG 4
 #define TEXT_BG 0
@@ -66,7 +64,7 @@ static struct {
   uint32_t gametics[PASSES_SHOWN], realtics[PASSES_SHOWN];
 } results __attribute__((section(".noinit")));
 
-static uint32_t fb_base, fb_stride, fb_w, fb_h, scale, pic_x, pic_y, text_y;
+static uint32_t fb_base, fb_stride, fb_w, fb_h, pic_x, pic_y, text_y;
 static uint32_t mhz;
 static char err_line[160];
 static size_t err_len;
@@ -133,14 +131,14 @@ static void fill(uint32_t y0, uint32_t h, uint8_t c)
 
 static void text(uint32_t col, uint32_t row, const char *s)
 {
-  uint32_t s8 = scale, cell = 8 * s8;
+  uint32_t cell = 8;
   for (; *s; s++, col++) {
     int ch = *s < 0x20 || *s > 0x7e ? 0 : *s - 0x20;
     for (uint32_t y = 0; y < cell; y++)
       for (uint32_t x = 0; x < cell; x++) {
         uint32_t px = col * cell + x, py = text_y + row * cell + y;
         if (px < fb_w && py < fb_h)
-          put_pixel(px, py, (font8x8[ch][y / s8] << (x / s8)) & 0x80 ? TEXT_FG : TEXT_BG);
+          put_pixel(px, py, (font8x8[ch][y] << x) & 0x80 ? TEXT_FG : TEXT_BG);
       }
   }
 }
@@ -151,19 +149,17 @@ static void screen_init(void)
   fb_stride = REG(R_FB_STRIDE);
   fb_w = REG(R_FB_SIZE) >> 16;
   fb_h = REG(R_FB_SIZE) & 0xffff;
-  scale = 1;
-  while (scale < MAX_SCALE && (scale + 1) * DOOM_W <= fb_w && (scale + 1) * DOOM_H + 8 * 9 * (scale + 1) <= fb_h)
-    scale++;
-  pic_x = (fb_w - scale * DOOM_W) / 2 & ~3u;
+  /* Keep the timed copy at the engine resolution on every display. */
+  pic_x = (fb_w - DOOM_W) / 2 & ~3u;
   pic_y = 0;
-  text_y = scale * DOOM_H + 4 * scale;
+  text_y = DOOM_H + 4;
   fill(0, fb_h, TEXT_BG);
 }
 
 static void show_results(void)
 {
   char line[64];
-  snprintf(line, sizeof line, "Doom timedemo demo3, pass %lu", (unsigned long)results.passes + 1);
+  snprintf(line, sizeof line, "Doom 320x200 1x demo3, pass %lu", (unsigned long)results.passes + 1);
   text(0, 0, line);
   uint32_t first = results.passes > PASSES_SHOWN ? results.passes - PASSES_SHOWN : 0;
   for (uint32_t p = first; p < results.passes; p++) {
@@ -188,28 +184,14 @@ void DG_DrawFrame(void)
     palette_changed = false;
   }
   const uint8_t *src = DG_ScreenBuffer;
-  for (uint32_t y = 0; y < DOOM_H; y++, src += DOOM_W)
-    for (uint32_t r = 0; r < scale; r++) {
-      uint32_t row = fb_base + (pic_y + y * scale + r) * fb_stride + pic_x;
-      if (scale == 1) {
-        for (uint32_t x = 0; x < DOOM_W; x += 4) {
-          uint32_t w = (uint32_t)src[x] << 24 | (uint32_t)src[x + 1] << 16 |
-                       (uint32_t)src[x + 2] << 8 | src[x + 3];
-          *(volatile uint32_t *)((row + x) ^ IO_XOR) = w;
-        }
-      } else {
-        uint32_t w = 0, n = 0, addr = row;
-        for (uint32_t x = 0; x < DOOM_W; x++)
-          for (uint32_t k = 0; k < scale; k++) {
-            w = w << 8 | src[x];
-            if (++n == 4) {
-              *(volatile uint32_t *)(addr ^ IO_XOR) = w;
-              addr += 4;
-              n = 0;
-            }
-          }
-      }
+  for (uint32_t y = 0; y < DOOM_H; y++, src += DOOM_W) {
+    uint32_t row = fb_base + (pic_y + y) * fb_stride + pic_x;
+    for (uint32_t x = 0; x < DOOM_W; x += 4) {
+      uint32_t w = (uint32_t)src[x] << 24 | (uint32_t)src[x + 1] << 16 |
+                   (uint32_t)src[x + 2] << 8 | src[x + 3];
+      *(volatile uint32_t *)((row + x) ^ IO_XOR) = w;
     }
+  }
 }
 
 void DG_SleepMs(uint32_t ms) { plat_sleep_us(ms * 1000u); }

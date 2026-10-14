@@ -36,7 +36,6 @@ extern const uint8_t font8x8[95][8];
 #define R_MODE 0x30
 #define R_PALETTE(i) (0x400 + 4 * (i))
 
-#define MAX_SCALE 3
 /* Quake palette indices for text. */
 #define TEXT_FG 15
 #define TEXT_BG 0
@@ -54,7 +53,7 @@ static struct {
   uint32_t frames[PASSES_SHOWN], ms[PASSES_SHOWN], fps10[PASSES_SHOWN], ok[PASSES_SHOWN];
 } results __attribute__((section(".noinit")));
 
-static uint32_t fb_base, fb_stride, fb_w, fb_h, scale, pic_x, text_y;
+static uint32_t fb_base, fb_stride, fb_w, fb_h, pic_x, text_y;
 static uint32_t mhz;
 
 uint64_t plat_cycles(void)
@@ -109,14 +108,14 @@ static void fill(uint32_t y0, uint32_t h, uint8_t c)
 
 static void text(uint32_t col, uint32_t row, const char *s)
 {
-  uint32_t s8 = scale, cell = 8 * s8;
+  uint32_t cell = 8;
   for (; *s; s++, col++) {
     int ch = *s < 0x20 || *s > 0x7e ? 0 : *s - 0x20;
     for (uint32_t y = 0; y < cell; y++)
       for (uint32_t x = 0; x < cell; x++) {
         uint32_t px = col * cell + x, py = text_y + row * cell + y;
         if (px < fb_w && py < fb_h)
-          put_pixel(px, py, (font8x8[ch][y / s8] << (x / s8)) & 0x80 ? TEXT_FG : TEXT_BG);
+          put_pixel(px, py, (font8x8[ch][y] << x) & 0x80 ? TEXT_FG : TEXT_BG);
       }
   }
 }
@@ -134,12 +133,9 @@ static void screen_init(void)
   fb_stride = REG(R_FB_STRIDE);
   fb_w = REG(R_FB_SIZE) >> 16;
   fb_h = REG(R_FB_SIZE) & 0xffff;
-  scale = 1;
-  while (scale < MAX_SCALE && (scale + 1) * QPORT_W <= fb_w &&
-         (scale + 1) * QPORT_H + 8 * 10 * (scale + 1) <= fb_h)
-    scale++;
-  pic_x = (fb_w - scale * QPORT_W) / 2 & ~3u;
-  text_y = scale * QPORT_H + 4 * scale;
+  /* Keep the timed copy at the engine resolution on every display. */
+  pic_x = (fb_w - QPORT_W) / 2 & ~3u;
+  text_y = QPORT_H + 4;
   fill(0, fb_h, TEXT_BG);
   set_palette(grey);
 }
@@ -147,7 +143,7 @@ static void screen_init(void)
 static void show_results(void)
 {
   char line[64];
-  snprintf(line, sizeof line, "Quake timedemo demo1, pass %lu", (unsigned long)results.passes + 1);
+  snprintf(line, sizeof line, "Quake 320x200 1x demo1, pass %lu", (unsigned long)results.passes + 1);
   text(0, 0, line);
   uint32_t first = results.passes > PASSES_SHOWN ? results.passes - PASSES_SHOWN : 0;
   for (uint32_t p = first; p < results.passes; p++) {
@@ -164,28 +160,14 @@ void plat_frame(const uint8_t *pix, const uint8_t *pal, int pal_changed)
 {
   if (pal_changed) set_palette(pal);
   const uint8_t *src = pix;
-  for (uint32_t y = 0; y < QPORT_H; y++, src += QPORT_W)
-    for (uint32_t r = 0; r < scale; r++) {
-      uint32_t row = fb_base + (y * scale + r) * fb_stride + pic_x;
-      if (scale == 1) {
-        for (uint32_t x = 0; x < QPORT_W; x += 4) {
-          uint32_t w = (uint32_t)src[x] << 24 | (uint32_t)src[x + 1] << 16 |
-                       (uint32_t)src[x + 2] << 8 | src[x + 3];
-          *(volatile uint32_t *)((row + x) ^ IO_XOR) = w;
-        }
-      } else {
-        uint32_t w = 0, n = 0, addr = row;
-        for (uint32_t x = 0; x < QPORT_W; x++)
-          for (uint32_t k = 0; k < scale; k++) {
-            w = w << 8 | src[x];
-            if (++n == 4) {
-              *(volatile uint32_t *)(addr ^ IO_XOR) = w;
-              addr += 4;
-              n = 0;
-            }
-          }
-      }
+  for (uint32_t y = 0; y < QPORT_H; y++, src += QPORT_W) {
+    uint32_t row = fb_base + y * fb_stride + pic_x;
+    for (uint32_t x = 0; x < QPORT_W; x += 4) {
+      uint32_t w = (uint32_t)src[x] << 24 | (uint32_t)src[x + 1] << 16 |
+                   (uint32_t)src[x + 2] << 8 | src[x + 3];
+      *(volatile uint32_t *)((row + x) ^ IO_XOR) = w;
     }
+  }
 }
 
 void plat_pass(uint32_t frames, uint32_t ms, uint32_t fps10, int ok)
