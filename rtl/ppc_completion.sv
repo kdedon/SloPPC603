@@ -371,6 +371,12 @@ module ppc_completion #(
   always_comb begin
     logic [COUNT_WIDTH-1:0] retained, pivot_age;
     logic pivot_hit, kill_head, kill_head1;
+    logic [CQ_DEPTH-1:0] pivot_owner_match;
+
+    // Compare each registered owner before selecting the pivot slot.
+    for (int s = 0; s < CQ_DEPTH; s++)
+      pivot_owner_match[s] = active_q[s] &&
+        (redirect_pivot_i.generation == generations_q[s]);
 
     // Queue age is distance from head; numeric slot or generation order has
     // no age meaning after ring wrap and reuse. Each slot's age is computed
@@ -378,8 +384,7 @@ module ppc_completion #(
     pivot_age = ring_age(redirect_pivot_i.index, head_q);
     pivot_hit = PIVOT && !redirect_all_i &&
       (redirect_pivot_i.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
-      (pivot_age < count_q) && active_q[redirect_pivot_i.index] &&
-      (redirect_pivot_i.generation == generations_q[redirect_pivot_i.index]);
+      (pivot_age < count_q) && pivot_owner_match[redirect_pivot_i.index];
     redirect_found = redirect_all_i || pivot_hit;
     retained = redirect_all_i ? '0 :
                pivot_hit ? pivot_age + COUNT_WIDTH'(redirect_keep_pivot_i) : count_q;

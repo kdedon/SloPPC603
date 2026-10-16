@@ -2975,3 +2975,6 @@ test-core-dq1-page-pipe:
 	  $(RTL) ../tb/tb_core_lsu_extensions.sv
 	timeout 120s $(abspath $(BUILD_DIR))/core-dq1-page-pipe/Vtb_core_lsu_extensions +verilator+seed+1 +verilator+rand+reset+2
 
+
+# Optional source-connected four-state CQ pivot proof.
+include tools/cq_fixed_pivot.mk
