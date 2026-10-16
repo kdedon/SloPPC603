@@ -698,8 +698,24 @@ module ppc_bat_memory_router #(
      clean_page_instruction_direct_store) :
     (clean_page_data_pp || clean_page_data_direct_store ||
      clean_page_true_miss || clean_page_changed);
-  assign service_pr = !bat_setup_q &&
-    ((csr_offer && bat_csr_req_valid_i) ? context_pr_q : request_pr_q);
+  // PR follows the registered request source, like the other BAT payload.
+  // CSR arbitration qualifies valid; it need not select translation data.
+  always_comb begin
+    // Preserve the original merge when the request source is unknown.
+    service_pr = !bat_setup_q &&
+      ((csr_offer && bat_csr_req_valid_i) ? context_pr_q : request_pr_q);
+    case (bat_setup_q)
+      1'b1: service_pr = 1'b0;
+      1'b0: begin
+        case (state_q == ROUTE_TRANSLATE_OFFER)
+          1'b1: service_pr = 1'b1 && request_pr_q;
+          1'b0: service_pr = 1'b1 && context_pr_q;
+          default: begin end
+        endcase
+      end
+      default: begin end
+    endcase
+  end
 
   assign imem_req_valid = imem_req_valid_i;
   assign imem_req_addr = imem_req_addr_i;

@@ -55,6 +55,9 @@ FPU_CORE_RTL := $(RTL) ../rtl/ppc_ram_lut.sv $(shell cat ../rtl/fpu_files.f)
 .PHONY: regression build-control-memory build-core-bus60x build-core-bus60x-unified build-core-add-recovery
 all: regression
 
+# Optional guarded BAT privilege projection acceptance.
+include tools/service_pr.mk
+
 # Optional native source-use overlap acceptance targets.
 include tools/false_hazards.mk
 
