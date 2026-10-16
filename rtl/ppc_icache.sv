@@ -96,6 +96,7 @@ module ppc_icache #(
   // first install into a cleared set rewrites every way bit.
   logic [SET_COUNT-1:0] set_valid_q;
   logic [WAY_COUNT-1:0] way_valid_rdata, way_valid_wdata, victim_onehot;
+  logic abort_install, way_valid_we;
   logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata;
   logic [WAY_COUNT-1:0][HALF_BITS-1:0] data_rdata;
   logic [WAY_COUNT-1:0] tag_we, data_we;
@@ -207,9 +208,21 @@ module ppc_icache #(
   end
   endgenerate
 
-  assign way_valid_wdata = miss_valid_q | victim_onehot;
+  // Half0 already overwrote the chosen way on the preceding good reply.
+  // A kill before half1/tag publication must make that victim unobservable.
+  // Only known abort controls add a write; X/Z kill retains the old enable.
+  always_comb begin
+    abort_install = 1'b0;
+    case ({rst_ni, invalidate_i, kill_i, state_q == IC_INSTALL})
+      4'b1011: abort_install = 1'b1;
+      default: begin end
+    endcase
+  end
+  assign way_valid_we = (install_ok && state_q == IC_INSTALL) || abort_install;
+  assign way_valid_wdata = abort_install ? (miss_valid_q & ~victim_onehot) :
+                                         (miss_valid_q | victim_onehot);
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(WAY_COUNT)) way_valid_ram (
-    .clk_i, .we_i(install_ok && state_q == IC_INSTALL), .waddr_i(miss_set_q),
+    .clk_i, .we_i(way_valid_we), .waddr_i(miss_set_q),
     .wdata_i(way_valid_wdata), .raddr_i(lookup_set),
     .rdata_o(way_valid_rdata)
   );
