@@ -205,13 +205,28 @@ module tb_icache #(
       end
     end
   endtask
+  // Compare raw payloads only once an actual synchronous reset has settled.
+  // Thereafter all15public fields are checked even during reset/invalid cycles.
+  bit comparison_reset_seen,comparison_reset_edge,comparison_first_post;
+  int comparison_pre_checks,comparison_post_checks,comparison_first_reset_checks;
+  task automatic report_comparison_reset;
+    if(!comparison_reset_seen || comparison_first_reset_checks!=1 ||
+       comparison_pre_checks==0 || comparison_post_checks==0)
+      $fatal(1,"public comparison reset/cycle coverage missing");
+    $display("PUBLIC_COMPARISON first_settled_reset=%0d pre=%0d post=%0d",
+      comparison_first_reset_checks,comparison_pre_checks,comparison_post_checks);
+  endtask
   // Sole writer for the independent provenance dictionary/owner/events.
   initial begin
     meta_owner=0;transport_owner=0;meta_refill_edge=0;
+    comparison_reset_seen=0;comparison_reset_edge=0;comparison_first_post=0;
+    comparison_pre_checks=0;comparison_post_checks=0;comparison_first_reset_checks=0;
     forever begin
       @(posedge clk);
       meta_refill_edge=rst_n&&line_rsp_valid&&line_rsp_ready&&!line_rsp_error&&!kill&&!invalidate;
-      compare_old_public();check_metadata();
+      comparison_reset_edge=(rst_n===1'b0);
+      if(comparison_reset_seen)begin compare_old_public();comparison_pre_checks++;end
+      check_metadata();
       if(!rst_n)begin meta_memory.delete();changed_refill.delete();meta_owner=0;transport_owner=0;end
       else begin
         if(fetch_valid&&fetch_ready)meta_owner=fetch_addr;
@@ -226,7 +241,13 @@ module tb_icache #(
         end
       end
       #1;
-      compare_old_public();check_metadata();
+      comparison_first_post=!comparison_reset_seen && comparison_reset_edge;
+      if(comparison_first_post)comparison_reset_seen=1;
+      if(comparison_reset_seen)begin
+        compare_old_public();comparison_post_checks++;
+        if(comparison_first_post)comparison_first_reset_checks++;
+      end
+      check_metadata();
       if(rst_n && METADATA && hit)begin
         meta_events.push_back(23);
         meta_events.push_back(50+int'(meta_owner[4:2]));
@@ -950,6 +971,7 @@ module tb_icache #(
       if(count_meta(20)==0||count_meta(21)==0||count_meta(22)==0||count_meta(23)==0||count_meta(24)==0)$fatal(1,"metadata error/bypass/held/hit/refill provenance missing");
     end
     $display("Prepared metadata pair provenance checked; metadata=%0d observations=%0d",METADATA,meta_events.size());
+    report_comparison_reset();
     $finish;
   end
 endmodule
