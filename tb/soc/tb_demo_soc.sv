@@ -8,13 +8,18 @@
 /* verilator lint_off BLKSEQ */
 module tb_demo_soc #(
   parameter bit ENABLE_FPU = 1'b0,
+  parameter bit ENABLE_DCACHE = 1'b1,
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
+  parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   // 0 FULL, 1 COMPACT (ppc_fpu_pkg::fpu_impl_e).
   parameter int FPU_IMPL = 0
 );
   localparam int H_ACTIVE = 320, V_ACTIVE = 240;
-  logic clk = 1'b0;
-  always #5 clk = ~clk;
-  logic rst_n = 1'b0;
+  logic clk, rst_n;
+  initial begin
+    clk=0;
+    forever #5 clk=~clk;
+  end
 
   logic ce_pix, hs, vs, de, hblank, vblank, console_valid, exit_valid, checkstop;
   logic [7:0] r, g, b, console_data;
@@ -23,6 +28,8 @@ module tb_demo_soc #(
   // The external framebuffer and memory ports are unused here.
   /* verilator lint_off PINCONNECTEMPTY */
   ppc603e_demo_soc #(.CE_DIV(2), .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_DCACHE(ENABLE_DCACHE), .DISPATCH_WIDTH(DISPATCH_WIDTH),
+    .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL))) soc (
     .clk_i(clk), .rst_ni(rst_n), .int_n_i(1'b1), .mode_i(8'h00), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
@@ -46,7 +53,8 @@ module tb_demo_soc #(
   // until retirement +TRACE_TO=<m>. A CQ[1] retirement follows on its own line.
   longint unsigned cycles = 0, retired = 0, max_cycles = 64'd400_000_000, trace_from = '1;
   longint unsigned trace_to = '1;
-  logic running = 1'b0;
+  logic running;
+  `include "soc/integer_branch_profile.svh"
   always @(posedge clk) begin
     if (running) begin
       cycles++;
@@ -77,6 +85,19 @@ module tb_demo_soc #(
     // The console register is undefined until the first reset edge.
     if (rst_n && console_valid) $write("%c", console_data);
   end
+
+  logic ib_dc_done,ib_dc_req,ib_dc_store,ib_dc_same,ib_dc_next;
+  generate
+    if(ENABLE_DCACHE)begin:g_profile_cache
+      assign ib_dc_done=soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_done;
+      assign ib_dc_req=soc.cpu.cpu.dcache_slot.g_cache.dcache.req_valid_i;
+      assign ib_dc_store=soc.cpu.cpu.dcache_slot.g_cache.dcache.req_op_i==ppc_dcache_pkg::DC_STORE;
+      assign ib_dc_same=soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_dw;
+      assign ib_dc_next=soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_next;
+    end else begin:g_profile_uncached
+      assign {ib_dc_done,ib_dc_req,ib_dc_store,ib_dc_same,ib_dc_next}='0;
+    end
+  endgenerate
 
   // +PROFILE: cycles per stall slot and head operation, and why DQ1 did
   // not dispatch beside DQ0, over the counted region.
@@ -188,12 +209,12 @@ module tb_demo_soc #(
         key = "";
       end
       // Requests behind a fast store hit: accepted or held, by double word.
-      if (soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_done &&
-          soc.cpu.cpu.dcache_slot.g_cache.dcache.req_valid_i) begin
+      if (ib_dc_done &&
+          ib_dc_req) begin
         key = $sformatf("dcache after fast store: %s %s %s",
-          soc.cpu.cpu.dcache_slot.g_cache.dcache.req_op_i == ppc_dcache_pkg::DC_STORE ? "store" : "other",
-          soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_dw ? "same dw" : "other dw",
-          soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_next ? "accepted" : "held");
+          ib_dc_store ? "store" : "other",
+          ib_dc_same ? "same dw" : "other dw",
+          ib_dc_next ? "accepted" : "held");
         profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
         key = "";
       end
@@ -333,12 +354,21 @@ module tb_demo_soc #(
     string image, ppm, name;
     int fd;
     longint unsigned run_cycles, run_retired;
+    rst_n=0;running=0;
     if (!$value$plusargs("IMAGE=%s", image)) $fatal(1, "+IMAGE required");
     if (!$value$plusargs("PPM=%s", ppm)) ppm = "";
     if (!$value$plusargs("NAME=%s", name)) name = "demo";
     void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
     void'($value$plusargs("TRACE=%d", trace_from));
     void'($value$plusargs("TRACE_TO=%d", trace_to));
+    // Matched benchmark input: define ALL architectural RAM bytes identically
+    // before loading the unchanged image. CPU/internal reset randomization stays.
+    if ($test$plusargs("INTEGER_PAIR_ZERO_RAM")) begin
+      for (int word_index=0;word_index<$size(soc.ram.mem);word_index++)
+        soc.ram.mem[word_index]='0;
+      $display("INTEGER_PAIR_RAM_INIT words=%0d bits=%0d fill=0 before_image=1",
+               $size(soc.ram.mem),$bits(soc.ram.mem[0]));
+    end
     $readmemh(image, soc.ram.mem);
     repeat (8) @(posedge clk);
     rst_n = 1'b1;
@@ -362,6 +392,7 @@ module tb_demo_soc #(
     if (exit_code != 0) $fatal(1, "firmware exit code %08x", exit_code);
     if (perf_retired[31:0] != soc.perf.count_q[1])
       $fatal(1, "perf RETIRED %0d, retire strobes %0d", soc.perf.count_q[1], perf_retired);
+    integer_branch_report();
     $finish;
   end
 endmodule
