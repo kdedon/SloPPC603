@@ -27,6 +27,7 @@ PROFILES = {
     "icache-real": ("test-chip-icache-real", 0),
     "pins": ("test-chip-pins", 1),
     "fpu": ("test-chip-fpu-lsu-pipe", 0),
+    "le": ("test-chip-le", 0),
 }
 GROUPS = {
     "focused": ("cached", "cacheops", "coherence", "irq", "drain", "icache-real", "pins", "fpu"),

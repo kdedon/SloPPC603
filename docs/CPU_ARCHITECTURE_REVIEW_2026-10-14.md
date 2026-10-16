@@ -95,3 +95,18 @@ lookahead/readiness comparisons including poisoned invalid companions. Existing
 assertions, tests, architectural traces and manual cycles must stay intact. Such a
 complete refinement proof and implementation remain pending; this review does
 not establish them.
+
+
+## Follow-up at the measured frontend checkpoint, 2026-10-16
+
+Recorded: targeted source review at `d11428c`, with the fresh connected, benchmark and timing commands recorded in [fetch-hint acceptance](FETCH_HINTS_ACCEPTANCE_2026-10-16.md), 2026-10-16. The earlier sections remain a snapshot of `bea975a`.
+
+Finding 1's concrete native-overlap false dependency has since been corrected: `overlap_dispatch_ok` uses semantic `dispatch_uop` with zero-A/immediate-B qualifications; `branch_resolved` disables both sources for a resolved branch. Real operands retain their waits. The independent success/fault, shadow and retained-CTR fixtures are recorded in [native source hazards](NATIVE_SOURCE_HAZARDS_2026-10-15.md); their results are inherited here, rather than rerun by this source review. Other repeated source-use declarations remain a maintenance concern.
+
+The optional atomic fetch classifier now has connected ownership tests, opaque metadata tests and a same-source four-model benchmark. It adds no stage and preserves the measured cycle totals. Its enabled CPU-only fit reaches 42.41/42.60 MHz; 66 MHz remains open. The full decoder and original fault/CR qualification still control execution. Known ownership and initialized selected storage bound this transport claim; the earlier universal X/Z-selection caveat remains applicable.
+
+The next measured paths start in completion recovery. The hot path selects a stored generation before testing pivot ownership, then traverses branch folding, fetch translation and cache update. The cold path traverses queue age, accepted kill and LSU-to-SRU adoption. Fixed-slot owner and membership projections can shorten those calculations while retaining the same age, generation and irrevocable-retirement guards. Physical benefit remains a separate fit question.
+
+The adoption payload also depends on a late age arbitration result. A follow-up may separate packet selection from acceptance only after proving that changed inactive payloads cannot reach any capture or control decision. `special_ready` depends on the overlap control, so that control must remain unchanged. The upstream LSU source itself is response/kill dependent; an offered packet is not a stable descriptor before those decisions. No new stall, relaxed producer identity, earlier status commit or split recovery authority is justified by this review.
+
+The existing fetch timing options address different dependencies: disabling immediate misprediction fetch does not cut the observed held-branch-fold path, and enabling FD capture cuts cache-to-decode bypass while leaving held-branch recovery. Neither merits a blind profile change for the present limiter. Final merged CI/xrand/FPU acceptance remains open; this targeted review does not establish complete manual conformance.
