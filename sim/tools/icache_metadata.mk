@@ -13,7 +13,7 @@ test-icache-metadata:
 	  sets=$${geometry%x*}; ways=$${geometry#*x}; \
 	  for width in 1 2; do for metadata in 0 1; do \
 	    echo "cache metadata $$geometry FW=$$width metadata=$$metadata bits=$$bits"; \
-	    PPC_VERILATOR_FLAGS= OBJCACHE= timeout 900s $(VERILATOR_TOOL) --binary --timing --assert -Wall -j 1 \
+	    PPC_VERILATOR_FLAGS= OBJCACHE= timeout 900s $(VERILATOR) --binary --timing --assert -Wall -j 1 \
 	      --top-module tb_icache -GSETS=$$sets -GWAYS=$$ways -GFETCH_WIDTH=$$width \
 	      "-GMETADATA=1'b$$metadata" -GWORD_META_BITS=$$bits --Mdir "$$owned_build" \
 	      -MAKEFLAGS 'OPT_FAST=-O0 OPT_SLOW=-O0 OPT_GLOBAL=-O0' \

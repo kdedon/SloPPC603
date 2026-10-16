@@ -18,3 +18,11 @@ test-fetch-hints-package: check-fetch-hint-config
 
 check-fetch-hint-config:
 	python3 tools/check_fetch_hint_config.py
+
+# Optional four-model same-source identity gate; no firmware build/default cost.
+FETCH_HINTS_BENCH_DIR ?= $(BUILD_DIR)/fetch-hints-benchmark
+FETCH_HINTS_BENCH_QUIET ?= 0
+FETCH_HINTS_BENCH_TIMEOUT ?= 7200
+.PHONY: benchmark-fetch-hints
+benchmark-fetch-hints: check-fetch-hint-config
+	python3 tools/benchmark_fetch_hints.py --image $(INTEGER_PAIR_IMAGE) --dump $(INTEGER_PAIR_DUMP) --output $(FETCH_HINTS_BENCH_DIR) --quiet-observe $(FETCH_HINTS_BENCH_QUIET) --timeout $(FETCH_HINTS_BENCH_TIMEOUT)

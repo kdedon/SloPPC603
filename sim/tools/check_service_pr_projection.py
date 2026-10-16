@@ -17,6 +17,27 @@ PINS = {'rtl/ppc_bat_service.sv': '3dc84d3c3da95ad1f3dc28059e56eab175ba2e6f68636
 CANDIDATE = 'bb7a2462c983e846bf2529515b9349fb7010d93bb41c8bdbe6fb93af0f9a452a'
 ORIGINAL = '3babfeeed856bae59a544a48f13ff4ab80c7ead00c1dc55b2302bf515092d18c'
 def digest(s): return hashlib.sha256(s.encode()).hexdigest()
+# Metadata companions do not participate in the BAT privilege proof. Accept
+# only these reviewed literal additions, then require the unchanged full-file
+# identity below. The generated independent old router has no hint ports; the
+# actual candidate DUT ties hint inputs to zero and leaves hint output unused.
+# This projection does not prove metadata transport or enabled fetch behavior.
+METADATA_SOURCES = {'rtl/ppc_bat_memory_router.sv': 'd5584fdde7ae11b80eeab08c6dedb4a7eee20849533d8773b3e614d21fe24cd6', 'rtl/ppc_pkg.sv': 'd2f9ebdc165a880507bead0c791f3fdabffc38a2dcef7e98f0338882e61dc7b6', 'tb/tb_service_pr_router_pair.sv': 'fa7bb6ebf128db0abc50907d800a912303ab8d6986fee7531e06d29a5f0b59b0'}
+METADATA_EDITS = {'rtl/ppc_bat_memory_router.sv': [('', '  input  logic [3*FETCH_WIDTH-1:0] phys_imem_rsp_hints_i,\n'), ('', '  output logic [3*FETCH_WIDTH-1:0] imem_rsp_hints_o,\n'), ("  always_comb begin\n    imem_rsp_insn = pimem_rsp_insn_i;\n    if (i_state_q == LANE_RESPONSE) begin\n      // With machine check enabled, i_refetch is the only discard case.\n      if (i_refetch) imem_rsp_insn = pimem_rsp_insn_i;\n      else if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q))\n        imem_rsp_insn = '0;\n    end else if (state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin\n      imem_rsp_insn = '0;\n    end\n  end\n", "  always_comb begin\n    imem_rsp_insn = pimem_rsp_insn_i;\n    imem_rsp_hints_o = phys_imem_rsp_hints_i;\n    if (i_state_q == LANE_RESPONSE) begin\n      // With machine check enabled, i_refetch is the only discard case.\n      if (i_refetch) begin\n        imem_rsp_insn = pimem_rsp_insn_i;\n        imem_rsp_hints_o = phys_imem_rsp_hints_i;\n      end else if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q)) begin\n        imem_rsp_insn = '0;\n        imem_rsp_hints_o = '0;\n      end\n    end else if (state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin\n      imem_rsp_insn = '0;\n      imem_rsp_hints_o = '0;\n    end\n  end\n")], 'rtl/ppc_pkg.sv': [('', '\n  /* verilator lint_off UNUSEDSIGNAL */\n  // Takes the CR rename, or writes CR from the FPU.\n  function automatic logic cr_writer(uop_t u);\n    return !u.illegal && (u.write_cr_field || u.write_cr_fields || u.write_cr_bit ||\n      ((u.needs_flags || u.write_xer) && !(!u.write_xer && (u.write_ca || u.write_ov_so))));\n  endfunction\n  /* verilator lint_on UNUSEDSIGNAL */\n'), ('', '  // Per-word transport: {CR rename demand, branch class, needs primary IU}.\n  typedef struct packed {\n    logic cr_writer;\n    fetch_lookahead_t lookahead;\n  } fetch_hint_t;\n')], 'tb/tb_service_pr_router_pair.sv': [('', "    .phys_imem_rsp_hints_i('0),\n    .imem_rsp_hints_o(),\n\n")]}
+def pr_source(file):
+    text=(ROOT/file).read_text()
+    if file not in METADATA_EDITS:
+        return text
+    expected=CANDIDATE if file=='rtl/ppc_bat_memory_router.sv' else PINS[file]
+    if digest(text)==expected:
+        return text
+    assert digest(text)==METADATA_SOURCES[file], 'unreviewed metadata source drift: '+file
+    for original,addition in METADATA_EDITS[file]:
+        assert text.count(addition)==1, 'metadata projection shape changed: '+file
+        text=text.replace(addition,original)
+    assert digest(text)==expected, 'metadata inverse does not recover fixed BAT-PR source: '+file
+    return text
+
 def section(s, start, end):
     assert s.count(start)==1 and s.count(end)==1, (start,end)
     return s[s.index(start):s.index(end)]
@@ -29,16 +50,16 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     for file,expected in PINS.items():
-        assert hashlib.sha256((ROOT/file).read_bytes()).hexdigest()==expected, 'source drift: '+file
-    router=(ROOT/'rtl/ppc_bat_memory_router.sv').read_text()
+        assert digest(pr_source(file))==expected, 'source drift: '+file
+    router=pr_source('rtl/ppc_bat_memory_router.sv')
     assert digest(router)==CANDIDATE,'live router is not the reviewed normalized candidate'
     assert router.count(NEW)==1 and OLD not in router,'candidate projection shape changed'
     original=router.replace(NEW,OLD)
     assert digest(original)==ORIGINAL,'inverse projection does not recover frozen independent baseline'
     payload=(ROOT/'tb/tb_service_pr_payload.sv').read_text()
-    pair=(ROOT/'tb/tb_service_pr_router_pair.sv').read_text()
+    pair=pr_source('tb/tb_service_pr_router_pair.sv')
     service=(ROOT/'rtl/ppc_bat_service.sv').read_text()
-    pkg=(ROOT/'rtl/ppc_pkg.sv').read_text()
+    pkg=pr_source('rtl/ppc_pkg.sv')
     # Actual source linkage, not merely a hand-written equivalent expression.
     chunks={
       'slot_admission':section(router,'  assign slot_free =','  assign slot_grant[SLOT_BAT_CSR]'),
