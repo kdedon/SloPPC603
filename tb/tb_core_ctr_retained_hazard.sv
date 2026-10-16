@@ -115,13 +115,54 @@ module tb_core_ctr_retained_hazard #(
   logic [31:0] retained_pc,retained_insn,retained_expected_target;
   logic [2:0] retained_expected_bin;
   int retained_release[8];
+  typedef struct packed {
+    logic [31:0] pc,insn,target;
+    logic [2:0] bin;
+    logic consumer_seen;
+  } retained_window_t;
+  retained_window_t retained_windows[$];
+  int retained_consumer[8];
   initial for(int k=0;k<8;k++) retained_release[k]=0;
   always @(posedge clk) begin
     logic lane;
     logic [31:0] pc,insn;
     logic [3:0] intent;
-    if(!rst_n || dut.frontend_clear) retained_owner_valid<=0;
-    else begin
+    retained_window_t certificate;
+    logic consumer_now,branch_now;
+    if(!rst_n) begin
+      retained_owner_valid<=0;
+      retained_windows.delete();
+      for(int k=0;k<8;k++) retained_consumer[k]=0;
+    end else begin
+      // A release starts a certificate; a later edge must witness its real
+      // load consumer held before that same branch can dispatch or remove.
+      for(int wi=retained_windows.size()-1;wi>=0;wi--) begin
+        certificate=retained_windows[wi];
+        consumer_now=dut.iq_valid && dut.iq_head.pc==certificate.pc-4 &&
+          dut.iq_head.insn==32'h7ec0_0214 && !dut.dispatch &&
+          dut.special_busy && dut.special_mem_dst_valid &&
+          dut.special_mem_dst==0 && dut.special.pc_q==certificate.pc-8 &&
+          dpending && !pending_write && ddelay>0;
+        if(!certificate.consumer_seen && consumer_now) begin
+          certificate.consumer_seen=1;
+          retained_consumer[certificate.bin]++;
+          retained_windows[wi]=certificate;
+        end
+        branch_now=(dut.dispatch && dut.iq_head.pc==certificate.pc) ||
+                   (dut.dispatch1 && dut.dq1_head.pc==certificate.pc);
+        if(branch_now) begin
+          require((dut.dispatch && dut.iq_head.pc==certificate.pc) ?
+                  dut.iq_head.insn==certificate.insn :
+                  dut.dq1_head.insn==certificate.insn,
+                  "retained branch dispatch changed its instruction owner");
+          require(certificate.consumer_seen,
+                  $sformatf("retained BC dispatched before its accepted native-load consumer window pc=%08x target=%08x bin=%03b",
+                            certificate.pc,certificate.target,certificate.bin));
+          retained_windows.delete(wi);
+        end
+      end
+      if(dut.frontend_clear) retained_owner_valid<=0;
+      else begin
       if(dut.fetch_stop) begin
         lane=dut.iq_in1 && dut.wait1;
         pc=lane ? dut.queued1.pc : dut.queued.pc;
@@ -130,6 +171,7 @@ module tb_core_ctr_retained_hazard #(
         if(pc<16384)intent=retained_case[pc[13:2]];
         retained_owner_valid<=intent[3];
         if(intent[3]) begin
+          require(pc[2]==intent[0],"retained stimulus alignment metadata mismatch");
           require(insn==imem[pc[13:2]],
                   "retained capture changed instruction owner");
           retained_pc<=pc;retained_insn<=insn;
@@ -146,15 +188,22 @@ module tb_core_ctr_retained_hazard #(
                 "retained taken/AA/lane disagrees with program intent");
         require(dut.ctr_rel_target==retained_expected_target,
                 "retained CTR target differs from symbolic target address");
-        // The exact preceding add r22,r0,r0 must still block DQ0 on the
-        // public outstanding load when the stopped branch releases fetch.
-        require(dut.iq_valid && dut.iq_head.pc==retained_pc-4 &&
-                dut.iq_head.insn==32'h7ec0_0214 && !dut.dispatch &&
-                dut.special_busy && dut.special_mem_dst_valid &&
-                dut.special_mem_dst==0 && dpending && !pending_write && ddelay>0,
-                "CTR release did not overlap actual held true load consumer");
+        // MTCTR and the native load share one lane: release may precede
+        // the load's acceptance. Preserve both obligations in temporal order.
+        certificate.pc=retained_pc;
+        certificate.insn=retained_insn;
+        certificate.target=retained_expected_target;
+        certificate.bin=retained_expected_bin;
+        certificate.consumer_seen=0;
+        foreach(retained_windows[wi])
+          require(retained_windows[wi].pc!=certificate.pc ||
+                  retained_windows[wi].insn!=certificate.insn,
+                  "duplicate outstanding retained branch certificate");
+        retained_windows.push_back(certificate);
         retained_release[retained_expected_bin]++;
-        retained_owner_valid<=0;
+        // A concurrent capture owns the next certificate; do not erase it.
+        if(!dut.fetch_stop) retained_owner_valid<=0;
+      end
       end
     end
   end
@@ -167,7 +216,8 @@ module tb_core_ctr_retained_hazard #(
   logic [5:0] unused_mmu_602;
   logic [4:0] unused_tlb_fill_ext;
   logic [33*FETCH_WIDTH-2:0] iw_bus;
-  ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH), .ENABLE_LSU_PIPE(1'b0)) dut (
+  ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH), .DISPATCH_WIDTH(1),
+    .ENABLE_LSU_PIPE(1'b0)) dut (
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */
@@ -410,7 +460,11 @@ module tb_core_ctr_retained_hazard #(
             if(FETCH_WIDTH==2 || bin%2==0)
               require(retained_release[bin]>0,"no new-site held-consumer CTR release bin");
             $display("new retained owner release bin%03b=%0d",3'(bin),retained_release[bin]);
+            if(FETCH_WIDTH==2 || bin%2==0)
+              require(retained_consumer[bin]>0,"no new-site accepted native-load consumer bin");
+            $display("new retained owner consumer bin%03b=%0d",3'(bin),retained_consumer[bin]);
           end
+          require(retained_windows.size()==0,"retained branch owner certificate never completed");
           $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d speculative=%0d mispredicted=%0d early=%0d removed=%0d",
                    checks, retirements, read_requests, write_requests, request_stalls, retire_stalls,
                    edge_count, spec_branches, spec_misses, spec_early, removed_branches);

@@ -2932,3 +2932,6 @@ test-held-release-equivalence:
 .PHONY: test-fd-lookahead-equivalence
 test-fd-lookahead-equivalence:
 	python3 tools/fd_lookahead_equivalence.py --build-dir $(BUILD_DIR)/fd-lookahead-equivalence
+
+# Optional precise killed-fault frontend acceptance.
+include tools/killed_fault_fetch.mk

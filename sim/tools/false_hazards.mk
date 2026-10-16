@@ -25,7 +25,12 @@ test-core-ctr-retained-hazard:
 
 .PHONY: test-core-false-hazards-branch
 test-core-false-hazards-branch:
-	$(VERILATOR) --binary --timing --assert -Wall -j 1 -GBRANCH_REMOVAL=0 --top-module tb_core_false_hazards_branch --Mdir $(BUILD_DIR)/false-hazards/branch-r0 $(RTL) ../tb/tb_core_false_hazards_branch.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 "-GBRANCH_REMOVAL=1'b0" --top-module tb_core_false_hazards_branch --Mdir $(BUILD_DIR)/false-hazards/branch-r0 $(RTL) ../tb/tb_core_false_hazards_branch.sv
 	timeout 90s $(abspath $(BUILD_DIR))/false-hazards/branch-r0/Vtb_core_false_hazards_branch $(SIM_ARGS)
-	$(VERILATOR) --binary --timing --assert -Wall -j 1 -GBRANCH_REMOVAL=1 --top-module tb_core_false_hazards_branch --Mdir $(BUILD_DIR)/false-hazards/branch-r1 $(RTL) ../tb/tb_core_false_hazards_branch.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 "-GBRANCH_REMOVAL=1'b1" --top-module tb_core_false_hazards_branch --Mdir $(BUILD_DIR)/false-hazards/branch-r1 $(RTL) ../tb/tb_core_false_hazards_branch.sv
 	timeout 90s $(abspath $(BUILD_DIR))/false-hazards/branch-r1/Vtb_core_false_hazards_branch $(SIM_ARGS)
+
+.PHONY: test-core-shadow-exception-boundary
+test-core-shadow-exception-boundary:
+	$(VERILATOR) --binary --timing --assert -Wall -j 1 --top-module tb_core_shadow_exception_boundary --Mdir $(BUILD_DIR)/false-hazards/shadow-exception $(RTL) ../tb/tb_core_shadow_exception_boundary.sv
+	timeout 90s $(abspath $(BUILD_DIR))/false-hazards/shadow-exception/Vtb_core_shadow_exception_boundary $(SIM_ARGS)

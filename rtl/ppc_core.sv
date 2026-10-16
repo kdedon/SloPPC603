@@ -654,7 +654,10 @@ module ppc_core #(
   end
   ppc_fetch #(.RESET_PC(RESET_PC), .FETCH_WIDTH(FETCH_WIDTH)) fetch (
     .clk_i, .rst_ni,
-    .stop_i(fault_pending || frontend_fence || power_stop || (fetch_hold_q && !frontend_clear)),
+    // Early branch refetch may return on the edge that kills a wrong-path
+    // fault. Its dead owner must not discard the correct-path response.
+    .stop_i((fault_pending && !fault_killed) || frontend_fence || power_stop ||
+            (fetch_hold_q && !frontend_clear)),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q || fstop_q || rel_fold),
     .redirect_target_i(rel_fold ? rel_target : frontend_target),
@@ -2021,7 +2024,9 @@ module ppc_core #(
      (lk_fire_c0 && dispatch1 && !d1_remove));
   assign shadow_arm_tag = (dispatch && !bu_remove) ? alloc_producer : alloc1_producer;
   assign shadow_tag_d = lk_fire_c0 ? alloc1_producer : shadow_arm_tag;
-  assign shadow_write = shadow_valid_q && shadow_armed_q &&
+  // Shadow status observes the same older halt/exception boundary as CQ
+  // retirement, including the wait between a fault and its full redirect.
+  assign shadow_write = shadow_valid_q && shadow_armed_q && !halted_o && !special_retire_hold &&
     ((!cq_empty && (cq_head == shadow_tag_q.index) && !bs_hold) ||
      (commit1 && (retire1_producer == shadow_tag_q)));
   assign shadow_over = shadow_write && (retire_producer != shadow_tag_q);
@@ -2031,7 +2036,7 @@ module ppc_core #(
   // complete (UM 6.4.1.1), which it does once everything older has.
   assign lk_busy = (lk_pending_q && !(shadow_unarmed && cq_empty)) || lkp_q;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || shadow_write) begin
+    if (!rst_ni || shadow_write || halted_o) begin
       shadow_valid_q <= 1'b0;
       shadow_armed_q <= 1'b0;
     end else if (recovery_accepted) begin
@@ -2060,14 +2065,14 @@ module ppc_core #(
   assign cshadow_set = dispatch && bu_remove && bu_writes_ctr;
   assign cshadow_arm = (cshadow_set || cshadow_unarmed) && !recovery_accepted &&
     ((dispatch && !bu_remove) || (dispatch1 && !d1_remove));
-  assign cshadow_write = cshadow_valid_q && cshadow_armed_q &&
+  assign cshadow_write = cshadow_valid_q && cshadow_armed_q && !halted_o && !special_retire_hold &&
     ((!cq_empty && (cq_head == cshadow_tag_q.index)) ||
      (commit1 && (retire1_producer == cshadow_tag_q)));
   assign cshadow_over = cshadow_write && !branch_retire1 && (retire_producer != cshadow_tag_q);
   assign cshadow_keep = cshadow_valid_q && !cshadow_write && bs_recover &&
     !(cshadow_armed_q && cshadow_live);
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || cshadow_write) begin
+    if (!rst_ni || cshadow_write || halted_o) begin
       cshadow_valid_q <= 1'b0;
       cshadow_armed_q <= 1'b0;
     end else if (recovery_accepted) begin
