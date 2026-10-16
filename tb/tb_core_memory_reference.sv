@@ -53,6 +53,8 @@ module tb_core_memory_reference #(
     .ENABLE_MULTIPLE_STRING(EXTENSIONS), .ENABLE_RESERVATION(EXTENSIONS),
     .ENABLE_MISALIGNED_ACCESS(EXTENSIONS)
   ) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

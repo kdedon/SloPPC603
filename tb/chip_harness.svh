@@ -65,6 +65,9 @@ always_comb
   for (int i = 0; i < 8; i++)
     in_dp[i] = ~^in_d[63-8*i -: 8] ^ memory.dp_flip[7-i];
 ppc603e #(.CPU_VARIANT(ppc_pkg::cpu_variant_e'(`CHIP_VARIANT)), .PLL_CFG(CHIP_PLL_CFG),
+`ifdef CHIP_FETCH_HINTS_PARAMETER
+  .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS),
+`endif
   .ENABLE_FPU(1'(`CHIP_ENABLE_FPU)), .DS_PID(4'(`CHIP_DS_PID))) dut (
   /* verilator lint_off PINCONNECTEMPTY */
   .perf_o(), .bus_ce_o(bus_ce),

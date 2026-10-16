@@ -37,6 +37,8 @@ module tb_core_alignment #(
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS)) dut (
+    .imem_rsp_hints_i('0),
+
       /* verilator lint_off PINCONNECTEMPTY */
       .data_page_projection_o(),
       /* verilator lint_on PINCONNECTEMPTY */

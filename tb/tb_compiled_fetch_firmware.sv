@@ -39,6 +39,8 @@ module tb_compiled_fetch_firmware;
   logic [5:0] unused_mmu_602;
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

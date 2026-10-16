@@ -32,6 +32,12 @@ module tb_icache_bus60x #(
   logic [31:0] fa,insn;
   logic cache_busy,hit,miss,cache_error;
   ppc_icache #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) cache (
+    .line_rsp_meta_i('0),
+    // Default-disabled legacy caller does not consume opaque fetch hints.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .fetch_rsp_meta_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+
     .clk_i(clk),.rst_ni(rst_n),.fetch_valid_i(fv),.fetch_ready_o(fr),.fetch_addr_i(fa),
     .fetch_rsp_valid_o(fsv),.fetch_rsp_ready_i(fsr),.fetch_rsp_insn_o(insn),
     .fetch_rsp_error_o(fse), .lock_i(1'b0), .fetch_rsp_bypass_o(fsb),.kill_i(kill),.invalidate_i(invalidate),

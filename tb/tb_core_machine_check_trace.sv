@@ -50,6 +50,8 @@ module tb_core_machine_check_trace;
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
     .ENABLE_MULTIPLE_STRING(1'b1)) dut (
+    .imem_rsp_hints_i('0),
+
       /* verilator lint_off PINCONNECTEMPTY */
       .data_page_projection_o(),
       /* verilator lint_on PINCONNECTEMPTY */

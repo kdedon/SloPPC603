@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Optional, serialized matched benchmark; no firmware rebuild or dependency.
-INTEGER_PAIR_DIR ?= $(BUILD_DIR)/integer-fpu-pair
+INTEGER_PAIR_HINTS ?= 0
+ifneq ($(filter $(INTEGER_PAIR_HINTS),0 1),$(INTEGER_PAIR_HINTS))
+$(error INTEGER_PAIR_HINTS must be 0 or 1)
+endif
+ifneq ($(words $(INTEGER_PAIR_HINTS)),1)
+$(error INTEGER_PAIR_HINTS must be 0 or 1)
+endif
+INTEGER_PAIR_DIR ?= $(BUILD_DIR)/integer-fpu-pair-hints$(INTEGER_PAIR_HINTS)
 INTEGER_PAIR_DIGEST_ARGS ?=
 INTEGER_PAIR_IMAGE ?= ../toolchain/build/demo/dhrystone.hex
 INTEGER_PAIR_DUMP ?= ../toolchain/build/demo/dhrystone.dump
 INTEGER_PAIR_DEFINES := +define+PPC_DISPATCH_WIDTH=2 +define+PPC_LSU_PIPE=1 +define+PPC_BRANCH_REMOVAL=0 +define+PPC_FETCH_DECODE_REG=0 +define+PPC_MISPREDICT_FETCH_NOW=1
-INTEGER_PAIR_PARAMETERS := -GFPU_IMPL=0 "-GENABLE_DCACHE=1'b0" -GDISPATCH_WIDTH=2 "-GENABLE_LSU_PIPE=1'b1"
+INTEGER_PAIR_PARAMETERS := "-GENABLE_FETCH_HINTS=1'b$(INTEGER_PAIR_HINTS)" -GFPU_IMPL=0 "-GENABLE_DCACHE=1'b0" -GDISPATCH_WIDTH=2 "-GENABLE_LSU_PIPE=1'b1"
 INTEGER_PAIR_ARGS := +INTEGER_PAIR_ZERO_RAM +INTEGER_BRANCH_PROFILE +LOOP_START_PC=fff03ecc +LOOP_START_WORD=80810058 +LOOP_STOP_PC=fff03ff8 +LOOP_STOP_WORD=48000c55 +MAX_CYCLES=400000000
 .PHONY: benchmark-integer-fpu-pair
 benchmark-integer-fpu-pair:

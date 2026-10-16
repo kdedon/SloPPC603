@@ -49,6 +49,8 @@ module tb_core_live_context #(
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
+    .imem_rsp_hints_i('0),
+
         /* verilator lint_off PINCONNECTEMPTY */
         .data_page_projection_o(),
         /* verilator lint_on PINCONNECTEMPTY */
@@ -137,6 +139,8 @@ module tb_core_live_context #(
   logic unused_checkstop1;
   ppc_core_bat #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

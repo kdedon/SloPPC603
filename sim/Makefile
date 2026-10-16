@@ -67,6 +67,10 @@ include tools/false_hazards.mk
 # Generic instruction-cache abort publication regression.
 include tools/icache_abort.mk
 
+# Optional opaque frontend hint acceptance.
+include tools/fetch_hints.mk
+include tools/icache_metadata.mk
+
 regression: reference-checkout lint check-spec test-recovery test-recovery-select test
 
 build-control-memory:

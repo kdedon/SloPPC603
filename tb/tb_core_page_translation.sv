@@ -57,6 +57,8 @@ module tb_core_page_translation #(parameter bit ENABLE_MICRO_TLB = 1'b1,
   ppc_core_bat #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),.ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),.TLB_SETS(TLB_SETS),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

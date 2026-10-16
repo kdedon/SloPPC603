@@ -74,6 +74,8 @@ module tb_core_bat;
   logic [32:0] unused_icbi_core;
   logic unused_checkstop;
   ppc_core_bat #(.RESET_PC(32'b0)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

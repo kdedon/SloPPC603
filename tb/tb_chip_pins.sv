@@ -12,12 +12,14 @@
 // against a trap, a DSI and an alignment fault. Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
-module tb_chip_pins #(parameter int PLL = -1);
+module tb_chip_pins #(parameter bit ENABLE_FETCH_HINTS = 1'b0, parameter int PLL = -1);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 65536;
   logic clk = 1'b0;
   always #5 clk = ~clk;
+  `define CHIP_FETCH_HINTS_PARAMETER
   `include "chip_harness.svh"
+  `undef CHIP_FETCH_HINTS_PARAMETER
   `include "ppc_asm.svh"
   int fetch_streamed = 0;
   logic fetch_piped_q = 1'b0;

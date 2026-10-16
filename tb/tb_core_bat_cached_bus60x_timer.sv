@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Kevin Dedon
 // Accepted translated I-cache refill, DEC-to-EXT promotion, and two RFIs.
 /* verilator lint_off BLKSEQ */
-module tb_core_bat_cached_bus60x_timer;
+module tb_core_bat_cached_bus60x_timer #(parameter bit ENABLE_FETCH_HINTS = 1'b0);
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
@@ -49,7 +49,7 @@ module tb_core_bat_cached_bus60x_timer;
 
   /* verilator lint_off PINCONNECTEMPTY */
   logic unused_checkstop;
-  ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
+  ppc_core_bat_cached_bus60x #(.ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS), .RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
     .ENABLE_TIMERS(1'b1)) dut(.bus_ce_i(1'b1), .dbw32_i(1'b0),

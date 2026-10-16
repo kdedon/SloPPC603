@@ -9,6 +9,7 @@ The actual public cache regression separately tests RAM/state behavior.
 """
 from pathlib import Path
 import argparse,hashlib,json,re
+from check_icache_metadata import strip_metadata,sha as cache_sha
 ROOT=Path(__file__).resolve().parents[2]
 def sha(s):return hashlib.sha256(s.encode()).hexdigest()
 ORIGINAL='db33e1e3926f257525a2032927b8b0b286626e5de1fa37e05c3d59d237bd847f'
@@ -24,14 +25,20 @@ def main():
  parser=argparse.ArgumentParser(description=__doc__)
  parser.add_argument('--output',type=Path,required=True)
  args=parser.parse_args()
- actual=(ROOT/'rtl/ppc_icache.sv').read_text()
- assert sha(actual)==CANDIDATE,'live cache is not reviewed abort candidate'
+ actual_source=(ROOT/'rtl/ppc_icache.sv').read_text()
+ # Exact metadata inverse, then the original independent abort inverse.
+ actual=strip_metadata(actual_source)
+ assert sha(actual)==CANDIDATE,'normalized cache is not reviewed abort candidate'
  original=actual
  for new,old in [(NEW_DECL,OLD_DECL),(NEW_CONTROL,OLD_DATA),(NEW_PORT,OLD_PORT)]:
   assert original.count(new)==1,new
   original=original.replace(new,old)
  assert sha(original)==ORIGINAL,'inverse delta changed other cache behavior'
- assert sha((ROOT/'tb/tb_icache_abort_install.sv').read_text())==TESTBENCH,'public oracle drift'
+ public_tb=(ROOT/'tb/tb_icache_abort_install.sv').read_text()
+ # Invert only the explicit default-disabled metadata port adapter.
+ adapter="    .line_rsp_meta_i('0),\n    // Default-disabled legacy caller does not consume opaque fetch hints.\n    /* verilator lint_off PINCONNECTEMPTY */\n    .fetch_rsp_meta_o(),\n    /* verilator lint_on PINCONNECTEMPTY */\n\n"
+ assert public_tb.count(adapter)==1,'public metadata port adapter drift'
+ assert sha(public_tb.replace(adapter,'',1))==TESTBENCH,'public oracle drift'
  # Exact actual expressions, not substituted hand-written candidate logic.
  install=re.search(r'  assign install_ok = .*?;',actual,re.S).group()
  assert install=="  assign install_ok = rst_ni && !kill_i && !invalidate_i;"
@@ -39,7 +46,7 @@ def main():
  fixture=HEADER+install+'\n'+control+BODY
  args.output.mkdir(parents=True,exist_ok=True)
  (args.output/'tb_icache_abort_control.sv').write_text(fixture)
- (args.output/'source.json').write_text(json.dumps({'candidate':CANDIDATE,'inverse_original':ORIGINAL,'public_testbench':TESTBENCH,'scope':'4096 four-state cases; per-bit payload projection; not RAM/temporal/ISA proof'},indent=2)+'\n')
+ (args.output/'source.json').write_text(json.dumps({'actual_cache':cache_sha(actual_source),'candidate':CANDIDATE,'inverse_original':ORIGINAL,'public_testbench':TESTBENCH,'scope':'4096 four-state cases; per-bit payload projection; not RAM/temporal/ISA proof'},indent=2)+'\n')
  print('Prepared actual-source abort control fixture; no HDL execution')
 HEADER="""// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon

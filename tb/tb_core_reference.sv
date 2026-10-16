@@ -37,6 +37,8 @@ module tb_core_reference #(
   logic [5:0] unused_mmu_602;
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0), .CPU_VARIANT(cpu_variant_e'(VARIANT))) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

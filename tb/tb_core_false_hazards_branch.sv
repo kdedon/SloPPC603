@@ -35,6 +35,8 @@ module tb_core_false_hazards_branch #(parameter bit BRANCH_REMOVAL=0);
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0), .ENABLE_LSU_PIPE(1'b0), .DISPATCH_WIDTH(1),
     .ENABLE_FPU(1'b0), .ENABLE_BRANCH_REMOVAL(BRANCH_REMOVAL)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

@@ -1305,3 +1305,11 @@ MiSTer: CI on `5427d00` met 45 MHz on seeds 6 and 8 and published the
 
 MVP 97.43% (unchanged); full 603e 83.50% → 84.82%.
 
+
+## CPU timing and verification checkpoint (2026-10-16)
+
+Recorded: `test-fetch-hints`, `test-icache-metadata`, matched CPU-only Quartus fit and `benchmark-fetch-hints FETCH_HINTS_BENCH_QUIET=1`, commits `ce9d510`/`e848682` and `ad87053`, 2026-10-16.
+
+Default-off fetch classification companions preserve the original decode and cycle boundaries. Fresh connected enabled tests, opaque metadata transport and matched integer/FPU benchmark checks passed. The fresh four-model benchmark retains identical full retirement digests, counters and 6,398,440/6,482,446 loop cycles with hints off/on. The CPU-only Balanced/seed1 fit improves from the inherited matched 41.75/42.52 MHz baseline to 42.41/42.60 MHz, at additional area. All-corner holds are positive and unconstrained panels are zero; 66 MHz setup remains unmet. Completion recovery is the next measured limiter.
+
+The [candidate evidence](../../FETCH_HINTS_ACCEPTANCE_2026-10-16.md) separates fresh checks from inherited results and pending aggregate CI/xrand/FPU acceptance. The implementation stays optional; no new architectural scope is credited. Recomputed `sum(weight × completion) / 100` remains 97.43% → 97.43%, with unchanged weights and row values. This is not release signoff.

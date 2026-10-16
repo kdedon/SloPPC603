@@ -37,6 +37,8 @@ module ppc_core_measure #(
   logic [4:0] unused_tlb_fill_ext;
   ppc_pkg::mmu_602_t unused_mmu_602;
   ppc_core #(.CPU_VARIANT(CPU_VARIANT)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

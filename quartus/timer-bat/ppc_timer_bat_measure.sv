@@ -277,6 +277,8 @@ module ppc_timer_bat_measure #(
     .ENABLE_TIMERS(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

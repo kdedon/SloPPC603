@@ -138,6 +138,12 @@ module tb_micro_tlb_harness #(
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .TLB_SETS(TLB_SETS), .HAS_602(HAS_602)
   ) dut (
+    .phys_imem_rsp_hints_i('0),
+    // Default-disabled legacy caller does not consume opaque fetch hints.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .imem_rsp_hints_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+
     .data_page_projection_i('0),
     .imem_rsp_esa_o(imem_rsp_esa), .dmem_req_attr_i('0),
     /* verilator lint_off PINCONNECTEMPTY */

@@ -6,7 +6,8 @@ module ppc_icache_managed #(
   parameter logic RESET_CACHE_ENABLE = 1'b1,
   parameter int SET_COUNT = 128,
   parameter int WAY_COUNT = 4,
-  parameter int FETCH_WIDTH = 1
+  parameter int FETCH_WIDTH = 1,
+  parameter bit ENABLE_FETCH_HINTS = 1'b0
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -18,6 +19,7 @@ module ppc_icache_managed #(
   input  logic         fetch_rsp_ready_i,
   // FETCH_WIDTH 2: {next word valid, word at addr + 4, word at addr}.
   output logic [33*FETCH_WIDTH-2:0] fetch_rsp_insn_o,
+  output logic [3*FETCH_WIDTH-1:0] fetch_rsp_meta_o,
   output logic         fetch_rsp_error_o,
 
   input  logic         maintenance_valid_i,
@@ -43,6 +45,7 @@ module ppc_icache_managed #(
   input  logic         bypass_rsp_valid_i,
   output logic         bypass_rsp_ready_o,
   input  logic [31:0]  bypass_rsp_insn_i,
+  input  logic [2:0]   bypass_rsp_meta_i,
   // A returned bypass transfer error completes the fetch as an error.
   input  logic         bypass_rsp_error_i,
   input  logic         bypass_ifetch_error_i,
@@ -55,6 +58,7 @@ module ppc_icache_managed #(
   input  logic         line_rsp_valid_i,
   output logic         line_rsp_ready_o,
   input  logic [255:0] line_rsp_line_i,
+  input  logic [23:0]  line_rsp_meta_i,
   input  logic         line_rsp_error_i,
 
   output logic         busy_o,
@@ -83,6 +87,7 @@ module ppc_icache_managed #(
   logic locked_req_q, locked_wait_q, use_bypass;
   logic [31:0] fetch_addr_q;
   logic [33*FETCH_WIDTH-2:0] cache_rsp_insn;
+  logic [3*FETCH_WIDTH-1:0] cache_rsp_meta;
   logic cache_invalidate, cache_invalidate_done;
   logic cache_busy, cache_protocol_error;
   logic cache_hit, cache_miss;
@@ -91,11 +96,13 @@ module ppc_icache_managed #(
   logic fetch_accept_enable;
 
   ppc_icache #(.SET_COUNT(SET_COUNT), .WAY_COUNT(WAY_COUNT),
-               .FETCH_WIDTH(FETCH_WIDTH)) cache (
+               .FETCH_WIDTH(FETCH_WIDTH), .ENABLE_METADATA(ENABLE_FETCH_HINTS),
+               .WORD_META_BITS(3)) cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(cache_fetch_valid), .fetch_ready_o(cache_fetch_ready),
     .fetch_addr_i(fetch_addr_i), .fetch_rsp_valid_o(cache_rsp_valid),
     .fetch_rsp_ready_i(cache_rsp_ready), .fetch_rsp_insn_o(cache_rsp_insn),
+    .fetch_rsp_meta_o(cache_rsp_meta),
     .fetch_rsp_error_o(cache_rsp_error), .lock_i,
     .fetch_rsp_bypass_o(cache_rsp_bypass), .kill_i(1'b0),
     .invalidate_i(cache_invalidate),
@@ -103,7 +110,7 @@ module ppc_icache_managed #(
     .invalidate_set_i(icbi_ready_o), .invalidate_set_addr_i(icbi_addr_i),
     .line_req_valid_o, .line_req_ready_i, .line_req_line_addr_o,
     .line_req_critical_dw_o, .line_req_instruction_o,
-    .line_rsp_valid_i, .line_rsp_ready_o, .line_rsp_line_i,
+    .line_rsp_valid_i, .line_rsp_ready_o, .line_rsp_line_i, .line_rsp_meta_i,
     .line_rsp_error_i, .busy_o(cache_busy), .hit_o(cache_hit),
     .miss_o(cache_miss), .protocol_error_o(cache_protocol_error)
   );
@@ -134,6 +141,11 @@ module ppc_icache_managed #(
     // The words are zero between fetches; reset need not clear them.
     fetch_rsp_insn_o = !fetch_outstanding_q ? '0 :
       use_bypass ? (33*FETCH_WIDTH-1)'(bypass_rsp_insn_i) : cache_rsp_insn;
+    // The same held owner selects word and hints; absent/upper scalar words
+    // are zero and their raw decoder hints are zero as well.
+    fetch_rsp_meta_o = !ENABLE_FETCH_HINTS ? '0 :
+      !fetch_outstanding_q ? '0 :
+      use_bypass ? (3*FETCH_WIDTH)'(bypass_rsp_meta_i) : cache_rsp_meta;
     fetch_rsp_error_o = 1'b0;
     cache_rsp_ready = 1'b0;
     bypass_rsp_ready_o = 1'b0;
@@ -252,6 +264,28 @@ module ppc_icache_managed #(
     end
   end
   // synthesis translate_off
+  // H(word) need not commute with a ternary whose owner is unknown.
+  // These checks diagnose the enabled path's ownership domain, not its data.
+  always_ff @(posedge clk_i) begin
+    if (ENABLE_FETCH_HINTS && rst_ni) begin
+      if (accept_fetch) begin
+        assert (!$isunknown({fetch_addr_i, cache_enabled_q}))
+          else $error("fetch hints accepted an unknown managed request owner");
+      end
+      if (command_priority) begin
+        assert (!$isunknown({maintenance_cache_enable_i, maintenance_invalidate_i}))
+          else $error("fetch hints accepted unknown cache maintenance controls");
+      end
+      if (icbi_ready_o) begin
+        assert (!$isunknown(icbi_addr_i))
+          else $error("fetch hints invalidated an unknown cache set");
+      end
+      if (fetch_rsp_valid_o) begin
+        assert (!$isunknown({fetch_outstanding_q, use_bypass}))
+          else $error("fetch hints selected an unknown managed response owner");
+      end
+    end
+  end
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     icbi_valid_i && !icbi_ready_o |=> icbi_valid_i && $stable(icbi_addr_i))
     else $error("pending icbi request changed");

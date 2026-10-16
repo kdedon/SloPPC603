@@ -57,6 +57,8 @@ module tb_core_page_instruction_exception #(parameter bit ENABLE_MICRO_TLB = 1'b
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

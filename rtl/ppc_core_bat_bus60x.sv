@@ -227,6 +227,8 @@ module ppc_core_bat_bus60x #(
     .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH), .RETIRE_PAIRS(RETIRE_PAIRS),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

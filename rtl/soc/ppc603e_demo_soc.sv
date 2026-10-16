@@ -41,6 +41,7 @@ module ppc603e_demo_soc #(
   parameter int SYS_MHZ = 50,
   // Floating-point unit in the processor, reported in MODE bit 8.
   parameter bit ENABLE_FPU = 1'b0,
+  parameter bit ENABLE_FETCH_HINTS = 1'b0,
   // Physical data-cache presence; default retains the existing demo profile.
   parameter bit ENABLE_DCACHE = 1'b1,
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
@@ -131,6 +132,7 @@ module ppc603e_demo_soc #(
   ppc_pkg::perf_event_t cpu_perf;
   ppc603e #(
     .CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG), .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS),
     .ENABLE_DCACHE(ENABLE_DCACHE),
     .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .FPU_IMPL(FPU_IMPL), .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE)

@@ -18,6 +18,12 @@ module tb_icache_abort_install #(
   initial begin clk=1'b0;forever #5 clk=~clk;end
   initial begin #20000;$fatal(1,"abort-install watchdog");end
   ppc_icache #(.SET_COUNT(SETS),.WAY_COUNT(WAYS),.FETCH_WIDTH(1)) dut(
+    .line_rsp_meta_i('0),
+    // Default-disabled legacy caller does not consume opaque fetch hints.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .fetch_rsp_meta_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+
     .clk_i(clk),.rst_ni(rst_n),.fetch_valid_i(fetch_valid),.fetch_ready_o(fetch_ready),
     .fetch_addr_i(fetch_addr),.fetch_rsp_valid_o(rsp_valid),.fetch_rsp_ready_i(rsp_ready),
     .fetch_rsp_insn_o(rsp_word),.fetch_rsp_error_o(rsp_error),.lock_i(1'b0),

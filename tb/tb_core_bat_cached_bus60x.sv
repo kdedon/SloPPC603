@@ -4,7 +4,7 @@
 // The real-mode bootstrap (WIMG 0001) is cached too (UM 5.2).
 /* verilator lint_off BLKSEQ */
 // BUS_RATIO2 runs the 60x side at that processor:bus ratio, doubled.
-module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
+module tb_core_bat_cached_bus60x #(parameter bit ENABLE_FETCH_HINTS = 1'b0, parameter int BUS_RATIO2 = 2);
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
@@ -115,7 +115,7 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
 
   /* verilator lint_off PINCONNECTEMPTY */
   logic unused_checkstop;
-  ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),
+  ppc_core_bat_cached_bus60x #(.ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS), .RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(.bus_ce_i(bus_ce), .dbw32_i(1'b0),
     .perf_o(),

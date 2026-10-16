@@ -37,6 +37,8 @@ module tb_core_shadow_exception_boundary;
   ppc_core #(.RESET_PC(32'b0), .ENABLE_LSU_PIPE(1'b0), .DISPATCH_WIDTH(1),
     .ENABLE_FPU(1'b0), .ENABLE_BRANCH_REMOVAL(BRANCH_REMOVAL),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

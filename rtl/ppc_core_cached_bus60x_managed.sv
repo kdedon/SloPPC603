@@ -174,6 +174,8 @@ module ppc_core_cached_bus60x_managed #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */
@@ -279,6 +281,13 @@ module ppc_core_cached_bus60x_managed #(
                         !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
     .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
   ) managed_cache (
+    .line_rsp_meta_i('0),
+    .bypass_rsp_meta_i('0),
+    // Default-disabled legacy caller does not consume opaque fetch hints.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .fetch_rsp_meta_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+
     .clk_i, .rst_ni,
     .fetch_valid_i(imem_req_valid && !transport_ifetch_error),
     .fetch_ready_o(managed_fetch_ready), .fetch_addr_i(imem_req_addr),

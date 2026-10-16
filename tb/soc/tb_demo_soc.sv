@@ -8,6 +8,7 @@
 /* verilator lint_off BLKSEQ */
 module tb_demo_soc #(
   parameter bit ENABLE_FPU = 1'b0,
+  parameter bit ENABLE_FETCH_HINTS = 1'b0,
   parameter bit ENABLE_DCACHE = 1'b1,
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
@@ -28,6 +29,7 @@ module tb_demo_soc #(
   // The external framebuffer and memory ports are unused here.
   /* verilator lint_off PINCONNECTEMPTY */
   ppc603e_demo_soc #(.CE_DIV(2), .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS),
     .ENABLE_DCACHE(ENABLE_DCACHE), .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL))) soc (

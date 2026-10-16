@@ -362,6 +362,14 @@ package ppc_pkg;
     logic write_ov_so;
     logic write_cr_field;
   } uop_t;
+
+  /* verilator lint_off UNUSEDSIGNAL */
+  // Takes the CR rename, or writes CR from the FPU.
+  function automatic logic cr_writer(uop_t u);
+    return !u.illegal && (u.write_cr_field || u.write_cr_fields || u.write_cr_bit ||
+      ((u.needs_flags || u.write_xer) && !(!u.write_xer && (u.write_ca || u.write_ov_so))));
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   typedef struct packed {
     logic [31:0] pc;
     logic [31:0] insn;
@@ -991,6 +999,11 @@ package ppc_pkg;
     logic branch;
     logic needs_iu;
   } fetch_lookahead_t;
+  // Per-word transport: {CR rename demand, branch class, needs primary IU}.
+  typedef struct packed {
+    logic cr_writer;
+    fetch_lookahead_t lookahead;
+  } fetch_hint_t;
   /* verilator lint_off UNUSEDSIGNAL */
   // Shared raw encoding test; callers retain decoded legality/unit eligibility.
   function automatic logic pair_sru_form(logic [31:0] insn);

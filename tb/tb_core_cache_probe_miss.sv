@@ -110,6 +110,8 @@ module tb_core_cache_probe_miss;
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_TLB_LOAD(1'b1),
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1)) dut (
+    .imem_rsp_hints_i('0),
+
       /* verilator lint_off PINCONNECTEMPTY */
       .data_page_projection_o(),
       /* verilator lint_on PINCONNECTEMPTY */

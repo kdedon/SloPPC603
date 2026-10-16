@@ -9,7 +9,8 @@ module ppc603e_measure #(
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter bit ENABLE_FPU = 1'b0,
   // The smaller FPU the MiSTer core builds.
-  parameter bit FPU_COMPACT = 1'b0
+  parameter bit FPU_COMPACT = 1'b0,
+  parameter bit ENABLE_FETCH_HINTS = 1'b0
 ) (
   input logic sysclk,
   input logic [0:3] pll_cfg_i,
@@ -233,7 +234,8 @@ module ppc603e_measure #(
 
   localparam ppc_fpu_pkg::fpu_impl_e FPU_IMPL =
     FPU_COMPACT ? ppc_fpu_pkg::FPU_IMPL_COMPACT : ppc_fpu_pkg::FPU_IMPL_FULL;
-  ppc603e #(.CPU_VARIANT(CPU_VARIANT), .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL)) dut (
+  ppc603e #(.CPU_VARIANT(CPU_VARIANT), .ENABLE_FPU(ENABLE_FPU),
+    .FPU_IMPL(FPU_IMPL), .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS)) dut (
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(), .bus_ce_o(),
     /* verilator lint_on PINCONNECTEMPTY */

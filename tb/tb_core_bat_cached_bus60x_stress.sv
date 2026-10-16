@@ -7,7 +7,7 @@
 // holds line fills; EXT, DEC and external cache maintenance arrive at random.
 // Run with +seed=N; the first divergence reports the seed.
 /* verilator lint_off BLKSEQ */
-module tb_core_bat_cached_bus60x_stress;
+module tb_core_bat_cached_bus60x_stress #(parameter bit ENABLE_FETCH_HINTS = 1'b0);
   import ppc_pkg::*;
   `include "ppc_asm.svh"
   localparam int ITERATIONS=24;
@@ -51,7 +51,7 @@ module tb_core_bat_cached_bus60x_stress;
 
   /* verilator lint_off PINCONNECTEMPTY */
   logic unused_checkstop;
-  ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
+  ppc_core_bat_cached_bus60x #(.ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS), .RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
     .ENABLE_TIMERS(1'b1),.ENABLE_CACHE_INSTRUCTIONS(1'b1)) dut(.bus_ce_i(1'b1), .dbw32_i(1'b0),

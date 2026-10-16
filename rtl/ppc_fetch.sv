@@ -24,7 +24,9 @@
 // instead of the next one.
 module ppc_fetch #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
-  parameter int FETCH_WIDTH = 1
+  parameter int FETCH_WIDTH = 1,
+  // Opaque per-word hints follow the existing word capture and promotion edges.
+  parameter bit ENABLE_FETCH_HINTS = 1'b0
 ) (
   input logic clk_i, rst_ni, stop_i,
   input logic redirect_i,
@@ -42,6 +44,7 @@ module ppc_fetch #(
   input ppc_pkg::esa_enable_t rsp_esa_i,
   input logic rsp_pair_i,
   input logic [31:0] rsp_insn1_i,
+  input logic [3*FETCH_WIDTH-1:0] rsp_hints_i,
   output logic packet_valid_o,
   input logic packet_ready_i, packet_ready2_i,
   // packet_ready2_i without the redirect term; it only sizes the next
@@ -50,7 +53,8 @@ module ppc_fetch #(
   output ppc_pkg::fetch_packet_t packet_o,
   // packet_o is followed by the word at pc + 4.
   output logic packet_pair_o,
-  output logic [31:0] packet_insn1_o
+  output logic [31:0] packet_insn1_o,
+  output logic [3*FETCH_WIDTH-1:0] packet_hints_o
 );
   import ppc_pkg::*;
 
@@ -202,7 +206,52 @@ module ppc_fetch #(
     end
   end
 
+  generate
+  if (ENABLE_FETCH_HINTS) begin : g_fetch_hints
+    logic [3*FETCH_WIDTH-1:0] buf_hints_q;
+    // Lane 0 uses the packet's procedural owner selection; lane 1 uses the
+    // second word's original ternary selection, even on unknown controls.
+    always_comb begin
+      if (buf_valid) packet_hints_o[2:0] = buf_hints_q[2:0];
+      else packet_hints_o[2:0] = rsp_hints_i[2:0];
+    end
+    if (FETCH_WIDTH == 2) begin : g_pair
+      assign packet_hints_o[5:3] = buf_valid ? buf_hints_q[5:3] : rsp_hints_i[5:3];
+      always_ff @(posedge clk_i) begin
+        if (to_buf) buf_hints_q <= rsp_hints_i;
+        else if (buf_valid && packet_ready_i) buf_hints_q[2:0] <= buf_hints_q[5:3];
+      end
+    end else begin : g_single
+      always_ff @(posedge clk_i) begin
+        if (to_buf) buf_hints_q <= rsp_hints_i;
+        // No second owned word exists in a single-word response.
+        else if (buf_valid && packet_ready_i) buf_hints_q <= '0;
+      end
+    end
+  end else begin : g_no_fetch_hints
+    assign packet_hints_o = '0;
+    logic unused_hints;
+    assign unused_hints = ^rsp_hints_i;
+  end
+  endgenerate
+
   // synthesis translate_off
+  // The hint and word selectors have the same owner. Unknown instructions
+  // remain permitted; an unknown owner is outside this transport invariant.
+  always_ff @(posedge clk_i) begin
+    if (ENABLE_FETCH_HINTS && rst_ni) begin
+      if (accept) begin
+        assert (!$isunknown(req_addr_o))
+          else $error("fetch hints accepted an unknown fetch address");
+      end
+      if (packet_valid_o) begin
+        assert (!$isunknown(buf_valid))
+          else $error("fetch hints selected an unknown buffer owner");
+        assert (!$isunknown(packet_o.pc))
+          else $error("fetch hints produced an unknown packet address");
+      end
+    end
+  end
   // A response dropped under stop still advances pc, so fetch must not resume
   // before a redirect replaces it.
   logic stop_skipped;

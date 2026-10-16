@@ -174,6 +174,7 @@ module ppc_bat_memory_router #(
   input  logic        pimem_rsp_valid_i,
   output logic        pimem_rsp_ready_o,
   input  logic [33*FETCH_WIDTH-2:0] pimem_rsp_insn_i,
+  input  logic [3*FETCH_WIDTH-1:0] phys_imem_rsp_hints_i,
   input  logic        pimem_rsp_error_i,
 
   output logic        pdmem_req_valid_o,
@@ -206,6 +207,7 @@ module ppc_bat_memory_router #(
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
   output logic [33*FETCH_WIDTH-2:0] imem_rsp_insn_o,
+  output logic [3*FETCH_WIDTH-1:0] imem_rsp_hints_o,
   output ppc_pkg::fetch_fault_t imem_rsp_fault_o,
   output ppc_pkg::page_miss_t imem_rsp_page_miss_o,
   // 602 esa permission of the fetched word's page or block.
@@ -1138,13 +1140,19 @@ module ppc_bat_memory_router #(
   // physical-ready controls above suppress every transfer during reset.
   always_comb begin
     imem_rsp_insn = pimem_rsp_insn_i;
+    imem_rsp_hints_o = phys_imem_rsp_hints_i;
     if (i_state_q == LANE_RESPONSE) begin
       // With machine check enabled, i_refetch is the only discard case.
-      if (i_refetch) imem_rsp_insn = pimem_rsp_insn_i;
-      else if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q))
+      if (i_refetch) begin
+        imem_rsp_insn = pimem_rsp_insn_i;
+        imem_rsp_hints_o = phys_imem_rsp_hints_i;
+      end else if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q)) begin
         imem_rsp_insn = '0;
+        imem_rsp_hints_o = '0;
+      end
     end else if (state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
       imem_rsp_insn = '0;
+      imem_rsp_hints_o = '0;
     end
   end
 

@@ -92,6 +92,8 @@ module tb_core_full_decode #(
     .ENABLE_RESERVATION(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .PLL_CFG(4'b1010), .CPU_VARIANT(CPU_VARIANT)
   ) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

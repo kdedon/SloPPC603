@@ -60,6 +60,8 @@ module tb_translated_held_cr #(parameter int DISPATCH_WIDTH = 1);
   ppc_core_bat #(.RESET_PC(32'b0), .FETCH_WIDTH(2),
     .DISPATCH_WIDTH(DISPATCH_WIDTH), .RETIRE_PAIRS(1'b0),
     .ENABLE_LSU_PIPE(1'b0)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */
