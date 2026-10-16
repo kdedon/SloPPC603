@@ -310,9 +310,12 @@ fresh matched CPU-only fit measures 40.99 MHz limiting, with 281 fewer ALMs
 and 155 fewer registers than the integrated baseline, passing holds and zero
 unconstrained categories. No fetched-word classification, predecode or
 `fd_next_iu` appears on its 80 reported detailed setup paths. The new hot
-limit is selected-producer/rename readiness into LSU P1; the cold limit is
-CR/branch validity into station capture. Fixed-slot rename readiness is the
-next isolated timing preparation. SQ overlap and cache metadata transport
+limit is selected-producer/rename value-forwarding membership into LSU P1;
+the cold limit is CR/branch validity into station capture. The early output
+consumes value only, so fixed-slot readiness is secondary. Raw-producer owner
+comparison before selection is the next hot-path experiment, preserving tag,
+offer, late, payload priority and four-state fallback. CNTLZW record
+qualification is a separate cold-path candidate. SQ overlap and cache metadata transport
 are deferred; neither appears on the new measured path set. Full CI,
 initialization-randomized, FPU and reference release acceptance remain
 pending on the merged batch; 66 MHz remains open. See

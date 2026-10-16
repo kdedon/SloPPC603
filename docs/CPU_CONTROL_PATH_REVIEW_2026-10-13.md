@@ -1592,8 +1592,8 @@ classification chain is removed from this measured top-path set, rather
 than proving every such arc meets 66 MHz.
 
 The hot worst path is HRESET through SRU result qualification, selected
-producer identity, rename readiness, incoming alignment/allocation and LSU
-P1 EA capture: 20 levels, 23.838 ns data delay, 16.652 ns interconnect (70%),
+producer identity, rename value-forwarding membership, incoming alignment/allocation and LSU
+P1 EA capture control: 20 levels, 23.838 ns data delay, 16.652 ns interconnect (70%),
 -0.496 ns skew. The cold worst is IU operand through count/CR0, CR ownership,
 branch resolution, `fd1_valid`, and station selection/capture: 20 levels,
 23.462 ns data delay, 13.986 ns interconnect (60%), -0.662 ns skew.
@@ -1606,8 +1606,17 @@ branch resolution, `fd1_valid`, and station selection/capture: 20 levels,
 | Fast 100 C | HRESET 20 | P1 9, special/cache state 11 |
 | Fast -40 C | HRESET 20 | P1 13, special/cache state 7 |
 
-The next isolated timing candidate is fixed-slot rename readiness, after
-source-exact equivalence and focused manual gates. The cold CR/branch family
+A source cross-check corrects the initial readiness interpretation:
+`read_a_early_o` exports only `early_a.value[11:0]`. The measured port1
+override tests stored readiness, selected tag, offer and full producer owner;
+changing the returned ready bit alone cannot cut this value path. Fixed-slot
+readiness is therefore secondary. The next hot-path experiment compares each
+slot owner against raw SRU/special/IU producers before selection, retaining
+the original selected-producer comparison for relevant X/Z selectors and
+leaving tag, offer, late, payload priority and state unchanged. It requires
+source-exact equivalence, temporal ownership and manual-cycle gates before a fit.
+The independent CNTLZW record qualifier remains a separate cold-path candidate.
+The cold CR/branch family
 is an independent limit near 41.35 MHz if only the hot family is removed.
 Cache classification transport and SQ overlap are deferred because neither
 is on this measured set. Keep their private preparation separate from the

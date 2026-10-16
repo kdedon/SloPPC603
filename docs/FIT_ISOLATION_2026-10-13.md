@@ -186,7 +186,7 @@ at slow -40 C, from the integrated 40.12 MHz baseline. The saved 40.66 MHz
 predecessor remains at `9a68a26`. Resources are 21,676 ALMs, 15,793 registers,
 46 M10Ks and two DSPs. All hold corners pass and unconstrained categories
 are zero; 66 MHz still fails. Focused accuracy/cycle and bounded four-state
-gates pass. Detailed paths now limit at result/rename readiness and CR/branch
+gates pass. Detailed paths now limit at result/rename value forwarding and CR/branch
 qualification, with no fetched-word classification on the top 80. See the
 [full command, corner and path record](CPU_CONTROL_PATH_REVIEW_2026-10-13.md).
 This remains CPU isolation rather than board or full release acceptance.
