@@ -1,7 +1,8 @@
 # Raw producer owner comparison trial
 
-Prepared against `9bfdc43`, 2026-10-15. This is an isolated candidate plan,
-not accuracy acceptance or a new timing result. The matched baseline is the
+Rejected after the matched fit, 2026-10-15. Candidate `0fd56cb` preserves the
+trial and its executable tests; the accepted RTL is restored after the trial.
+Prepared against `9bfdc43`. The matched baseline is the
 40.99 MHz CPU-only fit documented in
 [the control-path review](CPU_CONTROL_PATH_REVIEW_2026-10-13.md).
 
@@ -118,5 +119,49 @@ profile checks 35 probes and 55 spacings; stalled profiles exercise backpressure
 | 2 | wait | 29,158 | 27,086 |
 | 2 | snoop | 29,151 | 27,084 |
 
-No fitted frequency is attributed to this candidate yet. Full batch and
-reference acceptance remain pending; 66 MHz remains open.
+## Matched fit: reject
+
+Recorded: `flock /tmp/ppc603e-sim.lock quartus/chip/build.sh --docker --mister
+--no-fpu --jobs 2 --sys-mhz 66`, commit `0fd56cb`, 2026-10-15. Compilation
+completes in 28m40 with zero errors and 86 warnings. The pinned tool/image,
+device, CPU profile, 15.151 ns constraint and fitter settings match the
+40.99 MHz baseline. All 79 RTL pins and before/after source manifests remain
+unchanged; the temporary run QSF is restored. The summary's dirty flag reflects
+that temporary project file, not changed RTL.
+
+| Measure | Accepted baseline | Raw owner trial |
+|---|---:|---:|
+| Restricted Fmax, slow 100 C | 40.99 MHz | 38.15 MHz |
+| Restricted Fmax, slow -40 C | 41.35 MHz | 39.17 MHz |
+| ALMs | 21,676 | 21,839 |
+| Fitted registers | 15,793 | 15,963 |
+
+RAM remains 46 M10Ks, 54 MLAB LABs, 26,624 MLAB bits and 280,320 block-memory
+bits; DSP count remains two. Setup slacks at slow100/slow-40/fast100/fast-40
+are -11.059/-10.378/+0.441/+2.767 ns. Hold slacks are
++0.252/+0.244/+0.134/+0.118 ns. All five unconstrained categories are zero.
+Passing hold and coverage do not offset the setup regression or establish
+66 MHz closure.
+
+Recorded: `quartus_sta -t ../all_corner_paths.tcl ppc603e_chip ppc603e_chip
+evidence/20261016T003632Z-167209/ppc603e_chip.run.sdc
+evidence/20261016T003632Z-167209/all-corner-detail` in the same pinned, capped
+container from `quartus/chip`, under both locks, same commit and date.
+Detailed STA completes in 2m40 with zero errors and three warnings. All four
+worst setup slacks match the main analysis.
+
+All 80 detailed setup paths start at HRESET synchronization and traverse
+predecode and `c0_sru`; none traverses rename, the projected equality or
+`fd_next_iu`. The worst path goes through managed-cache request qualification,
+router instruction selection, predecode CR-write classification, CR waiting,
+`fd1_valid`, SRU selection and station operand capture. It has 21 logic levels,
+25.636 ns data delay, 19.218 ns interconnect (75%) and -0.514 ns skew. The
+earlier value-comparison chain has left this reported set, but the remapped
+design is slower overall. This does not prove the projection caused any new
+architectural fault or that the new limiting cone was absent from the baseline.
+
+Reject the optimization: restore the prior RTL/test interfaces and retain this
+record and the candidate commit for reproduction. No source or constraint
+shortcut is adopted. The separate CNTLZW record qualifier will be evaluated
+against the restored accepted source, not against this slower trial. Full
+batch/reference acceptance and 66 MHz remain open.
