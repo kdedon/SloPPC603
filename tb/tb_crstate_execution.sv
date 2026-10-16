@@ -151,6 +151,9 @@ module tb_crstate_execution;
     .mem_overlap_o(unused_overlap[0]), .mem_dst_valid_o(unused_overlap[1]),
     .mem_dst_o(unused_overlap[6:2]), .retire_hold_o(unused_overlap[7]),
     .result_select_o(unused_overlap[8]), .result_port1_o(unused_overlap[9]),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .result_port1_offer_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .result_late_o(unused_overlap[10]), .result_early_value_o(unused_overlap[42:11]),
     .result_valid_o(result_valid), .result_ready_i(result_ready),
     .result_o(result), .branch_commit_redirect_o(branch_commit_redirect),

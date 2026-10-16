@@ -312,7 +312,7 @@ module ppc_core #(
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
   logic cq_result_valid, cq_result1_valid, cq_iu_port1_offer;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
-  logic special_port1_ok, special_late;
+  logic special_late;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
   logic [4:0] special_mem_dst;
@@ -512,7 +512,7 @@ module ppc_core #(
   uop_t dq1_uop, d1_lane_uop;
   iq_pair_t dq1_pair;
   // Unit classes: c0_* for DQ0, d1_* for DQ1.
-  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_move, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
+  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch, d1_bc, d1_cr_final, d1_bc_taken, d1_bc_now, d1_bc_spec;
   logic [31:0] d1_bc_target;
@@ -540,7 +540,7 @@ module ppc_core #(
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [1:0] d1_ea;
-  logic d1_lsu, d1_lsu_ready, d1_base_wait, d1_wait_a, d1_wait_b;
+  logic d1_lsu, d1_base_wait, d1_wait_a, d1_wait_b;
   operand_t d1_wait;
   logic [31:0] d1_offset;
   // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
@@ -2573,7 +2573,11 @@ module ppc_core #(
     .busy_o(special_busy),
     .mem_overlap_o(special_mem_overlap), .mem_dst_valid_o(special_mem_dst_valid),
     .mem_dst_o(special_mem_dst), .retire_hold_o(special_retire_hold),
-    .result_select_o(special_result_select), .result_port1_o(special_port1_ok),
+    .result_select_o(special_result_select),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .result_port1_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .result_port1_offer_o(special_port1_offer),
     .result_late_o(special_late), .result_early_value_o(special_early_value),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
@@ -2640,10 +2644,10 @@ module ppc_core #(
   // special_port1_sel steers the second port's payload without the result's
   // valid, which a recovery's cancel reaches late: with it set, no other
   // unit's result is valid on that port.
-  logic special_port1, special_port1_sel;
+  logic special_port1, special_port1_sel, special_port1_offer;
   assign special_port1_sel = ENABLE_LSU_PIPE && special_result_select && lsu_port0 &&
                              !sru_result_offer;
-  assign special_port1 = special_port1_sel && special_result_valid && special_port1_ok;
+  assign special_port1 = special_port1_sel && special_port1_offer;
   assign special_result_ready = special_result_valid &&
                                 ((result_ready && !lsu_port0) || special_port1);
   // An IU result that meets a load's on the first port takes the second
@@ -3048,7 +3052,51 @@ module ppc_core #(
   // Two IU operations pair only when one is an add or compare, for the SRU.
   // A plain access in DQ1 takes the lane only with its sources committed;
   // an IU operation in DQ1 may wait in the station on a DQ0 load.
-  logic pair_units, d1_iu_ready, d1_fp_ready;
+  logic d1_iu_ready, d1_fp_ready;
+  // DQ0 alignment changes only GPR/update permissions relevant to DQ1.
+  // Compute the dependent admission terms before the late alignment choice.
+  typedef struct packed {
+    logic move_allowed, reads_dst, pair_other, base_allowed, no_previous_base;
+    logic lsu_allowed, sources_ready, misaligned;
+    logic iu, lsu, gpr, update;
+    logic alloc0, alloc1, alloc2;
+  } d1_admission_context_t;
+  typedef struct packed {
+    logic move_ok, pair_ok, base_wait, lsu_ready, rename_ready, admit;
+  } d1_admission_t;
+  d1_admission_context_t d1_admission_context;
+  // One shared helper returns named intermediate predicates for source proofs.
+  // Hardware consumes actual.base_wait and pre/fault.admit; other fields prune.
+  /* verilator lint_off UNUSEDSIGNAL */
+  d1_admission_t d1_admission_actual, d1_admission_pre, d1_admission_fault;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic d1_admission_ok;
+  function automatic d1_admission_t d1_permissions(
+      input logic gpr_write, input logic mem_update,
+      input d1_admission_context_t c);
+    d1_admission_t r;
+    r.move_ok = c.move_allowed && !(gpr_write && c.reads_dst);
+    r.pair_ok = c.pair_other || (r.move_ok && c.iu);
+    r.base_wait = c.base_allowed &&
+      (c.no_previous_base || (gpr_write && !mem_update));
+    r.lsu_ready = c.lsu_allowed && (r.base_wait || !c.misaligned) &&
+      (r.base_wait || c.sources_ready);
+    r.rename_ready = (c.update && gpr_write) ? c.alloc2 :
+                     (gpr_write || c.update) ? c.alloc1 : c.alloc0;
+    r.admit = r.pair_ok && (!c.lsu || r.lsu_ready) && (!c.gpr || r.rename_ready);
+    return r;
+  endfunction
+  assign d1_admission_actual = d1_permissions(dispatch_uop.gpr_write,
+                                              dispatch_uop.mem_update, d1_admission_context);
+  assign d1_admission_pre = d1_permissions(sp_dispatch_uop.gpr_write,
+                                           sp_dispatch_uop.mem_update, d1_admission_context);
+  assign d1_admission_fault = d1_permissions(1'b0, 1'b0, d1_admission_context);
+  always_comb begin
+    d1_admission_ok = d1_admission_pre.admit;
+    // Match dispatch_base's procedural selector, including X/Z false.
+    if (dispatch_align) d1_admission_ok = d1_admission_fault.admit;
+  end
+
   assign bu_finished = DUAL && bu_branch;
   assign c0_iu = normal_uop && !bu_branch;
   // An add or compare goes to the SRU while the IU station is taken
@@ -3131,8 +3179,8 @@ module ppc_core #(
   // An LR or CTR move is completion-serialized, not dispatch-serialized, so
   // an IU instruction may dispatch beside it (UM 6.6.1.2) unless it reads
   // the move's result.
-  assign c0_move = special_uop && sru_move &&
-    !(dispatch_uop.gpr_write && reads_reg(dq1_uop, dispatch_uop.dst));
+  assign d1_admission_context.move_allowed = special_uop && sru_move;
+  assign d1_admission_context.reads_dst = reads_reg(dq1_uop, dispatch_uop.dst);
   assign c0_fp = fp_uop;
   assign c0_fp_mem = special_uop && dispatch_fp_mem_plain;
   assign d1_valid = DUAL && iq_valid1 && !trace_mode && !seq_active && !dq1_uop.privileged;
@@ -3199,11 +3247,10 @@ module ppc_core #(
       (dispatch_needs_flags && (dispatch_uop.write_ov_so || dispatch_uop.write_xer))));
   assign d1_gpr = !d1_fp && !d1_branch && dq1_uop.gpr_write;
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
-  assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
+  assign d1_admission_context.pair_other = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
     ((c0_iu || c0_branch) && d1_lsu) ||
     (c0_iu && (d1_sru || (c0_sru && d1_iu) || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
-    (c0_move && d1_iu) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
   // As for DQ0, no station operand waits on an older lane access.
   // Beside an IU operation in DQ0, a DQ1 integer operation goes to the SRU;
@@ -3251,11 +3298,11 @@ module ppc_core #(
   // DQ0's rename slot.
   assign d1_wait_a = !dq1_uop.zero_a && (dq1_pair.dep_prev[0] || !src_a1.ready);
   assign d1_wait_b = !dq1_uop.use_imm && (dq1_pair.dep_prev[1] || !src_b1.ready);
-  assign d1_base_wait = (LSU_BASE_SNOOP || LSU_BASE_WAIT) && ENABLE_SUPERVISOR_EXCEPTIONS &&
+  assign d1_admission_context.base_allowed = (LSU_BASE_SNOOP || LSU_BASE_WAIT) && ENABLE_SUPERVISOR_EXCEPTIONS &&
     ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
-    !dq1_uop.mem_update && (d1_wait_a != d1_wait_b) &&
-    (!(dq1_pair.dep_prev[0] || dq1_pair.dep_prev[1]) ||
-     (dispatch_uop.gpr_write && !dispatch_uop.mem_update));
+    !dq1_uop.mem_update && (d1_wait_a != d1_wait_b);
+  assign d1_admission_context.no_previous_base = !(dq1_pair.dep_prev[0] || dq1_pair.dep_prev[1]);
+  assign d1_base_wait = d1_admission_actual.base_wait;
   always_comb begin
     d1_wait = d1_wait_a ? src_a1 : src_b1;
     d1_offset = dq1_uop.use_imm ? dq1_uop.imm : d1_wait_a ? src_b1.value :
@@ -3266,10 +3313,18 @@ module ppc_core #(
       d1_wait.producer = alloc_producer;
     end
   end
-  assign d1_lsu_ready = lsu_ready && lane_mem_idle && !fp_unsafe_pending &&
-    (d1_base_wait || !d1_misaligned) && !msr_le &&
-    (d1_base_wait || ((dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
-                      (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]))));
+  assign d1_admission_context.lsu_allowed = lsu_ready && lane_mem_idle && !fp_unsafe_pending && !msr_le;
+  assign d1_admission_context.sources_ready =
+    (dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+    (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]));
+  assign d1_admission_context.misaligned = d1_misaligned;
+  assign d1_admission_context.iu = d1_iu;
+  assign d1_admission_context.lsu = d1_lsu;
+  assign d1_admission_context.gpr = d1_gpr;
+  assign d1_admission_context.update = unit_update;
+  assign d1_admission_context.alloc0 = alloc_ready;
+  assign d1_admission_context.alloc1 = alloc1_ready;
+  assign d1_admission_context.alloc2 = alloc2_ready;
   assign lsu_d1 = dispatch1 && d1_lsu;
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
   // need not wait for dispatch1, which depends on the unit's ready.
@@ -3282,7 +3337,7 @@ module ppc_core #(
   // Beside a carrier only an IU op or a unit access dispatches, the access
   // marked speculative on the carrier's start; a carrier in DQ1 starts the
   // only prediction of the pair.
-  assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
+  assign dispatch1 = dispatch && seq_last && d1_admission_ok && (cq1_ready || d1_remove) &&
     !(c0_carry && (!(d1_iu || d1_lsu) || c1_carry)) &&
     !(c1_carry && ((bs_busy && !bs_hit) || fp_cr_pending ||
       (bu_branch && bu_spec) || c0_fp || c0_fp_mem)) &&
@@ -3290,11 +3345,8 @@ module ppc_core #(
     // read the base an update form in DQ0 writes.
     (!unit_update || (d1_iu && !reads_reg(dq1_uop, uop.src_a))) &&
     !sru_wait1 && !update_wait1 &&
-    (!d1_lsu || d1_lsu_ready) &&
     (!flags_tok1 || (!flags_waiter && (!cr_wait1 || (cr_wait_ok1 && !cr_wait0)))) &&
     (!d1_needs_flags || xer_ready1) &&
-    (!d1_gpr || (update_load ? alloc2_ready :
-                 (dispatch_uop.gpr_write || unit_update) ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
   // DQ1 takes the rename port after those DQ0 uses: port 0 when DQ0 writes
   // no GPR, port 2 beside an update load.

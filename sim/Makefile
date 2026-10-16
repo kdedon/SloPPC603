@@ -2978,3 +2978,8 @@ test-core-dq1-page-pipe:
 
 # Optional source-connected four-state CQ pivot proof.
 include tools/cq_fixed_pivot.mk
+
+# Optional source-connected D1 and special-port1 proof/temporal gates.
+include tools/d1_alignment_admission.mk
+include tools/special_port1_offer.mk
+include tools/special_port1_temporal.mk
