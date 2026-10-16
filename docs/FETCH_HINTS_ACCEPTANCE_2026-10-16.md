@@ -102,10 +102,10 @@ make -C sim -j1 benchmark-integer-fpu-pair INTEGER_PAIR_HINTS=1 \
 
 Compare both complete result objects and require identical prior fields after removing only the new hints setting; retain the firmware checks, full tuple hash, loop cycles and quiet observations. See [the matched benchmark contract](INTEGER_FPU_MATCHED_THROUGHPUT_2026-10-16.md) for input and architectural-oracle scope.
 
-The new optional canonical `benchmark-fetch-hints` target reproduces the four hints-off/on × FPU-off/on arms and compares their complete metrics. It has been prepared but has not yet run; it is not another benchmark PASS. Make's `override VERILATOR +=` preserves the compile-time unique flags even with a command-line compiler variable.
+Recorded: `OBJCACHE= make -C sim -j1 benchmark-fetch-hints FETCH_HINTS_BENCH_QUIET=1`, commit `ad87053`, 2026-10-16: PASS. The optional canonical target ran all four hints-off/on × FPU-off/on arms on the same source and required identical complete metrics, quiet observations and retirement digests. Both modes retained 6,398,440/6,482,446 loop cycles and 23 firmware checks per FPU arm; all four full streams retained the 1,180,007-packet digest above. Input and complete source fingerprints matched, and raw tuple files were removed after digesting. Make's `override VERILATOR +=` preserves the compile-time unique flags even with a command-line compiler variable.
 
 ```sh
-make -C sim -j1 benchmark-fetch-hints
+OBJCACHE= make -C sim -j1 benchmark-fetch-hints FETCH_HINTS_BENCH_QUIET=1
 ```
 
 ## Matched physical fit and outstanding gates
