@@ -4,7 +4,7 @@
 
 Recorded: `make -C sim -j1 benchmark-integer-fpu-pair` with the arguments below, commit `aa68f2b` plus uncommitted benchmark adapter and observer, 2026-10-16.
 
-On2026-10-16 the same fixed Dhrystone image retired an identical complete normalized packet stream with FPU0 and FPU1. The public loop window took6398440 versus6482446 simulated system-clock edges, a ratio of1.013129137727321 (FPU1/FPU0). Both firmware runs passed23 checks with zero mismatches. This measures one uncached32 integer workload; it is not a production cached64 comparison, FPU execution measurement or Fmax result.
+On2026-10-16 the same fixed Dhrystone image retired an identical complete normalized packet stream with FPU0 and FPU1. The public loop window took6398440 versus6482446 simulated system-clock edges, a ratio of1.013129137727321 (FPU1/FPU0). Both firmware runs passed23 checks with zero mismatches. This measures one data-uncached32 integer workload; it is not a production cached64 comparison, FPU execution measurement or Fmax result.
 
 ## Reproduction and profile
 
@@ -20,9 +20,11 @@ The optional target builds/runs the two arms serially, freezes the existing imag
 
 Both profiles: physical data cache0, DMEM32, dispatch2/fetch2, pipelinedLSU1, FULL FPU implementation selection, CPU_PID7V_603E (reported0), branch removal0, FD register0, immediate misprediction fetch1, store queue0, base snoop1/base wait1, IC128sets/4ways, IQ6/CQ5/GPRrename5, CE_DIV2 and SYS_MHZ50. CPU execution cycles are not inferred by multiplying the observer count by the nominal MHz. The window counter samples the common timed testbench clock.
 
+Source clarification at `92b4e74`, 2026-10-16: the pinned firmware writes HID0 through 0x8800/0x8000/0xc400/0xc000, enabling both ICE and DCE. The explicit physical data-cache parameter suppresses data caching in this comparison; instruction caching remains active. CE_DIV controls video pixels, not CPU clock enable. The CPU receives the system clock directly; the default PLL-bypass/bus-enable configuration supplies one bus pulse per system edge. The observer increments every running testbench posedge, and firmware `times()` reads the SoC cycle counter rather than the timebase. Keep the raw counts unchanged: neither a divide by two nor a timebase factor is justified. SYS_MHZ is firmware metadata, separate from measured FPGA Fmax.
+
 Branch speculation and early-recovery capability remain enabled. Existing policy selects BS_EARLY1 for FPU0 and0 for FPU1; BS_ANCHOR0 in both because removal is disabled. This recovery-policy difference is part of the measured FPU-enable configuration. The test does not isolate dormant arithmetic hardware from that policy.
 
-Core source SHA256 in both arms: `0be6dda92c4395c5b6f5890a4c14dba72fad21ce1c90a5580712c74f718ad42c` (aa68f2b32beb86cce396414ecc99bcf98b08a686 baseline). No captured-quiescent recovery feature is installed. The demo adapter adds a default-preserving physical-data-cache parameter so both arms can use legal uncached32; existing cached profiles retain their default behavior.
+Core source SHA256 in both arms: `0be6dda92c4395c5b6f5890a4c14dba72fad21ce1c90a5580712c74f718ad42c` (aa68f2b32beb86cce396414ecc99bcf98b08a686 baseline). No captured-quiescent recovery feature is installed. The demo adapter adds a default-preserving physical-data-cache parameter so both arms can use legal data-uncached32; existing cached profiles retain their default behavior.
 
 Required image `toolchain/build/demo/dhrystone.hex` SHA256: `9e8788c32815aec52ebbad8ea913ecc3afebf8f242ae3ab2663cf04db4eef2a6`. Dump SHA256: `3fc726a3853abb0ace9794ed3dfaac2087cc90b54a90c801bd298dac5124a6cb`. First included packet is PCfff03ecc/word80810058; recording stops before PCfff03ff8/word48000c55, the final call to times(). Both landmarks are checked against the pinned dump and actual retired instruction words. Both retirement ports are recorded in order on the same observer edge, after head acceptance.
 
