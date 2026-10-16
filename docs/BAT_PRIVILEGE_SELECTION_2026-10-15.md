@@ -2,7 +2,7 @@
 
 Recorded: `make -C sim -j1 lint check-spec test-service-pr-input-proof test-service-pr-router-pair` and focused targets below, commit `e59205a` plus the router and acceptance collateral in this change, 2026-10-15.
 
-Prepared against `e59205a`, 2026-10-15. Timing is unmeasured for this trial.
+Prepared against `e59205a`, 2026-10-15. The measured CPU-only batch follows.
 
 The last completed CPU fit exposed a CQ recovery → LSU wakeup/address →
 store-overlap → request admission → BAT privilege → translation-capture path.
@@ -93,3 +93,65 @@ The original QSF was restored and all 79 RTL source hashes remained unchanged.
 
 Full CI, randomized startup sweep, complete FPU suite and physical timing remain
 separate batch gates; none is implied by these focused results.
+
+## CPU-only physical checkpoint
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2 --sys-mhz 66`, commit `cac0289`, 2026-10-15 (Chicago; completion 2026-10-16 UTC).
+
+Run under the simulation lock; the script owns the Quartus lock. Quartus
+17.0.2 Build602, Cyclone V `5CSEBA6U23I7`, seed1, two threads/CPUs and an 8GiB
+container limit, no swap or network. This is the cached CPU measurement shell,
+dual dispatch and pipelined LSU, FPU0/COMPACT0. It is not a board/FPU fit.
+The canonical constraints are unchanged except the documented run-local
+66MHz clock period. Full compilation passed with 0 errors, 86 warnings in
+28m15s. All 79 RTL hashes and the run manifest remained unchanged; the
+original QSF was restored. The summary's dirty flag includes temporary QSF
+configuration and pre-existing untracked local files, not uncommitted RTL.
+
+| Corner | Setup slack at66MHz (ns) | Hold slack (ns) | Reported Fmax (MHz) |
+| --- | ---: | ---: | ---: |
+| Slow100C | -8.799 | +0.122 | 41.75 |
+| Slow-40C | -8.370 | +0.079 | 42.52 |
+| Fast100C | +1.657 | +0.125 | — |
+| Fast-40C | +3.883 | +0.084 | — |
+
+Unconstrained input/output paths and illegal/unconstrained clocks are all zero.
+The two slow setup corners fail66MHz; all hold corners pass. Resources are
+21,763 ALMs, 16,004 registers, 46 M10Ks, 54 MLAB LABs, 26,624 MLAB bits,
+280,320 block-memory bits and two DSPs. Against the historical accepted
+40.99/41.35MHz CPU-only fit, this batch improves worst-corner Fmax by0.76MHz
+(about1.85%), with87 more ALMs and211 more registers. Memory/DSP counts match.
+The intervening accepted native source-use and precise-recovery changes also
+belong to this batch; this comparison does not isolate the BAT selector's gain.
+No ISA/manual latency, SDC exception or FPU implementation was changed for it.
+
+Detailed paths were then extracted from that completed database using:
+
+```sh
+quartus_sta -t ../all_corner_paths.tcl ppc603e_chip ppc603e_chip \
+  evidence/<completed-run>/ppc603e_chip.run.sdc \
+  evidence/<completed-run>/all-corner-detail
+```
+
+Run in `quartus/chip`, under both locks, in the same pinned capped container;
+`<completed-run>` is the directory printed by the fit script. This read-only
+analysis passed with0 errors,3 warnings in2m34s and reports20 setup paths per
+corner (80 total), plus three hold paths per corner. Its worst setup slacks
+match the main report exactly. Neither `service_pr` nor `sq_overlap` occurs
+in these80 setup paths. This is a bounded ranked-path observation, not a claim
+that these cones cannot become critical in another profile or placement.
+
+All20 hot paths pass through rename and DQ1 dispatch;17 also contain
+`d1_lsu_ready`. The worst is `rename.map_tag[4][0]` through operand value
+selection, DQ1 alignment/admission and dispatch into LSU P1 address capture:
+17 logic levels,23.339ns data delay (16.733ns interconnect, about72%),
+-0.551ns skew. All20 cold paths instead pass through fresh fetch classification
+and `c0_sru`; the worst begins at an I-cache RAM and ends in the SRU operand
+station,18 levels,20.891ns data delay and-2.570ns skew.
+
+Keep this as the next measured batch checkpoint. Defer the prepared SQ-overlap
+projection because it is absent from these ranked paths. The next experiment
+targets DQ1 operand/alignment admission while preserving the actual EA,
+owner qualification, exceptions and accepted dispatch edges. Full CI,
+randomized startup and the complete FPU suite remain pending batch gates;
+this is neither release acceptance nor66MHz closure.
