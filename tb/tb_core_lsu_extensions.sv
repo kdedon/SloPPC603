@@ -6,7 +6,7 @@
 // with restart from the first byte, the DR=1 page-crossing alignment rule, and
 // an external interrupt held off until a cracked lmw completes.
 /* verilator lint_off BLKSEQ */
-module tb_core_lsu_extensions;
+module tb_core_lsu_extensions #(parameter bit SUPPLEMENTAL_DQ1 = 1'b0);
   import ppc_pkg::*;
   `include "ppc_asm.svh"
   logic [41:0] unused_segment_csr;
@@ -48,6 +48,8 @@ module tb_core_lsu_extensions;
   int interval_requests [int];
   int interval_stores [int];
   logic [31:0] emit_pc;
+  int supplement_case[logic[31:0]];
+  int supplement_values[$];
 
   typedef struct {
     logic [31:0] vector, dar, dsisr, srr0;
@@ -329,6 +331,37 @@ module tb_core_lsu_extensions;
     emit(asm_li(3, 0));
     emit(asm_mtmsr(3));
     mark(11);
+    if (SUPPLEMENTAL_DQ1) begin
+      // Existing marker11 checks have completed before later retirements.
+      // Registers are prepared before the long public transport wait.
+      emit(asm_li(18, 'h6ff0)); emit(asm_li(20, 1));
+      emit(asm_li(21, 'h6fff)); emit(asm_li(27, 'h777));
+      emit(asm_li(3, 'h10)); emit(asm_mtmsr(3));
+      mark(90);
+      for (int phase=0;phase<2;phase++) begin
+        for(int which=0;which<8;which++)begin
+          // A legal load held by the PUBLIC BFM fills IQ behind real users.
+          // Two IU-only true consumers preserve a DQ0 pairing opportunity
+          // with native and pipelined LSU; reachability is checked below.
+          emit(asm_d(32,30,0,'h7f00));
+          emit(asm_ori(29,30,0)); emit(asm_ori(28,30,0));
+          if(phase!=0)emit(ASM_NOP);
+          supplement_case[emit_pc]=which;
+          case(which)
+            0: emit(asm_d(32,24,18,0));          // aligned word, immediate
+            1: emit(asm_xf(23,25,18,20,0));     // in-page split word, indexed
+            2: emit(asm_d(40,26,0,'h6ff2));     // aligned half, zero-A
+            3: emit_align(asm_xf(279,27,0,21,0),32'h6fff,1);
+            4: emit_align(asm_d(32,27,18,15),32'h6fff,0);
+            5: emit_align(asm_xf(23,27,0,21,0),32'h6fff,1);
+            6: emit_align(asm_d(40,27,18,15),32'h6fff,0);
+            7: emit(asm_d(44,24,18,'h112));      // half store at7102
+            default: $fatal(1,"supplemental case");
+          endcase
+        end
+      end
+      emit(asm_li(3,0));emit(asm_mtmsr(3));mark(91);
+    end
     // TLB miss on the second page under DR=1, then restart.
     emit(asm_li(3, 'h10));
     emit(asm_mtmsr(3));
@@ -496,6 +529,15 @@ module tb_core_lsu_extensions;
       12: begin
         for (int k = 25; k < 32; k++) check_gpr(k, 32'h1250 + k - 25, "interrupted lmw");
       end
+      91: if(SUPPLEMENTAL_DQ1)begin
+        check_gpr(24,{pat(32'h6ff0),pat(32'h6ff1),pat(32'h6ff2),pat(32'h6ff3)},"DQ1 aligned word");
+        check_gpr(25,{pat(32'h6ff1),pat(32'h6ff2),pat(32'h6ff3),pat(32'h6ff4)},"DQ1 indexed in-page split");
+        check_gpr(26,{16'b0,pat(32'h6ff2),pat(32'h6ff3)},"DQ1 zero-A half");
+        check_gpr(27,32'h777,"DQ1 alignment leaves destination");
+        for(int r=28;r<=30;r++)check_gpr(r,{pat(32'h7f00),pat(32'h7f01),pat(32'h7f02),pat(32'h7f03)},"DQ1 real prefix");
+        check(m(32'h7102)==pat(32'h6ff2)&&m(32'h7103)==pat(32'h6ff3),"DQ1 stored bytes");
+        supplement_values.push_back(1);
+      end
       default: ;
     endcase
   endtask
@@ -526,7 +568,8 @@ module tb_core_lsu_extensions;
         dpending <= 1'b1;
         daddress <= da;
         dfault_q <= fault;
-        ddelay <= (da[4:2] == 3'd5) ? 3 : 1;
+        if(SUPPLEMENTAL_DQ1 && !dw && da==32'h7f00)ddelay<=16;
+        else ddelay <= (da[4:2] == 3'd5) ? 3 : 1;
         requests++;
         interval_requests[interval] = interval_requests[interval] + 1;
         if (dprobe) begin
@@ -624,6 +667,105 @@ module tb_core_lsu_extensions;
           $sformatf("events left=%0d sc=%0d", expected_events.size(), sc_entries));
     $display("PASS tb_core_lsu_extensions: checks=%0d events=%0d requests=%0d stores=%0d probes=%0d partial_retires=%0d",
              checks, events_seen, requests, stores, probes, partial_retires);
+    report_dq1();
     $finish;
   end
+
+  // Read-only observations never supply expected targets/values or drive DUT.
+  int dq1_events[$];
+  logic supplement_active;
+  logic[31:0] held_cross_insn[logic[31:0]];
+  logic[2:0] held_cross_phase[logic[31:0]];
+  completion_tag_t held_cross_producer[logic[31:0]];
+  function automatic integer dq1_count(input integer kind);
+    int filtered_events[$];
+    if(kind==11)return supplement_values.size();
+    filtered_events=dq1_events.find with(item==kind);
+    return filtered_events.size();
+  endfunction
+  task automatic report_dq1;
+    $display("DQ1 admission observer supplemental=%0d LSU=%0d",SUPPLEMENTAL_DQ1,dut.ENABLE_LSU_PIPE);
+    for(int k=0;k<25;k++)$display("DQ1 bin%0d=%0d",k,dq1_count(k));
+    if(SUPPLEMENTAL_DQ1)begin
+      // Required changed-predicate cases; one/two pending remain diagnostic.
+      for(int k=0;k<8;k++)if(dq1_count(k)==0)$fatal(1,"DQ1 supplemental reachability missing bin%0d",k);
+      for(int k=12;k<20;k++)if(dq1_count(k)==0)$fatal(1,"specific supplemental DQ1 case missing bin%0d",k);
+      if(dq1_count(22)==0)$fatal(1,"direct D0 alignment witness missing");
+      if(dut.ENABLE_LSU_PIPE && dq1_count(23)==0)$fatal(1,"accepted LSU alignment-adoption witness missing");
+      if(!dut.ENABLE_LSU_PIPE && dq1_count(23)!=0)$fatal(1,"native profile counted LSU adoption");
+      if(dq1_count(11)==0)$fatal(1,"supplemental independent final state not observed");
+    end
+  endtask
+  initial begin
+    held_cross_insn.delete();held_cross_phase.delete();held_cross_producer.delete();supplement_active=1'b0;
+    forever begin
+      @(posedge clk);
+      if(rst_n)begin
+        if(SUPPLEMENTAL_DQ1 && tv&&tr&&marker_pc.exists(90)!=0&&retired.pc==marker_pc[90])supplement_active=1'b1;
+        if(dut.d1_valid && (dut.d1_mem||dut.d1_lsu) && dut.msr[MSR_DR] &&
+           ((dut.dq1_uop.mem_size==MEM_WORD)||(dut.dq1_uop.mem_size==MEM_HALF)))begin
+          dq1_events.push_back(dut.dq1_uop.mem_size==MEM_WORD ? 0:1);
+          dq1_events.push_back(dut.dq1_uop.use_imm ? 3:2);
+          if(supplement_case.exists(dut.dq1_head.pc)!=0)begin
+            dq1_events.push_back(dut.dq1_uop.zero_a ? 21:20);
+            if(dut.dispatch1 && !dut.d1_misaligned && !dut.d1_base_wait &&
+               (supplement_case[dut.dq1_head.pc]<3||supplement_case[dut.dq1_head.pc]==7))
+              dq1_events.push_back(12+supplement_case[dut.dq1_head.pc]);
+          end
+          if(dut.dispatch1 && !dut.d1_misaligned && !dut.d1_base_wait)dq1_events.push_back(4);
+          if(dut.dispatch1 && !dut.d1_misaligned && !dut.d1_base_wait &&
+             (dut.d1_ea_full[1:0]!=2'b00))dq1_events.push_back(5);
+          if(dut.d1_misaligned && (!dut.ENABLE_LSU_PIPE||!dut.d1_base_wait) && !dut.dispatch1)begin
+            held_cross_insn[dut.dq1_head.pc]=dut.dq1_head.insn;
+            held_cross_phase[dut.dq1_head.pc]=3'd1;
+            dq1_events.push_back(6);
+          end
+          if(dut.dispatch1 && dut.d1_base_wait && (dut.d1_wait_a!=dut.d1_wait_b))dq1_events.push_back(8);
+          if(!dut.dispatch1 && dut.d1_wait_a && dut.d1_wait_b)dq1_events.push_back(9);
+        end
+        if(dut.dispatch && dut.dispatch_uop.special_op==SPECIAL_ALIGNMENT &&
+           held_cross_insn.exists(dut.iq_head.pc)!=0 &&
+           held_cross_phase.exists(dut.iq_head.pc)!=0 && held_cross_phase[dut.iq_head.pc]==3'd1 &&
+           held_cross_insn[dut.iq_head.pc]==dut.iq_head.insn)
+          held_cross_phase[dut.iq_head.pc]=3'd2;
+        // D-form nonzero-A LOAD with BASE_SNOOP keeps its D0 descriptor
+        // normal even when ready. The LSU performs the original alignment
+        // classification and adopts it; require its complete allocated owner.
+        if(dut.dispatch && dut.dispatch_uop.special_op==SPECIAL_LOAD &&
+           dut.lsu_route && dut.base_snoop && held_cross_insn.exists(dut.iq_head.pc)!=0 &&
+           held_cross_phase[dut.iq_head.pc]==3'd1 &&
+           held_cross_insn[dut.iq_head.pc]==dut.iq_head.insn)begin
+          held_cross_producer[dut.iq_head.pc]=dut.alloc_producer;
+          held_cross_phase[dut.iq_head.pc]=3'd3;
+        end
+        if(dut.sp_dispatch_valid && !dut.sru_issue_go && dut.special_ready && dut.adopt_go &&
+           dut.lsu_adopt_uop.special_op==SPECIAL_ALIGNMENT &&
+           held_cross_phase.exists(dut.lsu_adopt_pc)!=0 && held_cross_phase[dut.lsu_adopt_pc]==3'd3 &&
+           held_cross_insn[dut.lsu_adopt_pc]==dut.lsu_adopt_insn)begin
+          if(dut.lsu_adopt_producer!==held_cross_producer[dut.lsu_adopt_pc] ||
+             dut.sp_producer!==held_cross_producer[dut.lsu_adopt_pc] ||
+             dut.sp_pc!==dut.lsu_adopt_pc || dut.sp_insn!==dut.lsu_adopt_insn ||
+             dut.sp_uop.special_op!==SPECIAL_ALIGNMENT)$fatal(1,"alignment adoption selected wrong owner");
+          held_cross_phase[dut.lsu_adopt_pc]=3'd4;
+          dq1_events.push_back(24);
+        end
+        // Original public handler608 reads SRR0. Existing manual event oracle
+        // independently checks vector/DAR/DSISR/SRR0 for this exact instruction.
+        if(tv&&tr&&at(retired.pc,12'h608) && held_cross_phase.exists(retired.value)!=0 &&
+           (held_cross_phase[retired.value]==3'd2||held_cross_phase[retired.value]==3'd4))begin
+          dq1_events.push_back(7);
+          dq1_events.push_back(held_cross_phase[retired.value]==3'd2 ? 22:23);
+          if(supplement_case.exists(retired.value)!=0 && supplement_case[retired.value]>=3 && supplement_case[retired.value]<=6)
+            dq1_events.push_back(12+supplement_case[retired.value]);
+          held_cross_phase.delete(retired.value);held_cross_producer.delete(retired.value);held_cross_insn.delete(retired.value);
+        end
+        // All legitimate new requests use6ff0/6ff4/7100/7f00; neither
+        // forbidden page-crossing beat may be issued anywhere in this phase.
+        if(supplement_active && dv&&dr && ((da&32'hffff_fffc)==32'h6ffc||(da&32'hffff_fffc)==32'h7000))
+          $fatal(1,"page-crossing request escaped before original alignment event");
+        if(SUPPLEMENTAL_DQ1 && tv&&tr&&marker_pc.exists(91)!=0&&retired.pc==marker_pc[91])supplement_active=1'b0;
+      end
+    end
+  end
+
 endmodule
