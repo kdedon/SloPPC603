@@ -1542,6 +1542,19 @@ module ppc_core #(
     return sum12_is(a, b, 12'hfff) ||
            (word && (sum12_is(a, b, 12'hffe) || sum12_is(a, b, 12'hffd)));
   endfunction
+  // Select the scalar admission predicate after evaluating each B source.
+  // Unknown selectors retain the original bitwise-merged operand semantics.
+  function automatic logic page_end_b_choice(input logic [11:0] a,
+                                              input logic [11:0] reg_b,
+                                              input logic [11:0] imm_b,
+                                              input logic use_imm,
+                                              input logic word);
+    case (use_imm)
+      1'b0: return page_end(a, reg_b, word);
+      1'b1: return page_end(a, imm_b, word);
+      default: return page_end(a, use_imm ? imm_b : reg_b, word);
+    endcase
+  endfunction
   assign special_a = uop.zero_a ? 32'b0 : src_a.value;
   assign special_b = uop.use_imm ? uop.imm : src_b.value;
   assign dispatch_ea = special_a + special_b;
@@ -3156,7 +3169,8 @@ module ppc_core #(
     (((dq1_uop.mem_size == MEM_WORD) && (d1_ea[1:0] != 2'b00)) ||
      ((dq1_uop.mem_size == MEM_HALF) && d1_ea[0])) :
     ((dq1_uop.mem_size != MEM_BYTE) && msr[MSR_DR] &&
-     page_end(d1_a[11:0], d1_b[11:0], dq1_uop.mem_size == MEM_WORD));
+     page_end_b_choice(d1_a[11:0], ENABLE_LSU_PIPE ? src_b1.value[11:0] : arch_b1[11:0],
+                       dq1_uop.imm[11:0], dq1_uop.use_imm, dq1_uop.mem_size == MEM_WORD));
   assign d1_mem_ready = !special_busy && !sru_hold_q && lsu_empty && !fp_unsafe_pending && !d1_misaligned &&
     !msr_le &&
     (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&

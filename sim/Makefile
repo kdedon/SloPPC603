@@ -61,6 +61,9 @@ include tools/service_pr.mk
 # Optional native source-use overlap acceptance targets.
 include tools/false_hazards.mk
 
+# Optional source-guarded four-state DQ1 admission proof.
+include tools/dq1_page_admission.mk
+
 regression: reference-checkout lint check-spec test-recovery test-recovery-select test
 
 build-control-memory:
@@ -2938,3 +2941,29 @@ test-fd-lookahead-equivalence:
 
 # Optional precise killed-fault frontend acceptance.
 include tools/killed_fault_fetch.mk
+
+# Actual-core DQ1 page admission: independent existing LSU-extension oracle.
+# Both explicit profiles use the reviewed supplemental program and fixed seed1.
+# Existing test-core-lsu-extensions retains SUPPLEMENTAL_DQ1=0.
+.PHONY: test-core-dq1-page-native test-core-dq1-page-pipe
+test: test-core-dq1-page-native test-core-dq1-page-pipe
+test-core-dq1-page-native:
+	PPC_VERILATOR_FLAGS= OBJCACHE= timeout 900s $(VERILATOR_TOOL) --binary --timing --assert -Wall -j 1 \
+	  --x-assign unique --x-initial unique \
+	  +define+PPC_DISPATCH_WIDTH=2 +define+PPC_LSU_PIPE=0 \
+	  "-GSUPPLEMENTAL_DQ1=1'b1" --top-module tb_core_lsu_extensions \
+	  -I../tb --Mdir $(BUILD_DIR)/core-dq1-page-native \
+	  -MAKEFLAGS 'OPT_FAST=-O0 OPT_SLOW=-O0 OPT_GLOBAL=-O0' \
+	  $(RTL) ../tb/tb_core_lsu_extensions.sv
+	timeout 120s $(abspath $(BUILD_DIR))/core-dq1-page-native/Vtb_core_lsu_extensions +verilator+seed+1 +verilator+rand+reset+2
+
+test-core-dq1-page-pipe:
+	PPC_VERILATOR_FLAGS= OBJCACHE= timeout 900s $(VERILATOR_TOOL) --binary --timing --assert -Wall -j 1 \
+	  --x-assign unique --x-initial unique \
+	  +define+PPC_DISPATCH_WIDTH=2 +define+PPC_LSU_PIPE=1 \
+	  "-GSUPPLEMENTAL_DQ1=1'b1" --top-module tb_core_lsu_extensions \
+	  -I../tb --Mdir $(BUILD_DIR)/core-dq1-page-pipe \
+	  -MAKEFLAGS 'OPT_FAST=-O0 OPT_SLOW=-O0 OPT_GLOBAL=-O0' \
+	  $(RTL) ../tb/tb_core_lsu_extensions.sv
+	timeout 120s $(abspath $(BUILD_DIR))/core-dq1-page-pipe/Vtb_core_lsu_extensions +verilator+seed+1 +verilator+rand+reset+2
+
