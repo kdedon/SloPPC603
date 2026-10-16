@@ -42,7 +42,9 @@ make -C sim -j1 check-fetch-hint-config
 make -C sim -j1 test-fetch-hints FETCH_HINTS_PROFILE=focused FETCH_HINTS_VALUE=1
 ```
 
-`test-fetch-hints-cached` additionally includes stress and timer profiles; those extra profiles are not included in the eight-target result above. `test-fetch-hints-package` selects the three package targets. These are optional enabled acceptance targets, not evidence that every supported configuration has run.
+Recorded: `OBJCACHE= make -C sim -j1 test-fetch-hints FETCH_HINTS_PROFILE=stress` and the same command with `FETCH_HINTS_PROFILE=timer`, commit `115d24b`, 2026-10-16: PASS. These add two targets to the eight-target result above. Stress seeds 1–4 passed 76,427/77,702/76,678/69,443 checks, 1,696/1,720/1,724/1,657 retirements and 35,828/36,493/35,866/32,605 cycles. Each observed 36 icbi operations, external/decrementer events, maintenance, retry/data-retry, held-tenure and refill/maintenance-overlap witnesses. Timer promotion passed 1,465 checks and 27 retirements, one external and one decrementer event, two entries into each handler and the expected target fetch.
+
+`test-fetch-hints-cached` selects all seven cached profiles; `test-fetch-hints-package` selects the three package targets. These optional enabled results still do not establish every supported configuration or aggregate release acceptance.
 
 ## Cache transport and selected-row evidence
 
