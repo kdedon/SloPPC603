@@ -33,30 +33,6 @@ module tb_rename_pair;
   retire_packet_t surv_pkt [CQ_DEPTH];
   completion_tag_t surv_tag [CQ_DEPTH];
 
-  // Coherent raw identities rotate through every binary source selection.
-  // The single timed stimulus process owns hint_epoch, including initialization.
-  completion_tag_t [2:0] raw_producers;
-  logic [1:0] raw_select;
-  int unsigned hint_epoch;
-  int pair_observations = 0;
-  int offered_role[3] = '{default:0};
-  operand_t pair_got[6];
-  logic [11:0] pair_early_a, pair_early_b;
-  logic [31:0] pair_mapped;
-  logic pair_a0_ready, pair_a1_ready, pair_a2_ready;
-  rename_tag_t pair_a0_tag, pair_a1_tag, pair_a2_tag;
-  always_comb begin
-    raw_producers[0] = wake1.producer ^ completion_tag_t'(11'h001);
-    raw_producers[1] = wake1.producer ^ completion_tag_t'(11'h100);
-    raw_producers[2] = wake1.producer ^ completion_tag_t'(11'h400);
-    raw_select = 2'b00;
-    case (hint_epoch % 3)
-      0: begin raw_select = 2'b00; raw_producers[0] = wake1.producer; end
-      1: begin raw_select = 2'b01; raw_producers[1] = wake1.producer; end
-      default: begin raw_select = 2'b10; raw_producers[2] = wake1.producer; end
-    endcase
-  end
-
   ppc_rename dut (
     .read_c_i(rd4), .arch_c_i(arch4), .read_c_o(got[4]),
     .read_c1_i(rd5), .arch_c1_i(arch5), .read_c1_o(got[5]),
@@ -78,36 +54,6 @@ module tb_rename_pair;
     .wake_early_value_i(early_value), .wake1_early_value_i(early1_value),
     .read_a_early_o(early_a), .read_b_early_o(early_b),
     .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(wake1_v), .wake1_i(wake1), .wake1_offer_i(wake1_offer),
-    .wake1_producers_i('0), .wake1_select_i(2'b00),
-    .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
-    .release_producer_i(rel0_prod),
-    .release1_i(rel1), .release1_reg_i(rel1_reg), .release1_tag_i(rel1_tag),
-    .release1_producer_i(rel1_prod),
-    .recovery_i(recovery), .recovery_survivor_count_i(surv_count),
-    .recovery_survivor_packet_i(surv_pkt), .recovery_survivor_tag_i(surv_tag), .recovery_rename_i('{default:'0}), .recovery_remove_i(2'b00));
-
-  ppc_rename #(.ENABLE_WAKE1_OWNER_PROJECTION(1'b1)) projected (
-    .read_c_i(rd4), .arch_c_i(arch4), .read_c_o(pair_got[4]),
-    .read_c1_i(rd5), .arch_c1_i(arch5), .read_c1_o(pair_got[5]),
-    .alloc_value_valid_i(1'b0), .alloc_value_i(32'd0),
-    .alloc1_value_valid_i(1'b0), .alloc1_value_i(32'd0),
-    .release2_i(1'b0), .release2_reg_i(5'd0), .release2_tag_i('0), .release2_producer_i('0),
-    .clk_i(clk), .rst_ni(rst_n),
-    .read_a_i(rd0), .read_b_i(rd1), .arch_a_i(arch0), .arch_b_i(arch1),
-    .read_a_o(pair_got[0]), .read_b_o(pair_got[1]),
-    .read_a1_i(rd2), .read_b1_i(rd3), .arch_a1_i(arch2), .arch_b1_i(arch3),
-    .read_a1_o(pair_got[2]), .read_b1_o(pair_got[3]),
-    .mapped_o(pair_mapped),
-    .alloc_ready_o(pair_a0_ready), .alloc_tag_o(pair_a0_tag), .alloc_i(alloc0),
-    .alloc_reg_i(a0_reg), .alloc_producer_i(a0_prod),
-    .alloc1_ready_o(pair_a1_ready), .alloc1_tag_o(pair_a1_tag), .alloc1_i(alloc1),
-    .alloc1_reg_i(a1_reg), .alloc1_producer_i(a1_prod),
-    .alloc2_ready_o(pair_a2_ready), .alloc2_tag_o(pair_a2_tag), .alloc2_i(alloc2),
-    .alloc2_reg_i(a2_reg), .alloc2_producer_i(a2_prod),
-    .wake_early_value_i(early_value), .wake1_early_value_i(early1_value),
-    .read_a_early_o(pair_early_a), .read_b_early_o(pair_early_b),
-    .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(wake1_v), .wake1_i(wake1), .wake1_offer_i(wake1_offer),
-    .wake1_producers_i(raw_producers), .wake1_select_i(raw_select),
     .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
     .release_producer_i(rel0_prod),
     .release1_i(rel1), .release1_reg_i(rel1_reg), .release1_tag_i(rel1_tag),
@@ -127,24 +73,7 @@ module tb_rename_pair;
   int lane1_lookup_hits = 0, wake_bypass = 0;
   int unsigned producer_count = 0;
 
-  // Read-only observers retain the original single timed input writer and
-  // independent oracle. Compare all public outputs before/after state edges.
-  task automatic pair_compare;
-    for (int p = 0; p < 6; p++)
-      if (got[p] !== pair_got[p]) $fatal(1, "paired full operand %0d", p);
-    if ({early_a,early_b,mapped,a0_ready,a1_ready,a2_ready,a0_tag,a1_tag,a2_tag} !==
-        {pair_early_a,pair_early_b,pair_mapped,pair_a0_ready,pair_a1_ready,pair_a2_ready,pair_a0_tag,pair_a1_tag,pair_a2_tag})
-      $fatal(1, "paired public metadata/early values");
-    pair_observations++;
-    if (wake1_offer) offered_role[hint_epoch % 3]++;
-  endtask
-  always @(posedge clk) begin
-    #1;
-    if (rst_n) pair_compare();
-  end
-
   task automatic check(input bit ok, input string why);
-    pair_compare();
     checks++;
     if (!ok) $fatal(1, "check %0d: %s", checks, why);
   endtask
@@ -160,7 +89,6 @@ module tb_rename_pair;
   endfunction
 
   task automatic apply;
-    hint_epoch++;
     rd0 = rd[0]; rd1 = rd[1]; rd2 = rd[2]; rd3 = rd[3];
     arch0 = arch[0]; arch1 = arch[1]; arch2 = arch[2]; arch3 = arch[3];
     rd4 = rd[4]; rd5 = rd[5]; arch4 = arch[4]; arch5 = arch[5];
@@ -416,7 +344,6 @@ module tb_rename_pair;
   endtask
 
   initial begin
-    hint_epoch = 0;
     idle();
     for (int i = 0; i < RD; i++) begin m_valid[i] = 0; m_ready[i] = 0; end
     for (int r = 0; r < 32; r++) m_map_valid[r] = 0;
@@ -492,10 +419,6 @@ module tb_rename_pair;
     $display("PASS rename pair ports: %0d checks, %0d dual allocations (%0d same-register), %0d dual releases, %0d recoveries, %0d lane-1 mapped lookups, %0d wake bypasses",
              checks, dual_allocs, waw, dual_releases, recoveries, lane1_lookup_hits, wake_bypass);
     $display("PASS rename forwarding: %0d combinations, six ordinary and two distinct early payload lookups", forwarding_cases);
-    for (int role = 0; role < 3; role++)
-      if (offered_role[role] == 0) $fatal(1, "raw offered source %0d absent", role);
-    if (pair_observations == 0) $fatal(1, "no temporal paired observations");
-    $display("PASS paired raw-owner public observations=%0d offered IU/SP/SRU=%0d/%0d/%0d", pair_observations, offered_role[0], offered_role[1], offered_role[2]);
     $finish;
   end
 endmodule
