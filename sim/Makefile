@@ -2983,3 +2983,8 @@ include tools/cq_fixed_pivot.mk
 include tools/d1_alignment_admission.mk
 include tools/special_port1_offer.mk
 include tools/special_port1_temporal.mk
+
+# Optional precise-exception capacity witness.
+ifneq ($(wildcard tools/d1_capacity.mk),)
+include tools/d1_capacity.mk
+endif
