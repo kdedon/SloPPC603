@@ -15,3 +15,5 @@ rtl/ppc_bus60x_line_read.sv | LINE_ADDR_ABORT: begin | target protocol violation
 rtl/ppc_icache.sv | IC_REFILL_DRAIN: begin | flash invalidate while an accepted refill awaits data; the managed wrapper holds invalidation until the refill ends (tb_icache covers the drain)
 rtl/ppc_tlb_service.sv | TLB_REFILL: begin | external management refill; this top ties the port off and CPU loads use the prepared path
 rtl/ppc_tlb_service.sv | TLB_INVALIDATE_SET: begin | external management invalidate; CPU tlbie uses the prepared path
+rtl/ppc_bat_memory_router.sv | default: begin end // service_pr unknown route-state fallback | two-state unreachable: route comparison is binary; X/Z fallback retained and checked by test-service-pr-input-proof (122,690 observations per runtime profile)
+rtl/ppc_bat_memory_router.sv | default: begin end // service_pr unknown setup-state fallback | two-state unreachable: setup state is binary; X/Z fallback retained and checked by test-service-pr-input-proof (122,690 observations per runtime profile)

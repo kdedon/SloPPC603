@@ -132,10 +132,10 @@ module tb_service_pr_payload #(parameter bit HAS_602=0, parameter bit ENABLE_RUN
         case (state_q == ROUTE_TRANSLATE_OFFER)
           1'b1: service_pr = 1'b1 && request_pr_q;
           1'b0: service_pr = 1'b1 && context_pr_q;
-          default: begin end
+          default: begin end // service_pr unknown route-state fallback
         endcase
       end
-      default: begin end
+      default: begin end // service_pr unknown setup-state fallback
     endcase
   end
 

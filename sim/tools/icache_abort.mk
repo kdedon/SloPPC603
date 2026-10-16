@@ -26,3 +26,9 @@ test-icache-abort-control-proof:
 	trap 'rm -f -- "$$proof_output"' EXIT; \
 	timeout 30s iverilog -g2012 -s tb_icache_abort_control -o "$$proof_output" $(BUILD_DIR)/icache-abort-control/tb_icache_abort_control.sv; \
 	timeout 30s vvp "$$proof_output"
+
+# Standalone leaf coverage is also called by coverage before its summary.
+# The two public-oracle geometries run serially; no ELF is required.
+.PHONY: coverage-icache-abort
+coverage-icache-abort:
+	python3 tools/run_icache_abort_coverage.py --coverage-dir "$(abspath $(COVERAGE_DIR))/icache-abort"

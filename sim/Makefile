@@ -2141,6 +2141,7 @@ coverage:
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile full-decode --elf $(FIRMWARE_DIR)/full-decode/smoke.elf --build-dir $(COVERAGE_DIR)/full-decode
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile lsu-dcache --elf $(FIRMWARE_DIR)/lsu/smoke.elf --build-dir $(COVERAGE_DIR)/lsu-dcache
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile chip-mmu-stress --elf $(FIRMWARE_DIR)/chip-mmu-stress/smoke.elf --build-dir $(COVERAGE_DIR)/chip-mmu-stress
+	$(MAKE) coverage-icache-abort
 	$(MAKE) coverage-summary
 coverage-summary:
 	python3 tools/coverage_summary.py --waivers coverage_waivers.txt --min-total $(COVERAGE_MIN) $(COVERAGE_DIR)/*/cov-*.dat
