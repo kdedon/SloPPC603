@@ -991,3 +991,11 @@ ignored as the manual permits here.
 **MVP 95.73% → 97.20%.** Remaining gaps are listed in the rows; none blocks
 the release.
 
+
+## Completion recovery timing checkpoint (2026-10-16)
+
+Recorded: focused completion/recovery and enabled cache/IRQ/FPU checks plus CPU-only Quartus fit, commit `41c78ef`, 2026-10-16.
+
+The fixed-slot owner projection improves the matched frontend-enabled DW2/LSU1/FPU0 fit from 42.41/42.60 to 43.15/43.58 MHz. Fresh four-state and temporal recovery tests, strict lint/spec, enabled cache/IRQ and unchanged FULL-FPU package golden checks passed. Holds are positive and unconstrained panels zero; 66 MHz remains unmet. Same-cycle recovery cancellation remains the next measured limiter. See [owner evidence](CQ_OWNER_FETCH_HINTS_TRIAL_2026-10-16.md).
+
+No architectural scope, row values or weights change. Recomputed MVP weighted completion remains 97.43% → 97.43%. Aggregate merged CI/xrand/FPU acceptance remains pending; this is not release signoff.

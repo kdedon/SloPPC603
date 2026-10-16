@@ -1313,3 +1313,11 @@ Recorded: `test-fetch-hints`, `test-icache-metadata`, matched CPU-only Quartus f
 Default-off fetch classification companions preserve the original decode and cycle boundaries. Fresh connected enabled tests, opaque metadata transport and matched integer/FPU benchmark checks passed. The fresh four-model benchmark retains identical full retirement digests, counters and 6,398,440/6,482,446 loop cycles with hints off/on. The CPU-only Balanced/seed1 fit improves from the inherited matched 41.75/42.52 MHz baseline to 42.41/42.60 MHz, at additional area. All-corner holds are positive and unconstrained panels are zero; 66 MHz setup remains unmet. Completion recovery is the next measured limiter.
 
 The [candidate evidence](../../FETCH_HINTS_ACCEPTANCE_2026-10-16.md) separates fresh checks from inherited results and pending aggregate CI/xrand/FPU acceptance. The implementation stays optional; no new architectural scope is credited. Recomputed `sum(weight × completion) / 100` remains 97.43% → 97.43%, with unchanged weights and row values. This is not release signoff.
+
+## Completion recovery timing checkpoint (2026-10-16)
+
+Recorded: focused completion/recovery and enabled cache/IRQ/FPU checks plus CPU-only Quartus fit, commit `41c78ef`, 2026-10-16.
+
+The fixed-slot owner projection improves the matched frontend-enabled DW2/LSU1/FPU0 fit from 42.41/42.60 to 43.15/43.58 MHz. Fresh four-state and temporal recovery tests, strict lint/spec, enabled cache/IRQ and unchanged FULL-FPU package golden checks passed. Holds are positive and unconstrained panels zero; 66 MHz remains unmet. Same-cycle recovery cancellation remains the next measured limiter. See [owner evidence](../../CQ_OWNER_FETCH_HINTS_TRIAL_2026-10-16.md).
+
+No architectural scope, row values or weights change. Recomputed MVP weighted completion remains 97.43% → 97.43%. Aggregate merged CI/xrand/FPU acceptance remains pending; this is not release signoff.

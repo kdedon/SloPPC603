@@ -28,7 +28,7 @@ Generated builds, logs and reports are excluded from version control.
 
 ## Next acceptance gates
 
-CPU timing work now has a default-off fetch-hint checkpoint at 42.41/42.60 MHz on the matched DW2/LSU1/FPU0 profile. The fresh four-model benchmark preserves cycles and full retirement digests. Next: measure completion recovery with the frontend fixed, then run the merged CI/xrand/FPU gates. The 66 MHz target remains open; see [candidate evidence](../../FETCH_HINTS_ACCEPTANCE_2026-10-16.md).
+CPU timing work has a default-off fetch-hint checkpoint at 42.41/42.60 MHz and a fixed-slot completion-owner projection at 43.15/43.58 MHz on the matched DW2/LSU1/FPU0 profile. Fresh focused recovery tests and enabled cache/IRQ/FULL-FPU checks pass. Same-cycle recovery cancellation remains the measured limiter. Next: qualify the cancellation projection, then run merged CI/xrand/FPU gates. The 66 MHz target remains open; see [frontend evidence](../../FETCH_HINTS_ACCEPTANCE_2026-10-16.md) and [owner projection](../../CQ_OWNER_FETCH_HINTS_TRIAL_2026-10-16.md).
 
 1. Closed 2026-09-27: LRU page replacement, direct-store DSI/ISI and
    `tlbsync` are implemented, and seeded EXT/DEC/reset stress passes on the
