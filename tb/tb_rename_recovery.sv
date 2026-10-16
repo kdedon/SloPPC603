@@ -60,6 +60,7 @@ module tb_rename_recovery;
     .wake_early_value_i(early_value), .wake1_early_value_i(early1_value),
     .read_a_early_o(early_a), .read_b_early_o(early_b),
     .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(wake1_v), .wake1_i(wake1), .wake1_offer_i(wake1_offer),
+    .wake1_producers_i('0), .wake1_select_i(2'b00),
     .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
     .release_producer_i(rel0_prod),
     .release1_i(rel1), .release1_reg_i(rel1_reg), .release1_tag_i(rel1_tag),

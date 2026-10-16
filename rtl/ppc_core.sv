@@ -84,6 +84,8 @@ module ppc_core #(
   // keeps the serialized lane. Benches may set the default with
   // +define+PPC_LSU_PIPE.
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
+  // Optional raw-source owner comparisons; result/wake authority is unchanged.
+  parameter bit ENABLE_WAKE1_OWNER_PROJECTION = 1'b1,
   // A D-form load in the unit dispatches before its base is produced and
   // forms its EA from the result bus as it offers, so a base written by a
   // load or add costs no extra cycle (UM Table 6-6). Puts a result bus,
@@ -309,7 +311,7 @@ module ppc_core #(
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
   logic cq_result_valid, cq_result1_valid, cq_iu_port1_offer;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
-  logic special_port1_ok, special_late;
+  logic special_port1_ok, special_late, special_port1_sel;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
   logic [4:0] special_mem_dst;
@@ -2253,7 +2255,8 @@ module ppc_core #(
     .write1_value_i(gpr_port1_value),
     .ready_o(gpr_ready)
   );
-  ppc_rename #(.USE_UNSHIFTED_RECOVERY(1'b1)) rename (
+  ppc_rename #(.USE_UNSHIFTED_RECOVERY(1'b1),
+    .ENABLE_WAKE1_OWNER_PROJECTION(ENABLE_WAKE1_OWNER_PROJECTION)) rename (
     .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
     .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
@@ -2284,6 +2287,8 @@ module ppc_core #(
     .alloc2_reg_i(dq1_uop.dst), .alloc2_producer_i(alloc1_producer),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .wake1_offer_i(result1_offer),
+    .wake1_producers_i({sru_result.producer, special_result.producer, iu_result.producer}),
+    .wake1_select_i({sru_result_offer, special_port1_sel}),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
     .release_producer_i(retire_producer),
     .release1_i(commit1 && retire1_o.rename_owned), .release1_reg_i(retire1_o.gpr),
@@ -2592,7 +2597,7 @@ module ppc_core #(
   // special_port1_sel steers the second port's payload without the result's
   // valid, which a recovery's cancel reaches late: with it set, no other
   // unit's result is valid on that port.
-  logic special_port1, special_port1_sel;
+  logic special_port1;
   assign special_port1_sel = ENABLE_LSU_PIPE && special_result_select && lsu_port0 &&
                              !sru_result_offer;
   assign special_port1 = special_port1_sel && special_result_valid && special_port1_ok;

@@ -2928,3 +2928,9 @@ test-held-release-equivalence:
 .PHONY: test-fd-lookahead-equivalence
 test-fd-lookahead-equivalence:
 	python3 tools/fd_lookahead_equivalence.py --build-dir $(BUILD_DIR)/fd-lookahead-equivalence
+
+# Optional bounded actual-source raw-owner/complete-reader four-state check.
+# Requires Icarus; not a temporal recovery or whole-core acceptance gate.
+.PHONY: test-rename-raw-owner-equivalence
+test-rename-raw-owner-equivalence:
+	python3 tools/rename_raw_owner_equivalence.py --build-dir $(BUILD_DIR)/rename-raw-owner-equivalence

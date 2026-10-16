@@ -8,7 +8,8 @@
 // map update. Port 2 takes the third free slot, only beside ports 0 and 1,
 // and is the youngest.
 module ppc_rename #(
-  parameter bit USE_UNSHIFTED_RECOVERY = 1'b0
+  parameter bit USE_UNSHIFTED_RECOVERY = 1'b0,
+  parameter bit ENABLE_WAKE1_OWNER_PROJECTION = 1'b0
 ) (
   input logic clk_i, rst_ni,
   input logic [4:0] read_a_i, read_b_i,
@@ -57,6 +58,11 @@ module ppc_rename #(
   input ppc_pkg::wake_packet_t wake1_i,
   // The second port holds a result for wake1_i's producer, accepted or not.
   input logic wake1_offer_i,
+  // Optional comparison inputs only: 0 IU, 1 special lane, 2 SRU.
+  // The selected wake remains authoritative for tag/value/valid/late.
+  input ppc_pkg::completion_tag_t [2:0] wake1_producers_i,
+  // Existing nested priority selectors: bit1 SRU, else bit0 special.
+  input logic [1:0] wake1_select_i,
   input logic release_i,
   input logic [4:0] release_reg_i,
   input ppc_pkg::rename_tag_t release_tag_i,
@@ -107,10 +113,46 @@ module ppc_rename #(
   // port. A matched wake of the operand's own slot is that slot's owner.
   logic [GPR_RENAME_DEPTH-1:0] wake_owns, wake1_owns;
   always_comb
-    for (int i = 0; i < GPR_RENAME_DEPTH; i++) begin
+    for (int i = 0; i < GPR_RENAME_DEPTH; i++)
       wake_owns[i] = owners[i] == wake_i.producer;
-      wake1_owns[i] = owners[i] == wake1_i.producer;
+  generate
+    if (ENABLE_WAKE1_OWNER_PROJECTION) begin : g_wake1_owner_projection
+      logic [GPR_RENAME_DEPTH-1:0] iu_owns, special_owns, sru_owns;
+      always_comb
+        for (int i = 0; i < GPR_RENAME_DEPTH; i++) begin
+          iu_owns[i] = owners[i] == wake1_producers_i[0];
+          special_owns[i] = owners[i] == wake1_producers_i[1];
+          sru_owns[i] = owners[i] == wake1_producers_i[2];
+          // Unknown relevant selectors retain the exact original equality;
+          // a selected SRU ignores the lower-priority special selector.
+          wake1_owns[i] = owners[i] == wake1_i.producer;
+          case (wake1_select_i[1])
+            1'b1: wake1_owns[i] = sru_owns[i];
+            1'b0: begin
+              case (wake1_select_i[0])
+                1'b0: wake1_owns[i] = iu_owns[i];
+                1'b1: wake1_owns[i] = special_owns[i];
+                default: ;
+              endcase
+            end
+            default: ;
+          endcase
+        end
+      // synthesis translate_off
+      always @(posedge clk_i)
+        if (rst_ni)
+          for (int i = 0; i < GPR_RENAME_DEPTH; i++)
+            assert (wake1_owns[i] === (owners[i] == wake1_i.producer))
+              else $error("raw wake1 producers/selectors disagree with selected owner");
+      // synthesis translate_on
+    end else begin : g_wake1_owner_legacy
+      logic _unused_wake1_projection;
+      assign _unused_wake1_projection = ^{wake1_producers_i, wake1_select_i};
+      always_comb
+        for (int i = 0; i < GPR_RENAME_DEPTH; i++)
+          wake1_owns[i] = owners[i] == wake1_i.producer;
     end
+  endgenerate
 
   function automatic operand_t read_operand(input logic [4:0] reg_index,
                                              input logic [31:0] arch_value,
