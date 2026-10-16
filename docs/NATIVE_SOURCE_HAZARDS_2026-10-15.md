@@ -108,11 +108,41 @@ have 9, 3, 2, 6, 2, 6, 6 and 2 observations each for both events. Duplicate
 or unfinished branch certificates fail. Only this DQ0 qualification fixture
 pins dispatch width1; fetch width2 still covers both actual stopped lanes.
 
-The original dual-width CTR-capture program still matches all 2,809
-architectural retirements, but its dual-width run misses bin010 after the
-scheduling change. That required assertion remains enabled; the original
-stimulus needs a genuine retained prefix instead of relying on a branch's
-unused raw GPR fields. This coverage gate, fresh Quartus17 analysis and a
-matched fit remain pending. Default regression dependencies are unchanged
-during this checkpoint. Full batch/reference acceptance remains open. The
-accepted timing baseline remains 40.99MHz; no new physical speed is claimed.
+Recorded: `OBJCACHE= make -C sim -j1 test-core-ctr-target-capture`, commit
+`4d5b86b` plus stronger stimulus, 2026-10-15. Pass at both original dispatch
+widths. Two OR-immediate operations genuinely read the loaded r0 through the
+IU, keeping a real prefix ahead of BC even if the first consumer dispatches
+from DQ1 into its pending rename slot. Only this capture-program mode changes;
+the symbolic oracle already implements ORI, all original observations and
+assertions remain, and the phase/alignment setup grows from six to eight
+words. No manual latency constant changes.
+
+There are 2,937 architectural retirements, 180 reads and 283 writes per run.
+Width1 passes 227,748 checks in 13,192 cycles, with all four capture bins16.
+Width2 passes 226,802 checks in 12,082 cycles; bins000..111 have
+3, 8, 7, 8, 8, 8, 8 and 8 observations. This closes the previously missing
+bin010 without preserving a false GPR dependency on the branch.
+
+Recorded: pinned Quartus17 analysis/elaboration, commit `4d5b86b` plus the
+test-only stimulus change, 2026-10-15:
+
+```sh
+. ci/pins.env
+flock /tmp/ppc603e-sim.lock flock /tmp/ppc603e-quartus.lock \\
+  docker run --rm --network none --cpus 2 --memory 8g --memory-swap 8g \\
+  --user 1000:1000 --volume "$PWD:/work" --workdir /work/quartus/chip \\
+  "$QUARTUS_IMAGE_PIN" /opt/intelFPGA_lite/quartus/bin/quartus_map \\
+  ppc603e_chip -c ppc603e_chip --analysis_and_elaboration \\
+  --read_settings_files=on --write_settings_files=off
+```
+
+Pass: zero errors, 65 warnings, 21 seconds, 1,668MiB peak virtual memory.
+Project settings remain unchanged. The six new focused targets now join
+the ordinary regression test dependencies so future changes retain their
+coverage. The two-word native CTR fixture explicitly uses dispatch width1;
+its unnecessary outer width2 macro is removed, with the core instance's
+effective configuration unchanged.
+
+A matched fit and full batch/reference acceptance remain pending. The
+historical accepted timing baseline is 40.99MHz; no new physical speed is
+claimed for these accuracy fixes and throughput changes.

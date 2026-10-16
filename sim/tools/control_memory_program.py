@@ -655,19 +655,21 @@ def make_ctr_target_capture():
             for taken in (0, 1):
                 for lane in (0, 1):
                     name = f'capture_{phase}_{aa}_{taken}_{lane}'
-                    # Six setup words precede BC; deliberately place its PC in
+                    # Eight setup words precede BC; deliberately place its PC in
                     # each physical fetch lane. Actual stopped-lane coverage is
                     # independently required by the read-only RTL observer.
-                    if (insert_at + len(q.ops) + 6) % 2 != lane:
+                    if (insert_at + len(q.ops) + 8) % 2 != lane:
                         e('ori', 0, 0, 0)
                     e('addi', 6, 0, 100); e('addi', 7, 0, 7)
                     e('divw', 8, 6, 7, 0, 0)
                     # True dependency keeps mtctr pending behind the divider.
                     e('addi', 5, 8, (2 if taken else 1) - 14)
                     e('mtctr', 5)
-                    # A delayed load holds dispatch while the older CTR becomes
-                    # final, so the stopped branch exercises actual early release.
+                    # Both ORI forms read real r0 and require the IU. If the first
+                    # pairs with the load, it waits on its pending rename in
+                    # the station; the second keeps a real prefix before BC.
                     e('lwz', 0, 1, 32)
+                    e('ori', 22, 0, 0); e('ori', 22, 0, 0)
                     e('bc', 16, 0, name+'_target', aa, 0)
                     e('addi', 21, 21, 1); e('b', name+'_join', 0, 0)
                     q.label(name+'_target'); e('addi', 21, 21, 2)
