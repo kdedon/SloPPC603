@@ -42,6 +42,8 @@ module tb_compiled_page_isi_firmware;
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),.ENABLE_RUNTIME_BAT(1'b1),
                  .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
                  .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),.ENABLE_TLB_LOAD(1'b1)) dut(
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

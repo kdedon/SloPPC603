@@ -47,6 +47,8 @@ module tb_compiled_table_search_firmware;
                  .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
                  .ENABLE_TLB_LOAD(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),
                  .ENABLE_TLB_MISS_EXCEPTIONS(1'b1)) dut(
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

@@ -28,6 +28,12 @@ module tb_fetch_recovery;
   int checks = 0;
 
   ppc_fetch #(.RESET_PC(RESET_PC)) dut (
+    .rsp_hints_i('0),
+    // Default-disabled legacy caller does not consume opaque fetch hints.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .packet_hints_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+
     .clk_i(clk), .rst_ni(rst_n), .stop_i(stop),
     .redirect_i(redirect), .redirect_target_i(redirect_target),
     .early_i(early), .early_ok_i(early_ok), .early_target_i(early_target),

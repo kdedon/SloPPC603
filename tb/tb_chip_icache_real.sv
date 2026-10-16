@@ -7,13 +7,15 @@
 // is read once as a cacheable burst; without ICE every fetch is a single
 // beat (UM 3.1.3.2).
 /* verilator lint_off BLKSEQ */
-module tb_chip_icache_real #(parameter bit ICE = 1'b1, parameter int ITER = 16,
+module tb_chip_icache_real #(parameter bit ENABLE_FETCH_HINTS = 1'b0, parameter bit ICE = 1'b1, parameter int ITER = 16,
                              parameter int PLL = -1);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 65536;
   logic clk = 1'b0;
   always #5 clk = ~clk;
+  `define CHIP_FETCH_HINTS_PARAMETER
   `include "chip_harness.svh"
+  `undef CHIP_FETCH_HINTS_PARAMETER
   `include "ppc_asm.svh"
 
   localparam logic [31:0] MAIN = BASE + 32'h2000, LOOP = BASE + 32'h3000;

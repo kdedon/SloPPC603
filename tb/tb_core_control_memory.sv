@@ -111,6 +111,8 @@ module tb_core_control_memory #(
   logic [4:0] unused_tlb_fill_ext;
   logic [33*FETCH_WIDTH-2:0] iw_bus;
   ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

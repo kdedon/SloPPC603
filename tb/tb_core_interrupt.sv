@@ -31,6 +31,8 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0),.DIV_LATENCY(37),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(ENABLE_EXTERNAL_INTERRUPTS)) dut (
+    .imem_rsp_hints_i('0),
+
       /* verilator lint_off PINCONNECTEMPTY */
       .data_page_projection_o(),
       /* verilator lint_on PINCONNECTEMPTY */

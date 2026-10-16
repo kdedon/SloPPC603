@@ -98,6 +98,8 @@ module tb_core_fpu #(
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

@@ -4,6 +4,7 @@
 ../rtl/ppc_iq.sv
 ../rtl/ppc_fetch.sv
 ../rtl/ppc_decode.sv
+../rtl/ppc_fetch_hints.sv
 ../rtl/ppc_dispatch.sv
 ../rtl/ppc_divider.sv
 ../rtl/ppc_iu.sv

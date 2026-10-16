@@ -24,6 +24,8 @@ module tb_core_xer;
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(0),.ENABLE_SUPERVISOR_EXCEPTIONS(1),.ENABLE_LIVE_CONTEXT(1),
     .ENABLE_EXTERNAL_INTERRUPTS(1),.ENABLE_TIMERS(1)) dut(
+    .imem_rsp_hints_i('0),
+
       /* verilator lint_off PINCONNECTEMPTY */
       .data_page_projection_o(),
       /* verilator lint_on PINCONNECTEMPTY */

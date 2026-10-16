@@ -218,6 +218,8 @@ module tb_core_ctr_retained_hazard #(
   logic [33*FETCH_WIDTH-2:0] iw_bus;
   ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH), .DISPATCH_WIDTH(1),
     .ENABLE_LSU_PIPE(1'b0)) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

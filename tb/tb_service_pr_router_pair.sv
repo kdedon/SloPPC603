@@ -156,6 +156,9 @@ module tb_service_pr_router_pair;
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1)) trial (
+    .phys_imem_rsp_hints_i('0),
+    .imem_rsp_hints_o(),
+
       .data_page_projection_i('0),
       .mmu_602_i('0),  .dmem_req_attr_i('0), .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(), .pdmem_req_now_o(), .store_check_ok_o(), .store_check_page_i(20'b0), .pdmem_rsp_ds_error_i(1'b0),  .tlb_fill_req_ext_i(5'b0),
     .imem_rsp_esa_o(),

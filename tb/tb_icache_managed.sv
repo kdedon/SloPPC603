@@ -36,6 +36,13 @@ module tb_icache_managed #(
   logic allow_protocol_error = 1'b0;
 
   ppc_icache_managed #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) dut (
+    .line_rsp_meta_i('0),
+    .bypass_rsp_meta_i('0),
+    // Default-disabled legacy caller does not consume opaque fetch hints.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .fetch_rsp_meta_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+
     .clk_i(clk), .rst_ni(rst_n),
     .fetch_valid_i(fetch_valid), .fetch_ready_o(fetch_ready),
     .fetch_addr_i(fetch_addr), .fetch_rsp_valid_o(fetch_rsp_valid),

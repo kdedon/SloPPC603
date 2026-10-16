@@ -16,6 +16,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fifo.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_iq.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fetch.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fetch_hints.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dispatch.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_divider.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_iu.sv

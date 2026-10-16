@@ -57,6 +57,7 @@ module ppc_core_bat #(
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   // Instruction words per fetch response (see ppc_core).
   parameter int FETCH_WIDTH = 1,
+  parameter bit ENABLE_FETCH_HINTS = 1'b0,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -135,6 +136,7 @@ module ppc_core_bat #(
   input  logic pimem_rsp_valid_i,
   output logic pimem_rsp_ready_o,
   input  logic [33*FETCH_WIDTH-2:0] pimem_rsp_insn_i,
+  input  logic [3*FETCH_WIDTH-1:0] imem_rsp_hints_i,
   input  logic pimem_rsp_error_i,
   output logic pdmem_req_valid_o,
   input  logic pdmem_req_ready_i,
@@ -190,6 +192,7 @@ module ppc_core_bat #(
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_req_addr;
   logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
+  logic [3*FETCH_WIDTH-1:0] imem_rsp_hints;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
   logic [31:0] dmem_req_addr;
   logic [DMEM_BITS-1:0] dmem_req_wdata;
@@ -280,6 +283,7 @@ module ppc_core_bat #(
     .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
     .ENABLE_DATA_PAGE_PROJECTION(DATA_PAGE_PROJECTION),
     .FETCH_WIDTH(FETCH_WIDTH),
+    .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
@@ -359,6 +363,7 @@ module ppc_core_bat #(
     .imem_req_ready_i(imem_req_ready), .imem_req_addr_o(imem_req_addr),
     .imem_rsp_valid_i(imem_rsp_valid), .imem_rsp_ready_o(imem_rsp_ready),
     .imem_rsp_insn_i(imem_rsp_insn),
+    .imem_rsp_hints_i(imem_rsp_hints),
     .imem_rsp_fault_i(imem_rsp_fault), .imem_rsp_esa_i(imem_rsp_esa),
     .imem_rsp_page_miss_i(imem_rsp_page_miss),
     .mmu_602_o(mmu_602), .tlb_fill_req_ext_o(tlb_fill_req_ext),
@@ -499,6 +504,7 @@ module ppc_core_bat #(
     .pimem_req_valid_o, .pimem_req_ready_i, .pimem_req_addr_o,
     .pimem_req_wimg_o, .pimem_rsp_valid_i, .pimem_rsp_ready_o,
     .pimem_rsp_insn_i, .pimem_rsp_error_i,
+    .phys_imem_rsp_hints_i(imem_rsp_hints_i),
     .pdmem_req_valid_o(router_pdmem_req_valid),
     .pdmem_req_ready_i(router_pdmem_req_ready),
     .pdmem_req_write_o(router_pdmem_req_write),
@@ -518,6 +524,7 @@ module ppc_core_bat #(
     .imem_req_valid_i(imem_req_valid), .imem_req_ready_o(imem_req_ready),
     .imem_req_addr_i(imem_req_addr), .imem_rsp_valid_o(imem_rsp_valid),
     .imem_rsp_ready_i(imem_rsp_ready), .imem_rsp_insn_o(imem_rsp_insn),
+    .imem_rsp_hints_o(imem_rsp_hints),
     .imem_rsp_fault_o(imem_rsp_fault), .imem_rsp_esa_o(imem_rsp_esa),
     .imem_rsp_page_miss_o(imem_rsp_page_miss),
     .dmem_req_valid_i(dmem_req_valid && !sync_req),

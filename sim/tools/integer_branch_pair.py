@@ -85,8 +85,9 @@ def compare(out):
     a,b=profile(out/'fpu0.log'),profile(out/'fpu1.log')
     expected={'dcache':0,'dmem':32,'width':2,'fetch':2,'lsu':1,'removal':0,'fdreg':0,'now':1,'full':1,'anchor':0,'iq':6,'cq':5,'rename':5}
     for k,v in expected.items():require(a.get(k)==v and b.get(k)==v,'incorrect matched setting '+k)
-    for k in ('sq','snoop','basewait','cpumodel','ce','mhz','icsets','icways'):
+    for k in ('hints','sq','snoop','basewait','cpumodel','ce','mhz','icsets','icways'):
         require(k in a and a[k]==b.get(k),'effective profile mismatch '+k)
+    require(a.get('hints') in (0,1),'unknown fetch-hints configuration')
     require(a['fpu']==0 and b['fpu']==1 and a['early']==1 and b['early']==0,'wrong FPU/early pair')
     require(a['fast']>0 and a['slow']==0 and a['slow_origin']==0 and b['fast']==0 and b['slow']>0 and b['slow_origin']>0,'missing meaningful fast/slow accepted recovery')
     da=json.loads((out/'fpu0.digest.json').read_text());db=json.loads((out/'fpu1.digest.json').read_text())

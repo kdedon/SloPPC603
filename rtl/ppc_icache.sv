@@ -13,7 +13,10 @@ module ppc_icache #(
   parameter int SET_COUNT = 128,
   parameter int WAY_COUNT = 4,
   // 2: a hit at an even word also returns the next word.
-  parameter int FETCH_WIDTH = 1
+  parameter int FETCH_WIDTH = 1,
+  // Opaque metadata follows each word on the same RAM/read edge.
+  parameter bit ENABLE_METADATA = 1'b0,
+  parameter int WORD_META_BITS = 2
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -25,6 +28,7 @@ module ppc_icache #(
   input  logic         fetch_rsp_ready_i,
   // FETCH_WIDTH 2: {next word valid, word at addr + 4, word at addr}.
   output logic [33*FETCH_WIDTH-2:0] fetch_rsp_insn_o,
+  output logic [WORD_META_BITS*FETCH_WIDTH-1:0] fetch_rsp_meta_o,
   output logic         fetch_rsp_error_o,
   // HID0[ILOCK]: a miss allocates nothing and responds with
   // fetch_rsp_bypass_o, no instruction, for the caller to read uncached.
@@ -47,6 +51,8 @@ module ppc_icache #(
   input  logic         line_rsp_valid_i,
   output logic         line_rsp_ready_o,
   input  logic [255:0] line_rsp_line_i,
+  // Word w uses [8*WORD_META_BITS-1-WORD_META_BITS*w -:WORD_META_BITS].
+  input  logic [8*WORD_META_BITS-1:0] line_rsp_meta_i,
   input  logic         line_rsp_error_i,
 
   output logic         busy_o,
@@ -63,6 +69,8 @@ module ppc_icache #(
   localparam int LRU_BITS = WAY_COUNT * WAY_BITS;
   // Each data RAM row is half a line: four words.
   localparam int HALF_BITS = LINE_BYTES * 4;
+  localparam int HALF_META_BITS = 4*WORD_META_BITS;
+  localparam int ROW_BITS = HALF_BITS + (ENABLE_METADATA ? HALF_META_BITS : 0);
   localparam logic [WAY_BITS-1:0] LRU_RANK = WAY_BITS'(WAY_COUNT - 1);
 
   typedef enum logic [2:0] {
@@ -99,6 +107,9 @@ module ppc_icache #(
   logic abort_install, way_valid_we;
   logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata;
   logic [WAY_COUNT-1:0][HALF_BITS-1:0] data_rdata;
+  logic [WAY_COUNT-1:0][ROW_BITS-1:0] row_rdata;
+  logic [ROW_BITS-1:0] row_wdata;
+  logic [WORD_META_BITS-1:0] rsp_meta, ram_meta, ram_meta1;
   logic [WAY_COUNT-1:0] tag_we, data_we;
   logic [SET_BITS:0] data_waddr;
   logic [HALF_BITS-1:0] data_wdata, line_half1_q;
@@ -194,12 +205,13 @@ module ppc_icache #(
       .clk_i, .we_i(tag_we[way]), .waddr_i(miss_set_q), .wdata_i(miss_tag_q),
       .raddr_i(lookup_set), .rdata_o(tag_rdata[way])
     );
-    ppc_ram_sdp #(.DEPTH(2*SET_COUNT), .WIDTH(HALF_BITS)) data_ram (
-      .clk_i, .we_i(data_we[way]), .waddr_i(data_waddr), .wdata_i(data_wdata),
+    ppc_ram_sdp #(.DEPTH(2*SET_COUNT), .WIDTH(ROW_BITS)) data_ram (
+      .clk_i, .we_i(data_we[way]), .waddr_i(data_waddr), .wdata_i(row_wdata),
       .re_i(data_re), .raddr_i({lookup_set, lookup_word[2]}),
-      .rdata_o(data_rdata[way])
+      .rdata_o(row_rdata[way])
     );
 
+    assign data_rdata[way] = row_rdata[way][HALF_BITS-1:0];
     assign lookup_valid[way] = set_valid_q[lookup_set] &&
                                way_valid_rdata[way];
     assign victim_onehot[way] = victim_way_q == WAY_BITS'(way);
@@ -288,6 +300,65 @@ module ppc_icache #(
     assign fetch_rsp_insn_o = rsp_insn_q | ram_insn;
     logic unused_ram_insn1;
     assign unused_ram_insn1 = ^ram_insn1;
+  end
+  endgenerate
+
+  // No separate metadata RAM or publication bit: the row owns word and metadata.
+  genvar meta_way;
+  generate
+  if (ENABLE_METADATA) begin : g_metadata
+    logic [HALF_META_BITS-1:0] line_meta_half1_q;
+    logic [WORD_META_BITS-1:0] rsp_meta_q;
+    logic [WAY_COUNT-1:0][HALF_META_BITS-1:0] half_meta;
+    assign row_wdata = {state_q == IC_INSTALL ? line_meta_half1_q : line_rsp_meta_i[8*WORD_META_BITS-1 -:HALF_META_BITS],
+                        data_wdata};
+    for (meta_way = 0; meta_way < WAY_COUNT; meta_way = meta_way + 1) begin : g_way
+      assign half_meta[meta_way] = row_rdata[meta_way][HALF_BITS +: HALF_META_BITS];
+    end
+    // These conditions mirror the existing line-half and scalar-word captures.
+    always_ff @(posedge clk_i) begin
+      if (state_q == IC_REFILL_WAIT && line_rsp_valid_i)
+        line_meta_half1_q <= line_rsp_meta_i[HALF_META_BITS-1:0];
+    end
+    always_ff @(posedge clk_i) begin
+      if (!rst_ni) rsp_meta_q <= '0;
+      else if (invalidate_i) begin end
+      else if (kill_i) begin end
+      else begin
+        case (state_q)
+          IC_IDLE: if (!rsp_valid_q || fetch_rsp_ready_i) rsp_meta_q <= '0;
+          IC_REFILL_WAIT: if (line_rsp_valid_i && line_rsp_ready_o) begin
+            if (line_rsp_error_i) rsp_meta_q <= '0;
+            else rsp_meta_q <= line_rsp_meta_i[8*WORD_META_BITS-1 - WORD_META_BITS*miss_word_q -: WORD_META_BITS];
+          end
+          default: begin end
+        endcase
+      end
+    end
+    assign rsp_meta = rsp_meta_q;
+    always_comb begin
+      ram_meta = '0;
+      ram_meta1 = '0;
+      for (int w = 0; w < WAY_COUNT; w++)
+        if (rsp_way_q[w]) begin
+          ram_meta = ram_meta | half_meta[w][HALF_META_BITS-1 - WORD_META_BITS*rsp_word_q -: WORD_META_BITS];
+          ram_meta1 = ram_meta1 | half_meta[w][HALF_META_BITS-1 - WORD_META_BITS*{rsp_word_q[1], 1'b1} -: WORD_META_BITS];
+        end
+    end
+  end else begin : g_no_metadata
+    assign row_wdata = data_wdata;
+    assign rsp_meta = '0;
+    assign ram_meta = '0;
+    assign ram_meta1 = '0;
+    logic unused_line_meta;
+    assign unused_line_meta = ^line_rsp_meta_i;
+  end
+  if (FETCH_WIDTH == 2) begin : g_meta_pair
+    assign fetch_rsp_meta_o = {ram_meta1, rsp_meta | ram_meta};
+  end else begin : g_meta_single
+    assign fetch_rsp_meta_o = rsp_meta | ram_meta;
+    logic unused_meta1;
+    assign unused_meta1 = ^ram_meta1;
   end
   endgenerate
 

@@ -81,6 +81,8 @@ module tb_core_le #(
     .ENABLE_LSU_PIPE(LSU_PIPE != 0), .FETCH_WIDTH(FETCH_WIDTH),
     .DISPATCH_WIDTH(DISPATCH_WIDTH), .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

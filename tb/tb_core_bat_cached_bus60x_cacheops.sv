@@ -5,7 +5,7 @@
 // icbi across a retried and held same-set refill with a pending external
 // interrupt, icbi tied with external maintenance, and retried guarded data.
 /* verilator lint_off BLKSEQ */
-module tb_core_bat_cached_bus60x_cacheops;
+module tb_core_bat_cached_bus60x_cacheops #(parameter bit ENABLE_FETCH_HINTS = 1'b0);
   import ppc_pkg::*;
   `include "ppc_asm.svh"
   logic clk=0,rst_n=0;
@@ -52,7 +52,7 @@ module tb_core_bat_cached_bus60x_cacheops;
 
   /* verilator lint_off PINCONNECTEMPTY */
   logic unused_checkstop;
-  ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),
+  ppc_core_bat_cached_bus60x #(.ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS), .RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1)) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),

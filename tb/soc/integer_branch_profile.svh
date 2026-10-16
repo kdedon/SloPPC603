@@ -27,6 +27,7 @@ end
 task automatic ib_check_config;
   if(ENABLE_DCACHE || DISPATCH_WIDTH!=2 || !ENABLE_LSU_PIPE || FPU_IMPL!=0 ||
      `IB_CORE.ENABLE_FPU!=ENABLE_FPU || `IB_CORE.DMEM_BITS!=32 ||
+     `IB_CORE.ENABLE_FETCH_HINTS!=ENABLE_FETCH_HINTS ||
      `IB_CORE.DISPATCH_WIDTH!=2 || `IB_CORE.FETCH_WIDTH!=2 || !`IB_CORE.ENABLE_LSU_PIPE ||
      `IB_CORE.BRANCH_REMOVAL || !`IB_CORE.ENABLE_BRANCH_SPEC ||
      !`IB_CORE.ENABLE_BRANCH_EARLY_RECOVERY || `IB_CORE.BS_ANCHOR ||
@@ -187,8 +188,8 @@ task automatic integer_branch_report;
       $fatal(1,"missing actual fast/slow accepted branch recovery");
     $fclose(ib_fd);ib_fd=0;
     ib_quiet_report();
-    $display("INTEGER_PAIR fpu=%0d dcache=0 dmem=32 width=2 fetch=2 lsu=1 removal=0 fdreg=0 now=1 full=1 sq=%0d snoop=%0d basewait=%0d cpumodel=%0d ce=%0d mhz=%0d early=%0d anchor=0 icsets=%0d icways=%0d iq=%0d cq=%0d rename=%0d cycles=%0d packets=%0d macros=%0d partial=%0d branches=%0d removed=%0d spec=%0d resolve=%0d miss=%0d fast=%0d slow_origin=%0d slow=%0d fp=%0d",
-      ENABLE_FPU,`IB_CORE.STORE_QUEUE,`IB_CORE.LSU_BASE_SNOOP,`IB_CORE.LSU_BASE_WAIT,`IB_CORE.CPU_VARIANT,soc.CE_DIV,soc.SYS_MHZ,`IB_CORE.BS_EARLY,soc.cpu.cpu.IC_SETS,soc.cpu.cpu.IC_WAYS,
+    $display("INTEGER_PAIR fpu=%0d hints=%0d dcache=0 dmem=32 width=2 fetch=2 lsu=1 removal=0 fdreg=0 now=1 full=1 sq=%0d snoop=%0d basewait=%0d cpumodel=%0d ce=%0d mhz=%0d early=%0d anchor=0 icsets=%0d icways=%0d iq=%0d cq=%0d rename=%0d cycles=%0d packets=%0d macros=%0d partial=%0d branches=%0d removed=%0d spec=%0d resolve=%0d miss=%0d fast=%0d slow_origin=%0d slow=%0d fp=%0d",
+      ENABLE_FPU,`IB_CORE.ENABLE_FETCH_HINTS,`IB_CORE.STORE_QUEUE,`IB_CORE.LSU_BASE_SNOOP,`IB_CORE.LSU_BASE_WAIT,`IB_CORE.CPU_VARIANT,soc.CE_DIV,soc.SYS_MHZ,`IB_CORE.BS_EARLY,soc.cpu.cpu.IC_SETS,soc.cpu.cpu.IC_WAYS,
       ppc_pkg::IQ_DEPTH,ppc_pkg::CQ_DEPTH,ppc_pkg::GPR_RENAME_DEPTH,
       ib_end_cycle-ib_begin_cycle,ib_packets,ib_macros,ib_partial,ib_branch_retired,
       ib_removed,ib_spec,ib_resolve,ib_miss,ib_fast,ib_slow_origin,ib_slow,ib_fp);

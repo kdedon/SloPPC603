@@ -71,6 +71,7 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   // Instruction words per fetch: 2 returns an aligned pair on a cache hit.
   parameter int FETCH_WIDTH = 1,
+  parameter bit ENABLE_FETCH_HINTS = 1'b0,
   // 603 direct-store sender tag (UM C.1.2.2.1). The 603 PID register has
   // no SPR, so the tag is fixed per build.
   parameter logic [3:0] DS_PID = 4'h0
@@ -237,6 +238,9 @@ module ppc_core_bat_cached_bus60x #(
   logic [31:0] imem_req_addr;
   logic imem_rsp_valid, imem_rsp_ready;
   logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
+  logic [3*FETCH_WIDTH-1:0] imem_rsp_hints, cache_fetch_rsp_hints;
+  logic [23:0] cache_line_rsp_hints;
+  logic [2:0] scalar_imem_rsp_hints;
   // FP doublewords reach the data cache as one access.
   localparam int DMEM_BITS = (ENABLE_FPU && ENABLE_DCACHE) ? 64 : 32;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
@@ -312,6 +316,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .ENABLE_DATA_PAGE_PROJECTION(ENABLE_DATA_PAGE_PROJECTION),
+    .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
     .ENABLE_DATA_CACHE(ENABLE_DCACHE),
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
@@ -398,6 +403,7 @@ module ppc_core_bat_cached_bus60x #(
     .pimem_rsp_valid_i(imem_rsp_valid),
     .pimem_rsp_ready_o(imem_rsp_ready),
     .pimem_rsp_insn_i(imem_rsp_insn),
+    .imem_rsp_hints_i(imem_rsp_hints),
     .pimem_rsp_error_i(imem_rsp_error),
     .pdmem_req_valid_o(dmem_req_valid),
     .pdmem_req_ready_i(dmem_req_ready),
@@ -442,11 +448,41 @@ module ppc_core_bat_cached_bus60x #(
     .pimem_error_o,
     .busy_o
   );
+  generate
+  if (ENABLE_FETCH_HINTS) begin : g_fetch_hints
+    ppc_fetch_hints #(
+      .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
+      .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
+      .ENABLE_TIMERS(ENABLE_TIMERS),
+      .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
+      .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
+      .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
+      .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
+      .ENABLE_SDR1(ENABLE_SDR1),
+      .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+      .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+      .ENABLE_DATA_CACHE(ENABLE_DCACHE),
+      .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
+      .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
+      .ENABLE_RESERVATION(ENABLE_RESERVATION),
+      .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+      .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+      .ENABLE_FPU(ENABLE_FPU),
+      .CPU_VARIANT(CPU_VARIANT)
+    ) classify (.line_i(cache_line_rsp_data), .scalar_i(scalar_imem_rsp_insn),
+                .line_hints_o(cache_line_rsp_hints), .scalar_hints_o(scalar_imem_rsp_hints));
+  end else begin : g_no_fetch_hints
+    assign cache_line_rsp_hints = '0;
+    assign scalar_imem_rsp_hints = '0;
+  end
+  endgenerate
+
   // Without HID0[ICE] the instruction cache is enabled from reset.
   ppc_icache_managed #(
     .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE ||
                         !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
-    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS), .FETCH_WIDTH(FETCH_WIDTH)
+    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS), .FETCH_WIDTH(FETCH_WIDTH),
+    .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS)
   ) managed_cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(managed_fetch_valid),
@@ -454,6 +490,7 @@ module ppc_core_bat_cached_bus60x #(
     .fetch_rsp_valid_o(cache_fetch_rsp_valid),
     .fetch_rsp_ready_i(cache_fetch_rsp_ready),
     .fetch_rsp_insn_o(cache_fetch_rsp_insn),
+    .fetch_rsp_meta_o(cache_fetch_rsp_hints),
     .fetch_rsp_error_o(cache_fetch_rsp_error),
     .maintenance_valid_i(managed_maintenance_valid),
     .maintenance_ready_o(managed_maintenance_ready),
@@ -471,6 +508,7 @@ module ppc_core_bat_cached_bus60x #(
     .bypass_rsp_valid_i(bypass_rsp_valid),
     .bypass_rsp_ready_o(bypass_rsp_ready),
     .bypass_rsp_insn_i(bypass_rsp_insn),
+    .bypass_rsp_meta_i(scalar_imem_rsp_hints),
     .bypass_rsp_error_i(bypass_rsp_error),
     .bypass_ifetch_error_i(scalar_router_ifetch_error),
     .line_req_valid_o(cache_line_req_valid),
@@ -481,6 +519,7 @@ module ppc_core_bat_cached_bus60x #(
     .line_rsp_valid_i(cache_line_rsp_valid),
     .line_rsp_ready_o(cache_line_rsp_ready),
     .line_rsp_line_i(cache_line_rsp_data),
+    .line_rsp_meta_i(cache_line_rsp_hints),
     .line_rsp_error_i(cache_line_rsp_error),
     .busy_o(icache_busy_o), .hit_o(icache_hit_o),
     .miss_o(icache_miss_o), .protocol_error_o(cache_protocol_error)
@@ -526,6 +565,8 @@ module ppc_core_bat_cached_bus60x #(
     (route_managed_q ? cache_fetch_rsp_valid : scalar_imem_rsp_valid);
   assign imem_rsp_insn = route_managed_q ? cache_fetch_rsp_insn :
     (33*FETCH_WIDTH-1)'(scalar_imem_rsp_insn);
+  assign imem_rsp_hints = !ENABLE_FETCH_HINTS ? '0 :
+    route_managed_q ? cache_fetch_rsp_hints : (3*FETCH_WIDTH)'(scalar_imem_rsp_hints);
   assign imem_rsp_error = physical_fetch_busy_q &&
     (route_managed_q ? cache_fetch_rsp_error : scalar_imem_rsp_error);
   assign cache_fetch_rsp_ready = physical_fetch_busy_q && route_managed_q &&
@@ -718,6 +759,20 @@ module ppc_core_bat_cached_bus60x #(
   assign bus_protocol_error_o = cache_protocol_error || biu_protocol_error ||
     dcache_protocol_error;
   // synthesis translate_off
+  // Check the selected owner each cycle; a legal consume/new-request edge
+  // and the managed locked-line bypass may change it between cycles.
+  always_ff @(posedge clk_i) begin
+    if (ENABLE_FETCH_HINTS && rst_ni) begin
+      if (imem_req_valid && imem_req_ready) begin
+        assert (!$isunknown({imem_req_addr, eligible_managed}))
+          else $error("fetch hints accepted an unknown physical request owner");
+      end
+      if (imem_rsp_valid) begin
+        assert (!$isunknown({physical_fetch_busy_q, route_managed_q}))
+          else $error("fetch hints selected an unknown physical response owner");
+      end
+    end
+  end
   initial assert (!ENABLE_DCACHE || (ENABLE_CACHE_INSTRUCTIONS &&
     ENABLE_RESERVATION && ENABLE_MACHINE_CHECK && ENABLE_PIN_INTERRUPTS &&
     ENABLE_EXTERNAL_INTERRUPTS))

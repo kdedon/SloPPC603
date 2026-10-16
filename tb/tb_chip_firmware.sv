@@ -11,12 +11,14 @@
 // +REDUCED_PINOUT reduced pinout (UM 8.6.1, 8.6.3). Passes when the
 // firmware writes 1 to +TOHOST with no checkstop.
 /* verilator lint_off BLKSEQ */
-module tb_chip_firmware #(parameter int PLL = -1);
+module tb_chip_firmware #(parameter bit ENABLE_FETCH_HINTS = 1'b0, parameter int PLL = -1);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 262144, IMAGE_BYTES = 65536;
   logic clk = 1'b0;
   always #5 clk = ~clk;
+  `define CHIP_FETCH_HINTS_PARAMETER
   `include "chip_harness.svh"
+  `undef CHIP_FETCH_HINTS_PARAMETER
 `define MT_CORE dut.cpu.translated_core.core
 `define MT_BAT dut.cpu.translated_core
 `define MT_CLK clk

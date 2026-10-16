@@ -103,6 +103,8 @@ module ppc_core #(
   // Words per fetch response: 2 takes the pair a doubleword responder
   // returns on imem_rsp_insn_i.
   parameter int FETCH_WIDTH = 1,
+  // Must match the configured classifier and every instruction transport owner.
+  parameter bit ENABLE_FETCH_HINTS = 1'b0,
   // Instructions dispatched and retired per cycle, 1 or 2. Benches may set
   // the default with +define+PPC_DISPATCH_WIDTH=2. The 602 stays at 1.
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
@@ -205,6 +207,7 @@ module ppc_core #(
   output logic imem_rsp_ready_o,
   // FETCH_WIDTH 2: {second word valid, word at addr + 4, word at addr}.
   input logic [33*FETCH_WIDTH-2:0] imem_rsp_insn_i,
+  input logic [3*FETCH_WIDTH-1:0] imem_rsp_hints_i,
   input ppc_pkg::fetch_fault_t imem_rsp_fault_i,
   input ppc_pkg::esa_enable_t imem_rsp_esa_i,
   input ppc_pkg::page_miss_t imem_rsp_page_miss_i,
@@ -652,7 +655,9 @@ module ppc_core #(
     fetch_miss = imem_rsp_page_miss_i;
     fetch_miss.ea[2] = imem_rsp_page_miss_i.ea[2] ^ rsp_le_q;
   end
-  ppc_fetch #(.RESET_PC(RESET_PC), .FETCH_WIDTH(FETCH_WIDTH)) fetch (
+  logic [3*FETCH_WIDTH-1:0] fetched_hints;
+  ppc_fetch #(.RESET_PC(RESET_PC), .FETCH_WIDTH(FETCH_WIDTH),
+              .ENABLE_FETCH_HINTS(ENABLE_FETCH_HINTS)) fetch (
     .clk_i, .rst_ni,
     // Early branch refetch may return on the edge that kills a wrong-path
     // fault. Its dead owner must not discard the correct-path response.
@@ -668,9 +673,11 @@ module ppc_core #(
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
     .rsp_fault_i(imem_rsp_fault_i), .rsp_esa_i(imem_rsp_esa_i),
     .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
+    .rsp_hints_i(imem_rsp_hints_i),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready),
     .packet_ready2_i(fetch_ready2), .packet_room2_i(fetch_room2), .packet_o(fetched),
-    .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)
+    .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1),
+    .packet_hints_o(fetched_hints)
   );
   // Fetch-to-decode registers: the fetched words, PC, fault and page-miss
   // context. They clear with the IQ. The second word is always FETCH_OK at
@@ -678,6 +685,7 @@ module ppc_core #(
   // only words the IQ did not take; while empty, decode reads the fetch
   // output (fd_*, the FD view) directly.
   fetch_packet_t fd_packet_q, fd_packet;
+  fetch_hint_t fd_hint0, fd_hint1;
   page_miss_t fd_miss_q, fd_miss;
   logic fd_valid_q, fd1_valid_q, fd_valid, fd1_valid, fd_bypass;
   logic fd_push_ok, fd_push_ok_q, fd_split_q, hold1_cr, fetch_ready2, fetch_room2;
@@ -745,6 +753,34 @@ module ppc_core #(
       fd1_insn_q <= fetched_insn1;
     end
   end
+  generate
+  if (ENABLE_FETCH_HINTS) begin : g_fd_hints
+    logic [3*FETCH_WIDTH-1:0] fd_hints_q, fd_hints;
+    assign fd_hints = fd_bypass ? fetched_hints : fd_hints_q;
+    assign fd_hint0 = fetch_hint_t'(fd_hints[2:0]);
+    if (FETCH_WIDTH == 2) begin : g_pair
+      assign fd_hint1 = fetch_hint_t'(fd_hints[5:3]);
+      always_ff @(posedge clk_i) begin
+        if (fd_split) fd_hints_q[2:0] <= fd_hints[5:3];
+        else if (fetch_valid && fetch_ready) fd_hints_q <= fetched_hints;
+      end
+    end else begin : g_single
+      assign fd_hint1 = '0;
+      logic unused_hint1;
+      assign unused_hint1 = ^fd_hint1;
+      always_ff @(posedge clk_i) begin
+        if (fd_split) fd_hints_q <= '0;
+        else if (fetch_valid && fetch_ready) fd_hints_q <= fetched_hints;
+      end
+    end
+  end else begin : g_no_fd_hints
+    assign fd_hint0 = '0;
+    assign fd_hint1 = '0;
+    logic unused_hints;
+    assign unused_hints = ^{fetched_hints, fd_hint0, fd_hint1};
+  end
+  endgenerate
+
   // Instructions are decoded at IQ push; dispatch starts from the queued uop.
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
@@ -888,11 +924,6 @@ module ppc_core #(
       ((p.insn[31:26] == 6'd16) ||
        ((p.insn[31:26] == 6'd19) && ((p.insn[10:1] == 10'd16) || (p.insn[10:1] == 10'd528))));
   endfunction
-  // Takes the CR rename, or writes CR from the FPU.
-  function automatic logic cr_writer(uop_t u);
-    return !u.illegal && (u.write_cr_field || u.write_cr_fields || u.write_cr_bit ||
-      ((u.needs_flags || u.write_xer) && !(!u.write_xer && (u.write_ca || u.write_ov_so))));
-  endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   // crw_left_q counts the IQ entries up to the youngest CR writer;
   // crb_left_q those up to the youngest branch queued while its CR was
@@ -902,7 +933,13 @@ module ppc_core #(
   logic ctr_one, crb0, crb1, crw0, crw1, cr_dep, cr_final, crb_pend0, wait0_cr, wait1_cr;
   assign ctr_one = ctr_fe == 32'd1;
   assign crb0 = cr_branch(queued, ctr_fe_ok, ctr_one);
-  assign crw0 = (queued.fault == FETCH_OK) && cr_writer(push_uop);
+  generate
+  if (ENABLE_FETCH_HINTS) begin : g_hint_cr0
+    assign crw0 = (queued.fault == FETCH_OK) && fd_hint0.cr_writer;
+  end else begin : g_decode_cr0
+    assign crw0 = (queued.fault == FETCH_OK) && cr_writer(push_uop);
+  end
+  endgenerate
   assign cr_dep = (crw_left_q != '0) || cr_inflight;
   // A second-word bc predicted not taken, behind a CR writer still queued
   // (so predicted even once the older prediction resolves), waits only
@@ -986,7 +1023,13 @@ module ppc_core #(
   end
   endgenerate
   assign crb1 = (FETCH_WIDTH == 2) && cr_branch(queued1, ctr_fe_ok && !push_writes[0], ctr_one);
-  assign crw1 = (FETCH_WIDTH == 2) && cr_writer(push_uop1);
+  generate
+  if (ENABLE_FETCH_HINTS) begin : g_hint_cr1
+    assign crw1 = (FETCH_WIDTH == 2) && fd_hint1.cr_writer;
+  end else begin : g_decode_cr1
+    assign crw1 = (FETCH_WIDTH == 2) && cr_writer(push_uop1);
+  end
+  endgenerate
   assign wait1_cr = crb1 && (crb_pend0 ||
     ((bc_not_taken(queued1) && (crw0 || (crw_left_q != '0))) ? cr_unres_fd : cr_unres));
   // Lane 0 enters the IQ alone.
@@ -3030,8 +3073,47 @@ module ppc_core #(
   assign dq2_sru = iq_dq2[BREC_W + 1 + $bits(iq_pair_t) - 3];
   assign dq3_unit = unit_class_e'(iq_dq3[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
   assign dq3_sru = iq_dq3[BREC_W + 1 + $bits(iq_pair_t) - 3];
-  assign fd_class = fetch_lookahead(push_uop, queued.insn, queued.fault != FETCH_OK);
-  assign fd_class1 = fetch_lookahead(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
+  generate
+  if (ENABLE_FETCH_HINTS) begin : g_hint_class
+    always_comb begin
+      fd_class = fd_hint0.lookahead;
+      // Match fetch_lookahead's procedural fault priority, including X/Z.
+      if (queued.fault != FETCH_OK) fd_class = '0;
+    end
+    if (FETCH_WIDTH == 2) begin : g_pair
+      always_comb begin
+        fd_class1 = fd_hint1.lookahead;
+        if (queued1.fault != FETCH_OK) fd_class1 = '0;
+      end
+    end else begin : g_single
+      // The absent lane uses the original dummy uop, not decode(word zero).
+      assign fd_class1 = fetch_lookahead(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
+    end
+    // synthesis translate_off
+    always_ff @(posedge clk_i) begin
+      if (rst_ni && fd_valid) begin
+        // A bitwise merge of words need not classify like merged hints.
+        // Check the actual FD owner before the end-to-end identity checks.
+        assert (!$isunknown(fd_bypass))
+          else $error("fetch hints selected an unknown FD owner");
+        assert (fd_class === fetch_lookahead(push_uop, queued.insn, queued.fault != FETCH_OK))
+          else $error("fetched lane 0 class lost word ownership");
+        assert (crw0 === ((queued.fault == FETCH_OK) && cr_writer(push_uop)))
+          else $error("fetched lane 0 CR demand lost word ownership");
+        if (fd1_valid) begin
+          assert (fd_class1 === fetch_lookahead(push_uop1, queued1.insn, queued1.fault != FETCH_OK))
+            else $error("fetched lane 1 class lost word ownership");
+          assert (crw1 === ((FETCH_WIDTH == 2) && cr_writer(push_uop1)))
+            else $error("fetched lane 1 CR demand lost word ownership");
+        end
+      end
+    end
+    // synthesis translate_on
+  end else begin : g_decode_class
+    assign fd_class = fetch_lookahead(push_uop, queued.insn, queued.fault != FETCH_OK);
+    assign fd_class1 = fetch_lookahead(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
+  end
+  endgenerate
   assign fd_next_iu = fd_valid &&
     (!fd_class.branch ? fd_class.needs_iu :
      (fd1_valid && fd_class1.needs_iu));

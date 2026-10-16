@@ -42,6 +42,8 @@ module tb_core_sprg;
   ppc_core #(
     .RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1)
   ) dut (
+    .imem_rsp_hints_i('0),
+
     /* verilator lint_off PINCONNECTEMPTY */
     .data_page_projection_o(),
     /* verilator lint_on PINCONNECTEMPTY */

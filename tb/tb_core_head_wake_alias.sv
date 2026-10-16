@@ -36,6 +36,8 @@ module tb_core_head_wake_alias #(
     .DISPATCH_WIDTH(2), .FETCH_WIDTH(2), .ENABLE_FULL_DECODE(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0), .ENABLE_LSU_PIPE(1'b1), .LSU_BASE_SNOOP(1'b1),
     .ENABLE_BRANCH_REMOVAL(REMOVE_BRANCH)) dut (
+    .imem_rsp_hints_i('0),
+
       /* verilator lint_off PINCONNECTEMPTY */
       .data_page_projection_o(),
       /* verilator lint_on PINCONNECTEMPTY */
