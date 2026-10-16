@@ -61,9 +61,6 @@ include tools/service_pr.mk
 # Optional native source-use overlap acceptance targets.
 include tools/false_hazards.mk
 
-# Optional source-guarded four-state DQ1 admission proof.
-include tools/dq1_page_admission.mk
-
 regression: reference-checkout lint check-spec test-recovery test-recovery-select test
 
 build-control-memory:

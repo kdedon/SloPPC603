@@ -1,7 +1,0 @@
-# DQ1 page-admission proof (optional)
-
-Run `make -C sim test-dq1-page-admission-proof` under the simulation lock after installing the reviewed RTL candidate. Icarus is required only for this optional target. This artifact is prepared, not executed.
-
-The tool guards actual live core/package/corpus hashes and reverses only the new helper and one DQ1 call to recover a frozen original whole-core hash. Original predicate/control expressions are frozen independently; candidate expressions come from actual live source. Other EA/owner/base-wait/control source must remain unchanged. Generated minimal fixtures live under BUILD_DIR; the owned VVP is cleaned on exit. No private snapshots or scratch paths are required.
-
-The finite corpus checks 65,536 samples across eight profiles (LSU0/1, splitting0/1, BASE_SNOOP0/1), comparing full104-bit A/B/fullEA/lowEA/misalignment/nativeReady/LSUReady/baseWait/waitA/waitB outputs. BASE_WAIT is fixed0 and supervisor exceptions1. Four-state zeroA/useimm/DR/size and endpoint/carry/unknown payloads are covered. Architectural and rename payloads differ independently. Mandatory bins include actual guarded nonlinear/equal-merge fallback, both native-versus-pipe crossing polarities, and admission true/false per profile pair. It is not exhaustive state/ISA or temporal integration proof. Full manual/core/owner/LSU gates and a separately measured fit remain necessary; no timing gain is asserted.
