@@ -61,6 +61,9 @@ include tools/service_pr.mk
 # Optional native source-use overlap acceptance targets.
 include tools/false_hazards.mk
 
+# Generic instruction-cache abort publication regression.
+include tools/icache_abort.mk
+
 regression: reference-checkout lint check-spec test-recovery test-recovery-select test
 
 build-control-memory:
