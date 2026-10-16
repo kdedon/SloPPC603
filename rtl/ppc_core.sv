@@ -2884,9 +2884,12 @@ module ppc_core #(
   // An overlapped FP access issues into the FPU as it dispatches.
   assign fp_mem_issue = special_uop && dispatch_fp_mem_plain &&
     (dispatch_pre.special_op == SPECIAL_FPU);
+  // Native overlap waits only for GPR operands this instruction consumes.
+  // A resolved branch has both sources disabled by branch_resolved.
   assign overlap_dispatch_ok = (special_mem_overlap || sru_in_lane) && normal_uop &&
     !(special_mem_dst_valid &&
-      ((uop.src_a == special_mem_dst) || (uop.src_b == special_mem_dst)));
+      ((!dispatch_uop.zero_a && (dispatch_uop.src_a == special_mem_dst)) ||
+       (!dispatch_uop.use_imm && (dispatch_uop.src_b == special_mem_dst))));
   assign dispatch = iq_valid && iq_ready;
 
   // LR and CTR moves are completion-serialized (UM 6.3.3.2): they dispatch

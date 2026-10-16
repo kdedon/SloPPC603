@@ -54,6 +54,10 @@ FPU_CORE_RTL := $(RTL) ../rtl/ppc_ram_lut.sv $(shell cat ../rtl/fpu_files.f)
 # allowing each read-only simulation to run concurrently on its own program files.
 .PHONY: regression build-control-memory build-core-bus60x build-core-bus60x-unified build-core-add-recovery
 all: regression
+
+# Optional native source-use overlap acceptance targets.
+include tools/false_hazards.mk
+
 regression: reference-checkout lint check-spec test-recovery test-recovery-select test
 
 build-control-memory:
