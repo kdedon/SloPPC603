@@ -66,4 +66,21 @@ The measured checker fingerprints the complete RTL SV/SVH set, demo TB/SVH set, 
 
 The measured checker did not fingerprint filelists or the Verilator wrapper and did not emit a structured version/argv manifest. Those are provenance limits of this result, not additional runtime checks claimed here. A separate post-run proposal can strengthen them for future runs without changing model logic; it must not be presented as having executed in this measurement. The optional external prototype-linkage source audit is separate from the self-contained runtime benchmark target.
 
-Default cache-enabled SoC and bench strict lint also passed with `make -C sim -j1 lint-demo-soc check-spec`: 190 specification rows, 41 rules, 391 locators and 259 tool plus 29 cosimulation checks. Quartus analysis of the new default-preserving SoC parameter remains a separate pending gate; no hardware timing change is claimed.
+Default cache-enabled SoC and bench strict lint also passed with `make -C sim -j1 lint-demo-soc check-spec`: 190 specification rows, 41 rules, 391 locators and 259 tool plus 29 cosimulation checks. Quartus 17 analysis of the new SoC parameter passed in the reduced-memory smoke configuration below. Full default-memory elaboration did not complete within the bounded runs; no hardware timing change is claimed.
+
+
+## Quartus compatibility smoke check
+
+Recorded: `quartus_map --analysis_and_elaboration ppc603e_demo -c ppc603e_demo`, from `quartus/demo`, commit `aa68f2b` plus this adapter, 2026-10-16. Before each run, regenerate project sources with `python3 quartus/qsf_sources.py quartus/demo` and add these temporary QSF assignments:
+
+```tcl
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
+set_parameter -name RAM_BYTES 8192
+set_parameter -name FB_EXTERNAL 1
+set_parameter -name ENABLE_FPU 0
+set_parameter -name ENABLE_DCACHE 1
+```
+
+Repeat with `ENABLE_DCACHE 0`. The pinned Quartus 17.0.2 Build 602 image ran each profile with one CPU, 4 GiB and no swap. Both passed: cache enabled, 0 errors / 72 warnings, 46 seconds / 1602 MB peak virtual memory; cache disabled, 0 errors / 69 warnings, 39 seconds / 1592 MB. Project settings were restored and all RTL-tree source hashes remained unchanged.
+
+This checks elaboration of the new cache parameter in both states. It uses 8 KiB RAM and an external framebuffer, rather than the benchmark's simulated 256 KiB RAM. Earlier full default-memory attempts exited 137 while elaborating the existing RAM megafunction at 4 and 8 GiB limits; they did not establish default-memory elaboration success. The smoke check is not a fit, resource estimate, FPU-enabled Quartus check, or timing measurement.
