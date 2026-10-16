@@ -397,7 +397,13 @@ module ppc_iu #(
           end
           ALU_CNTLZW: begin
             alu_value = {26'b0, leading_zeros};
-            record_value = {26'b0, leading_zeros};
+            // The count is zero exactly when the source MSB is one.
+            // Unknown MSBs retain the count tree's original predicates.
+            case (held.a[31])
+              1'b0: record_value = 32'd1;
+              1'b1: record_value = 32'd0;
+              default: record_value = {26'b0, leading_zeros};
+            endcase
           end
           ALU_EXTSB: begin
             alu_value = {{24{held.a[7]}}, held.a[7:0]};

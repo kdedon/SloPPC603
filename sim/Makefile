@@ -2928,3 +2928,8 @@ test-held-release-equivalence:
 .PHONY: test-fd-lookahead-equivalence
 test-fd-lookahead-equivalence:
 	python3 tools/fd_lookahead_equivalence.py --build-dir $(BUILD_DIR)/fd-lookahead-equivalence
+
+# Optional four-state source proof; requires Icarus and the reviewed CNT projection.
+.PHONY: test-cntlzw-record-projection
+test-cntlzw-record-projection:
+	python3 tools/check_cntlzw_record_projection.py --build-dir $(BUILD_DIR)/cntlzw-record-proof
