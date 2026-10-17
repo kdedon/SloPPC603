@@ -2978,3 +2978,8 @@ test-core-dq1-page-pipe:
 
 # Optional source-connected four-state CQ pivot proof.
 include tools/cq_fixed_pivot.mk
+
+# Optional precise-exception capacity witness.
+ifneq ($(wildcard tools/d1_capacity.mk),)
+include tools/d1_capacity.mk
+endif
