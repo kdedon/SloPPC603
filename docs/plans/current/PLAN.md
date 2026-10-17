@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-16. This is the active planning entry point. The target for
+Updated: 2026-10-17. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -28,7 +28,7 @@ Generated builds, logs and reports are excluded from version control.
 
 ## Next acceptance gates
 
-CPU timing work has a default-off fetch-hint checkpoint at 42.41/42.60 MHz and a fixed-slot completion-owner projection at 43.15/43.58 MHz on the matched DW2/LSU1/FPU0 profile. Fresh focused recovery tests and enabled cache/IRQ/FULL-FPU checks pass. Same-cycle recovery cancellation remains the measured limiter. Next: qualify the cancellation projection, then run merged CI/xrand/FPU gates. The 66 MHz target remains open; see [frontend evidence](../../FETCH_HINTS_ACCEPTANCE_2026-10-16.md) and [owner projection](../../CQ_OWNER_FETCH_HINTS_TRIAL_2026-10-16.md).
+CPU timing work has a default-off fetch-hint checkpoint at 42.41/42.60 MHz and a fixed-slot completion-owner projection at 43.15/43.58 MHz on the matched DW2/LSU1/FPU0 profile. The accepted baseline now passes regression, compiled firmware, coverage, all 80 initialization cases and the full FPU suite; see [baseline acceptance](../../CPU_BASELINE_ACCEPTANCE_2026-10-17.md). A precise rename-capacity regression is merged independently. The saved D1 admission/SPECIAL-port1 candidate passes focused accuracy and exact public-trace gates; its matched fit is pending. Same-cycle recovery cancellation and the LSU/translation tail remain the measured limiters. The 66 MHz target remains open; see [frontend evidence](../../FETCH_HINTS_ACCEPTANCE_2026-10-16.md) and [owner projection](../../CQ_OWNER_FETCH_HINTS_TRIAL_2026-10-16.md).
 
 1. Closed 2026-09-27: LRU page replacement, direct-store DSI/ISI and
    `tlbsync` are implemented, and seeded EXT/DEC/reset stress passes on the
