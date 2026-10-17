@@ -176,14 +176,14 @@ module tb_demo_soc #(
     u0 = soc.cpu.cpu.translated_core.core.iq_pair.unit.name();
     u1 = soc.cpu.cpu.translated_core.core.dq1_pair.unit.name();
     if (!soc.cpu.cpu.translated_core.core.d1_valid) key = "d1_invalid";
-    else if (!soc.cpu.cpu.translated_core.core.pair_units) key = "units";
+    else if (!soc.cpu.cpu.translated_core.core.d1_admission_actual.pair_ok) key = "units";
     else if (!soc.cpu.cpu.translated_core.core.seq_last) key = "seq";
     else if (!soc.cpu.cpu.translated_core.core.cq1_ready) key = "cq";
     else if (soc.cpu.cpu.translated_core.core.unit_update &&
              !(soc.cpu.cpu.translated_core.core.d1_iu &&
                !soc.cpu.cpu.translated_core.core.d1_gpr)) key = "update";
     else if (soc.cpu.cpu.translated_core.core.d1_lsu &&
-             !soc.cpu.cpu.translated_core.core.d1_lsu_ready) key = "lsu";
+             !soc.cpu.cpu.translated_core.core.d1_admission_actual.lsu_ready) key = "lsu";
     else if (soc.cpu.cpu.translated_core.core.d1_needs_flags) key = "flags";
     else if (soc.cpu.cpu.translated_core.core.d1_iu &&
              !soc.cpu.cpu.translated_core.core.d1_iu_ready) key = "iu";
