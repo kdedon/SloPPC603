@@ -80,4 +80,20 @@ done
 | Branch recovery | 4,711 | 4,075 |
 | CTR target capture | 13,193 | 12,083 |
 
-This finite public corpus does not establish equivalence for every possible CPU state or enabled configuration. All focused pre-fit gates pass. The single matched 66 MHz physical trial is running and remains the outstanding acceptance gate. This record does not establish a timing gain or 66 MHz closure. Keep the candidate unmerged until those gates pass and fitting improves the accepted 43.15/43.58 MHz slow-corner baseline.
+This finite public corpus does not establish equivalence for every possible CPU state or enabled configuration. All focused gates and the matched physical trial are complete. The limiting slow-corner result improves by 0.22 MHz; merged full-suite acceptance remains pending. This record does not establish a timing gain or 66 MHz closure. The accepted baseline remains 43.15/43.58 MHz pending merged full-suite acceptance. This single matched trial is a small measured improvement, not a repeatability or 66 MHz claim.
+
+## Matched physical result
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2 --sys-mhz 66`, with ENABLE_FETCH_HINTS=1 in the run-local project configuration, commit `e5708cf9df91d6f88773cf759ac426658bc42772`, 2026-10-17. Source hashes remain identical before/after fitting; project settings are restored. Only one Quartus session runs at a time.
+
+| Metric | Accepted baseline | Two-cut trial |
+| --- | ---: | ---: |
+| Slow 100 C Fmax (MHz) | 43.15 | 43.37 |
+| Slow -40 C Fmax (MHz) | 43.58 | 43.56 |
+| Limiting slow-corner Fmax (MHz) | 43.15 | 43.37 |
+| ALMs | 23,471 | 23,445 |
+| Physical registers | 16,029 | 16,053 |
+
+The limiting result improves 0.22 MHz (about0.5%); the cold corner decreases0.02 MHz. No RTL state or pipeline cycle is added; physical synthesis may duplicate registers. At the 15.151 ns report period, setup slacks are -7.908/-7.805 ns at the slow corners and +2.429/+4.490 ns at the fast corners. Hold slacks are all positive (+0.185/+0.141/+0.138/+0.103 ns), and all reported unconstrained-path counts are zero. Other resources remain46 M10Ks,54 MLAB LABs,26,624 MLAB bits,292,608 block-memory bits and two DSPs. Timing still fails the66 MHz target.
+
+All20 hot slow-corner paths now start at branch recovery generation and pass through completion owner/retention classification, SRU cancellation, CR-arrival capture, held-branch folding, instruction-page translation and instruction-cache update control. The worst path has20 logic levels and22.573 ns data delay. Eighteen of20 cold paths share this family; the previous store-queue tail is absent from the top20 slow paths. Next optimization follows this measured family. This is a single matched trial with unchanged constraints; no broader frequency or board-clock claim follows.
