@@ -1,0 +1,11 @@
+# Rejected SRU CR-capture timing trial
+
+Recorded: strict lint/specification, installed SRU/D1/SPECIAL proofs, focused manual-cycle/recovery tests, complete public trace comparisons and `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2 --sys-mhz 66`, commit `99be6b8ce8bde5acf74d70bcfcaa46e870cf770a`, 2026-10-17.
+
+The trial removes only `!sru_cancel` from `sru_cr_capture`, retaining `!recovery_accepted`, the IU capture arm and the complete cancellation classifier. An unused-signal annotation retains that classifier for source-equivalence checks. The installed source-connected proof passes81,536 four-state comparisons; all focused manual-cycle assertions pass, including35 LSU timing probes/55 spacings. Complete capacity and SPECIAL traces match19/1,099 baseline retirement records, and six public programs match50,788 per-edge records. Enabled cache, IRQ and FULL-FPU checks pass. No new full integration CI pass is claimed.
+
+The matched CPU-only DW2/LSU1/hints1 fit regresses from43.37/43.56MHz to41.17/41.83MHz at the two slow corners. Setup slack is−9.141/−8.757ns; four-corner hold margins remain positive and unconstrained paths are zero. Resources are23,466ALMs/16,019 physical registers/46M10Ks/2DSPs. The candidate is rejected and retained separately on local branch `codex/sru-cr-capture-20261017`; the integration implementation remains unchanged. Its proof and reproduction record reside on that branch in `docs/SRU_CR_CAPTURE_PROOF_2026-10-17.md`.
+
+Detailed STA confirms the SRU cancellation cone is absent from all80 reported setup paths. The new dominant family starts at held IU control, forms CR0, then takes the early branch-source path through instruction-page translation and cache lookup. Hot19/20 and cold19/20 paths share that family; the change removed its intended dependence but still worsened the overall placement/routing result.
+
+Logical simplification alone did not improve placement/routing. Continue from the measured43.37MHz implementation. Its late branch-source selection still precedes instruction-page equality and cache lookup; the next isolated trial precomputes page comparisons without changing fetch request edges, TLB state or fault handling. It remains an unmerged experiment until enabled temporal/manual and physical gates pass. The66MHz target remains open.
