@@ -185,6 +185,7 @@ module tb_special_watchdog;
   logic result_late_o;
   logic [31:0] result_early_value_o;
   logic result_port1_o;
+  logic result_port1_offer_o;
   /* verilator lint_on UNUSEDSIGNAL */
   logic dispatch_adopt_i = 1'b0;  // the pipelined load/store unit is absent here
   ppc_special #(

@@ -8,7 +8,8 @@
 // Program helpers and the retire packets use only some bits.
 /* verilator lint_off UNUSEDSIGNAL */
 module tb_core_dual #(
-  parameter int DISPATCH_WIDTH = 2
+  parameter int DISPATCH_WIDTH = 2,
+  parameter bit PORT1_STRESS = 1'b0
 );
   import ppc_pkg::*;
   logic [41:0] unused_segment_csr;
@@ -35,7 +36,10 @@ module tb_core_dual #(
   logic [5:0] unused_mmu_602;
   logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
-    .DISPATCH_WIDTH(DISPATCH_WIDTH)) dut (
+    .DISPATCH_WIDTH(DISPATCH_WIDTH),
+    .ENABLE_TIMERS(PORT1_STRESS),
+    .ENABLE_EXTERNAL_INTERRUPTS(PORT1_STRESS),
+    .ENABLE_LIVE_CONTEXT(PORT1_STRESS)) dut (
     .imem_rsp_hints_i('0),
 
       /* verilator lint_off PINCONNECTEMPTY */
@@ -145,9 +149,25 @@ module tb_core_dual #(
     return {6'd18, 24'(disp >>> 2), 2'b00};
   endfunction
   localparam logic [31:0] SYNC = {6'd31, 15'd0, 10'd598, 1'b0};
-  localparam logic [31:0] END_PC = 32'h140;
+  localparam logic [31:0] END_PC = PORT1_STRESS ? 32'h1140 : 32'h140;
   // Each group begins with a sync.
   function automatic logic [31:0] instruction(input logic [31:0] address);
+    // 128 straight-line groups: same delay/order grid, dependent then independent adds.
+    // Public instructions only; no state/ready forcing or state-driven BFM.
+    if (PORT1_STRESS && address >= 32'h140 && address < END_PC) begin
+      case (address[4:2])
+        0: return SYNC;
+        1: return {6'd31, 5'd27, 5'd7, 5'd4, 1'b0, 9'd491, 1'b0}; // divw r27,r7,r4
+        2: return address[5] ? lwz(12, 1, 16) :
+             {6'd31, 5'd2, 5'd8, 5'd0, 10'd339, 1'b0}; // mflr
+        3: return address[5] ?
+             {6'd31, 5'd2, 5'd8, 5'd0, 10'd339, 1'b0} : lwz(12, 1, 16);
+        4: return address >= 32'h940 ? add(20, 4, 5) : add(20, 27, 4);
+        5: return address >= 32'h940 ? add(21, 4, 5) : add(21, 27, 5);
+        6: return {6'd31, 5'd3, 5'd12, 5'd8, 10'd371, 1'b0}; // mftb r3,268
+        default: return addi(23, 3, 2);
+      endcase
+    end
     case (address)
       32'h00: return addi(1, 0, 32'h400);         // data base
       32'h04: return addi(4, 0, 3);
@@ -249,13 +269,13 @@ module tb_core_dual #(
       32'h120: return or_(27, 27, 27);
       32'h124: return addi(31, 0, 0);
       32'h128: return addi(0, 0, 3);
-      32'h12c: return b(int'(END_PC) - 32'h12c);
+      32'h12c: return b(PORT1_STRESS ? 20 : int'(END_PC) - 32'h12c);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
   endfunction
   int cycle = 0;
-  assign req_ready = !pending;
+  assign req_ready = !pending || (PORT1_STRESS && pending_addr >= 32'h140 && rsp_ready);
   assign rsp_valid = pending;
   assign rsp_insn = instruction(pending_addr);
   always_ff @(posedge clk) begin
@@ -267,7 +287,7 @@ module tb_core_dual #(
         pending <= 1'b1;
         pending_addr <= req_addr;
       end
-      if (rsp_valid && rsp_ready) pending <= 1'b0;
+      if (rsp_valid && rsp_ready && !(PORT1_STRESS && req_valid && req_ready)) pending <= 1'b0;
     end
   end
   // Data memory: one access at a time, answered on the next edge.
@@ -275,15 +295,23 @@ module tb_core_dual #(
   logic dpending = 1'b0;
   logic [31:0] drdata;
   assign dr = !dpending;
-  assign rv = dpending;
+  int port1_delay_q, port1_reads;
+  assign rv = dpending && (!PORT1_STRESS || port1_delay_q == 0);
   assign rd = drdata;
   always_ff @(posedge clk) begin
-    if (!rst_n) dpending <= 1'b0;
+    if (!rst_n) begin
+      dpending <= 1'b0;
+      port1_delay_q <= 0;
+      port1_reads <= 0;
+    end
     else begin
+      if (PORT1_STRESS && dpending && port1_delay_q > 0) port1_delay_q <= port1_delay_q - 1;
       if (dv && dr) begin
         assert ((da[31:8] == 24'h4) && (da[1:0] == 2'b00)) else $fatal(1, "data address %08x", da);
         dpending <= 1'b1;
         drdata <= dmem[da[7:2]];
+        port1_delay_q <= (PORT1_STRESS && da == 32'h410) ? ((port1_reads / 2) % 32) : 0;
+        if (!dw && da == 32'h410) port1_reads <= port1_reads + 1;
         if (dw) dmem[da[7:2]] <= wd;
       end
       if (rv && rr) dpending <= 1'b0;
@@ -292,6 +320,8 @@ module tb_core_dual #(
 
   int log_fd = 0;
   string log_path;
+  string port1_trace_path;
+  int port1_trace_fd = 0;
   logic [31:0] regs [32];
   int retirements = 0, pairs = 0, retire_pairs = 0, renamed_base_pairs = 0;
 `ifdef PPC_LSU_PIPE
@@ -307,6 +337,10 @@ module tb_core_dual #(
   // Per PC: DQ1 held nothing when it dispatched from DQ0.
   logic dq1_empty [int];
   initial begin
+    if ($value$plusargs("PORT1_TRACE=%s", port1_trace_path)) begin
+      port1_trace_fd = $fopen(port1_trace_path, "w");
+      if (port1_trace_fd == 0) $fatal(1, "cannot open %s", port1_trace_path);
+    end
     if ($value$plusargs("RETIRE_LOG=%s", log_path)) begin
       log_fd = $fopen(log_path, "w");
       if (log_fd == 0) $fatal(1, "cannot open %s", log_path);
@@ -359,6 +393,17 @@ module tb_core_dual #(
     expected[28] = 6; expected[29] = 11;
     expected[2] = 9; expected[26] = 27; expected[30] = 12;
     expected[21] = 1; expected[22] = 8; expected[27] = 3;
+    if (PORT1_STRESS) begin
+      expected[2]=0; expected[3]=0; expected[12]=32'h104;
+      expected[20]=7; expected[21]=7; expected[23]=2;
+      if (port1_suffix_next != END_PC || port1_suffix_retired != 1024)
+        $fatal(1,"suffix retirement count/order");
+      if (port1_exec == 0 || port1_contention == 0 || port1_timer == 0)
+        $fatal(1,"missing mandatory port1 coverage exec=%0d contention=%0d timer=%0d",
+               port1_exec,port1_contention,port1_timer);
+      $display("PORT1 exec=%0d contention=%0d timer_standalone=%0d timer_lsu=%0d suffix=%0d",
+               port1_exec,port1_contention,port1_timer,port1_timer_lsu,port1_suffix_retired);
+    end
     if (regs[0] != 32'd3) $fatal(1, "r0 = %0x, expected 3", regs[0]);
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
@@ -424,12 +469,42 @@ module tb_core_dual #(
       if (LSU_PIPE && (renamed_base_pairs == 0)) $fatal(1, "no DQ1 access with a renamed base");
     end else if ((pairs != 0) || (retire_pairs != 0)) $fatal(1, "width 1 paired");
     if (log_fd != 0) $fclose(log_fd);
+    if (port1_trace_fd != 0) $fclose(port1_trace_fd);
     $display("PASS: DISPATCH_WIDTH=%0d, %0d retirements in %0d cycles, %0d dispatch pairs, %0d retire pairs, %0d DQ1 accesses with a renamed base",
              DISPATCH_WIDTH, retirements, cycle, pairs, retire_pairs, renamed_base_pairs);
     $finish;
   endtask
+  int port1_exec=0, port1_contention=0, port1_timer=0, port1_timer_lsu=0;
+  int port1_suffix_retired=0;
+  logic [31:0] port1_suffix_next=32'h140;
   task automatic take(input retire_packet_t p, input int slot);
+    logic [31:0] expected_value;
+    logic [4:0] expected_reg;
     retirements++;
+    // Optional complete public retirement observation; includes every branch.
+    if (port1_trace_fd != 0) $fwrite(port1_trace_fd, "%0d %0d %h\n", cycle, slot, p);
+    if (PORT1_STRESS && p.pc >= 32'h140 && p.pc < END_PC) begin
+      if (p.pc !== port1_suffix_next || p.insn !== instruction(port1_suffix_next) ||
+          p.illegal || p.fetch_fault != FETCH_OK || p.data_fault != DATA_OK)
+        $fatal(1,"suffix public retirement order/word/fault pc=%h expected=%h",p.pc,port1_suffix_next);
+      expected_value=0; expected_reg=0;
+      case (p.pc[4:2])
+        1: begin expected_reg=27; expected_value=3; end
+        2,3: begin
+          expected_reg=p.pc[5] == (p.pc[4:2]==2) ? 5'd12 : 5'd2;
+          expected_value=expected_reg==12 ? 32'h104 : 32'b0;
+        end
+        4: begin expected_reg=20; expected_value=p.pc >= 32'h940 ? 32'd7 : 32'd6; end
+        5: begin expected_reg=21; expected_value=7; end
+        6: begin expected_reg=3; expected_value=0; end
+        7: begin expected_reg=23; expected_value=2; end
+        default: begin end
+      endcase
+      if (p.gpr_write !== (p.pc[4:2]!=0) ||
+          ((p.pc[4:2]!=0) && (p.gpr !== expected_reg || p.value !== expected_value)))
+        $fatal(1,"suffix GPR oracle pc=%h reg=%0d value=%h",p.pc,p.gpr,p.value);
+      port1_suffix_next+=4; port1_suffix_retired++;
+    end
     if ((rcycle.exists(int'(p.pc)) == 0)) begin
       rcycle[int'(p.pc)] = cycle;
       rslot[int'(p.pc)] = slot;
@@ -443,6 +518,37 @@ module tb_core_dual #(
   always @(posedge clk) begin
     if (rst_n) begin
       cycle++;
+      // Bounded diagnostic for the first two groups, not a control input.
+      if (PORT1_STRESS && $test$plusargs("PORT1_DEBUG") &&
+          ((dut.iq_head.pc >= 32'h140 && dut.iq_head.pc < 32'h180) ||
+           (dut.iq_head.pc >= 32'h140 &&
+            (dut.sru_issue_go || (dut.special_result_valid && dut.lsu_port0)))))
+        $display("P1DBG cy=%0d iq=%h/%h disp=%b%b lanePC=%h state=%0d heldmove=%b lane=%b specialV/R/ok=%b%b%b LSUoffer/valid/p0=%b%b%b SRUoffer=%b request=%b%b addr=%h rsp=%b%b retire=%b:%h/%b:%h",
+          cycle,dut.iq_head.pc,dut.dq1_head.pc,dut.dispatch,dut.dispatch1,
+          dut.special.pc_q,dut.special.state_q,dut.sru_hold_q,dut.sru_in_lane,
+          dut.special_result_valid,dut.special_result_ready,dut.special.result_port1_o,
+          dut.lsu_result_offer,dut.lsu_result_valid,dut.lsu_port0,dut.sru_result_offer,
+          dv,dr,da,rv,rr,retire_valid,retired.pc,retire1_valid,retired1.pc);
+
+      if (PORT1_STRESS) begin
+        // Observe the original public-producer qualification, independent of
+        // the proposed complete-offer output. No new RTL signal is required.
+        if (dut.special_result_valid && dut.special.result_port1_o &&
+            dut.special_result_select && dut.lsu_port0) begin
+          if (dut.sru_result_offer) begin
+            port1_contention++;
+            if (dut.special_port1 || dut.result1 !== dut.sru_result)
+              $fatal(1,"SRU priority/payload changed");
+          end else begin
+            if (!dut.special_port1 || dut.result1 !== dut.special_result)
+              $fatal(1,"special port1 grant/payload changed");
+            if (dut.special.timer_read) port1_timer_lsu++;
+            else port1_exec++;
+          end
+        end
+        if (dut.special_result_valid && dut.special_result_ready &&
+            dut.special.timer_read && !dut.lsu_port0) port1_timer++;
+      end
       assert (!halted && !(retire_valid && retired.illegal)) else $fatal(1, "unexpected fault at %08x insn %08x", retired.pc, retired.insn);
       if (dut.dispatch && (dcycle.exists(int'(dut.iq_head.pc)) == 0)) begin
         dcycle[int'(dut.iq_head.pc)] = cycle;
@@ -466,7 +572,7 @@ module tb_core_dual #(
         end
         if (retired.pc == END_PC) finish_run();
       end
-      if (cycle > 3000) $fatal(1, "program did not reach the end");
+      if (cycle > (PORT1_STRESS ? 30000 : 3000)) $fatal(1, "program did not reach the end");
     end
   end
 endmodule

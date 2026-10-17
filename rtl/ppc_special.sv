@@ -188,6 +188,8 @@ module ppc_special #(
   output logic [31:0] result_early_value_o,
   // The result faults on nothing and writes no CR or XER field.
   output logic result_port1_o,
+  // Complete second-port offer.
+  output logic result_port1_offer_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
   output logic [31:0] lr_o, ctr_o,
@@ -754,6 +756,16 @@ module ppc_special #(
   assign result_early_value_o = (state_q == S_MEM_RESULT) ? memory_result_q.value : '0;
   assign result_port1_o = ((state_q == S_EXEC) || (state_q == S_TIMER_RESULT)) &&
     !result_o.fault && !uop_q.write_cr_fields && !uop_q.write_cr_bit && !uop_q.write_xer;
+  // Form the offer only in states eligible for port 1.
+  always_comb begin
+    result_port1_offer_o = 1'b0;
+    if (state_q == S_EXEC)
+      result_port1_offer_o = (!timer_read && !tlbsync_held) &&
+        !result_o.fault && !uop_q.write_cr_fields && !uop_q.write_cr_bit && !uop_q.write_xer;
+    else if (state_q == S_TIMER_RESULT)
+      result_port1_offer_o = !result_o.fault && !uop_q.write_cr_fields &&
+        !uop_q.write_cr_bit && !uop_q.write_xer;
+  end
   assign producer_o = producer_q;
   // The next plain access may dispatch on the releasing result edge.
   assign dispatch_ready_o = !cancel_i && ((state_q == S_IDLE) ||
