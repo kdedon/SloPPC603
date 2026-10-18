@@ -48,4 +48,19 @@ Enabled cache maintenance passes 5,128 checks, 259 retirements and nine exceptio
 
 The public compiler/program commands in [the D1/SPECIAL trial](D1_SPECIAL_PORT1_TRIAL_2026-10-17.md) were rerun against the pinned `bfd023cf702e653a74a9989856f935bcf971045b` baseline. Branch-fold, recovery and CTR-target traces match every packet and cycle byte at widths 1 and 2: 8,919 / 7,807, 4,711 / 4,075 and 13,193 / 12,083 rows, totaling 50,788. This finite LSU0/hints0 corpus does not prove universal sequential equivalence; enabled integration profiles are checked separately above.
 
-The matched physical fit is running. This saved validation checkpoint is not full release acceptance and establishes no Fmax improvement or 66 MHz closure.
+The matched physical fit and its detailed path validation now pass as recorded below. Aggregate integration acceptance remains pending.
+
+
+## Matched physical result
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2 --sys-mhz 66`, source commit `645bda79b18a0e69fbb00b20bdca0bd1ae933327`, 2026-10-17. The trial adds `set_parameter -name ENABLE_FETCH_HINTS 1` to the project before the build and restores the original QSF afterward. Dispatch width 2, LSU pipeline 1, FPU 0, seed 1 and the generated SDC match the retained `e5708cf9df91d6f88773cf759ac426658bc42772` physical baseline.
+
+The limiting native Fmax improves from 43.37 to **44.50 MHz** (+1.13 MHz, approximately 2.6%). Hot and cold slow corners are 44.65 and 44.50 MHz, compared with 43.37 and 43.56 MHz. Setup slack at the requested 66 MHz is -7.243 / -7.320 / +2.551 / +4.651 ns (slow hot, slow cold, fast hot, fast cold). All hold margins remain positive: +0.140 / +0.148 / +0.132 / +0.115 ns. Every unconstrained-path category is zero. **66 MHz does not close.**
+
+Resources are 23,631 ALMs (+186) and 16,125 physical registers (+72). M10K 46, MLAB 54 (26,624 bits), block-memory bits 292,608 and DSP 2 are unchanged. The additional area is retained for this measured improvement; this is a source-and-fit result at one matched seed, not a claim about every fitter seed or another CPU profile.
+
+The build's before/after source comparison passes, and the restored QSF and exact effective SDC were checked. The separate `all_corner_paths.tcl` report covers twenty setup paths per corner. All eighty numbered paths, all fifty-three SystemVerilog files actually consumed by the archived QSF, and the effective parameters were verified against this candidate. FPU arithmetic sources excluded from this CPU-only profile are not claimed as fitted hardware.
+
+The new worst slow paths start at the mapped I-cache data-RAM `PORT_B_WRITE_ENABLE_REG` and end at `upd_set_q[4]` (hot) or `upd_valid_q` (cold). Worst data delay is 19.858 / 19.836 ns, with clock skew -2.476 / -2.575 ns. These mapped names identify the new physical bottleneck; they do not prove that a particular source predicate caused the improvement. The next cache experiment must compare against this 44.50 MHz source and preserve the full numerical, ownership and cycle oracles.
+
+Retain this standalone IU source as the next integration candidate. Fresh aggregate CI/random-initialization/FPU acceptance on the merged source remains required before full release acceptance. This feature checkpoint is saved locally while the prior integration source completes its independent broad gate.
