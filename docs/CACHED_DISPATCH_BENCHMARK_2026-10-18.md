@@ -19,6 +19,14 @@ These are system-clock cycles. `CE_DIV=2` controls video pixel enable and must n
 
 The existing strict integer/FPU identity test is deliberately data-uncached32. Keep that oracle unchanged. Also, cached `ENABLE_FPU=0` selects a 32-bit data path while cached `ENABLE_FPU=1` selects 64 bits; comparing those existing assemblies cannot isolate the cost of FPU presence.
 
+## Recovery coupling found during the audit
+
+FULL-FPU/cache64 uses 78,000 more counted DW2 cycles than CPU-only/cache32, with the same timed retirement count. The profiles also differ in data width, so this does not isolate an FPU cost. The mutually exclusive firmware performance slots account for the full cycle difference; the additional diagnostic categories overlap and must not be added again.
+
+The core defines `BS_EARLY` with `!ENABLE_FPU`. Consequently the FPU-enabled configuration resolves integer branch recovery through its commit path. That static choice also controls branch anchoring and CQ pivot recovery. Its stall profile is consistent with delayed recovery contributing to the difference; this is not a causal attribution of every cycle.
+
+The restriction protects an ownership boundary. Pivot recovery retains older completion entries, while the current FP recovery path drops all tracked FP owners through `fp_count_q <= 0` and schedules a whole-FPU kill. An unfinished older FP operation could lose its FPR/FPSCR/exception ownership while its completion entry survives. Neither issue-ready nor an incomplete pending-bit test proves safety. Keep the existing restriction until complete surviving-owner, same-edge acceptance and delayed-kill invariants are established; no recovery flag or manual cycle oracle was changed for these measurements.
+
 ## Reproduction
 
 Use the firmware hash above and the source commit recorded above. The existing model target does not rebuild firmware. For each FPU setting and width, build and run separately from the repository root:
