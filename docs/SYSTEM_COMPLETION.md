@@ -1,6 +1,6 @@
 # System completion scorecard
 
-Updated: 2026-10-16. Scope: single-issue, big-endian integer CPU with supervisor
+Updated: 2026-10-18. Scope: single-issue, big-endian integer CPU with supervisor
 mode, a snooping MEI data cache, a pin-accurate chip boundary, resumable exceptions, external/decrementer interrupts, CPU-managed BAT
 and page translation, and an integrated cache/60x path. FPGA acceptance also
 requires reviewed constraints and passing setup/hold. Board bring-up is excluded.
@@ -999,3 +999,11 @@ Recorded: focused completion/recovery and enabled cache/IRQ/FPU checks plus CPU-
 The fixed-slot owner projection improves the matched frontend-enabled DW2/LSU1/FPU0 fit from 42.41/42.60 to 43.15/43.58 MHz. Fresh four-state and temporal recovery tests, strict lint/spec, enabled cache/IRQ and unchanged FULL-FPU package golden checks passed. Holds are positive and unconstrained panels zero; 66 MHz remains unmet. Same-cycle recovery cancellation remains the next measured limiter. See [owner evidence](CQ_OWNER_FETCH_HINTS_TRIAL_2026-10-16.md).
 
 No architectural scope, row values or weights change. Recomputed MVP weighted completion remains 97.43% → 97.43%. Aggregate merged CI/xrand/FPU acceptance remains pending; this is not release signoff.
+
+## IU timing optimization checkpoint (2026-10-18)
+
+Recorded: `make -C sim test-iu-record-flags-proof`, focused manual/public comparisons and matched CPU-only Quartus fit, commit `645bda79b18a0e69fbb00b20bdca0bd1ae933327`, 2026-10-18.
+
+IU record-predicate factoring retains manual execution cycles and improves the matched hints1/DW2/LSU1/FPU0 fit from 43.37/43.56 to 44.65/44.50 MHz. Fresh connected proof, focused accuracy, exact public-trace and all-corner physical checks passed; see [IU evidence](IU_RECORD_FLAGS_PROOF.md). Auto routability, Speed synthesis and SPECIAL owner factoring regressed and were rejected. The preceding integration checkpoint completed its resumed 80-case initialization sweep (50 fresh, 30 preserved completed runs) and fresh full FPU suite; this is inherited baseline evidence, not fresh acceptance of the merged IU batch. Fresh merged CI/xrand/FPU gates remain pending.
+
+No architectural row or weight changes. Recomputed MVP weighted completion remains 97.43% → 97.43%; 66 MHz and final FPGA acceptance remain open. This optimization checkpoint adds no architectural completion credit.

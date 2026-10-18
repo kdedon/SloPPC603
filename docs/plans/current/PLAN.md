@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-17. This is the active planning entry point. The target for
+Updated: 2026-10-18. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -30,7 +30,7 @@ Generated builds, logs and reports are excluded from version control.
 
 CPU timing work retains the IU record-predicate factoring at 44.65/44.50 MHz (slow 100 C/-40 C) on the matched hints1/DW2/LSU1/FPU0 profile. Its focused proofs, exact manual-cycle/public-trace checks and physical source closure passed; see [IU evidence](../../IU_RECORD_FLAGS_PROOF.md). The implementation and benchmark records are merged on the integration branch; fresh full merged acceptance remains pending. Auto routability and Speed synthesis both regressed and are rejected; retain Balanced/Always settings. See [routability](../../CPU_ROUTABILITY_TRIAL_2026-10-18.md) and [Speed synthesis](../../CPU_SPEED_SYNTHESIS_TRIAL_2026-10-18.md).
 
-The preceding integration checkpoint `7594131` completed its resumed 80-case initialization sweep (50 fresh, 30 preserved completed cases) and fresh full FPU suite, with independent source/input closure. Original interrupted runs remain recorded separately. Next: finish focused and exact public-trace checks for the isolated SPECIAL result-owner cofactor, then compare its matched physical fit against the retained IU baseline. Its initial bounded proofs, unchanged 19/208-cycle capacity trace and 1099/5096-cycle temporal trace passed; Quartus elaboration added no HDL warnings. Keep this candidate separate until its remaining gates pass. Preserve existing manual cycle expectations, exception ownership and default FD0 behavior. The 66 MHz target remains open; a registered fetch/decode profile requires separate latency and physical acceptance.
+The preceding integration checkpoint `7594131` completed its resumed 80-case initialization sweep (50 fresh, 30 preserved completed cases) and fresh full FPU suite, with independent source/input closure. Original interrupted runs remain recorded separately. The isolated SPECIAL result-owner cofactor passed fresh focused/manual checks and all six exact public traces, but regressed to 42.74/43.38 MHz and is rejected; see [the trial record](../../SPECIAL_OWNER_COFACTOR_REJECTED_2026-10-18.md). Next: run fresh full acceptance on the merged IU batch and validate the existing registered fetch/decode option as a distinct latency profile before its matched physical trial. Preserve existing manual cycle expectations, exception ownership and default FD0 behavior. The 66 MHz target remains open; a registered fetch/decode profile requires separate latency and physical acceptance.
 
 1. Closed 2026-09-27: LRU page replacement, direct-store DSI/ISI and
    `tlbsync` are implemented, and seeded EXT/DEC/reset stress passes on the
