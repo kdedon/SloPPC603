@@ -2988,3 +2988,8 @@ include tools/special_port1_temporal.mk
 ifneq ($(wildcard tools/d1_capacity.mk),)
 include tools/d1_capacity.mk
 endif
+
+# Optional standalone IU record-predicate selector proof.
+ifneq ($(wildcard tools/iu_record_flags.mk),)
+include tools/iu_record_flags.mk
+endif

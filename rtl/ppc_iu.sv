@@ -57,7 +57,11 @@ module ppc_iu #(
   logic [13:0] short_high_part;
   logic [31:0] short_product;
   logic [31:0] alu_value;
-  logic [31:0] record_value;
+  // Compute record predicates before the opcode selects its result.
+  function automatic logic [2:0] flags_from_record(input logic [31:0] value);
+    return {value[31], !value[31] && (value != 0), value == 0};
+  endfunction
+  logic [2:0] record_flags;
   logic divide_by_zero;
   logic signed_divide_exception;
   initial begin
@@ -256,13 +260,14 @@ module ppc_iu #(
   assign result_o.cr0 = !held.ctrl.write_cr_field ? 4'b0 :
     held_compare ? {!compare_gt && !compare_eq, compare_gt, compare_eq,
                     held.ctrl.so_in} : {
-    record_value[31],
-    !record_value[31] && (record_value != 0),
-    record_value == 0,
+    record_flags[2],
+    record_flags[1],
+    record_flags[0],
     held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
   };
   generate
     if (ADD_COMPARE_ONLY) begin : g_add_compare_value
+      logic [31:0] record_value;
       // These control fields describe datapaths absent from this instance.
       logic _unused_add_compare_control;
       assign _unused_add_compare_control = ^{held.ctrl.mask, held.ctrl.shift};
@@ -271,6 +276,7 @@ module ppc_iu #(
       // returns zero for CMP/CMPL. Make the restricted datapath explicit.
       assign alu_value = held_compare ? 32'b0 : add_sum[31:0];
       assign record_value = held_compare ? 32'b0 : add_sum[31:0];
+      assign record_flags = flags_from_record(record_value);
     end else begin : g_full_alu_value
       logic [4:0] rotate_amount;
       logic [63:0] rotate_double;
@@ -371,101 +377,101 @@ module ppc_iu #(
         case (held.ctrl.op)
           ALU_ADD: begin
             alu_value = add_sum[31:0];
-            record_value = add_sum[31:0];
+            record_flags = flags_from_record(add_sum[31:0]);
           end
           ALU_ROTATE: begin
             alu_value = rotate_value & held.ctrl.mask;
-            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+            record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_RLWIMI: begin
             alu_value = (rotate_value & held.ctrl.mask) |
                                      (held.b & ~held.ctrl.mask);
-            record_value = {record_a_sign | record_b_sign, 30'b0,
-                            record_a_nonzero | record_b_nonzero};
+            record_flags = flags_from_record({record_a_sign | record_b_sign, 30'b0,
+                            record_a_nonzero | record_b_nonzero});
           end
           ALU_SLW: begin
             alu_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
-            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+            record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_SRW: begin
             alu_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
-            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+            record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_SRAW: begin
             alu_value = sraw_value;
-            record_value = {record_a_sign, 30'b0, record_a_nonzero};
+            record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_CNTLZW: begin
             alu_value = {26'b0, leading_zeros};
-            record_value = {26'b0, leading_zeros};
+            record_flags = flags_from_record({26'b0, leading_zeros});
           end
           ALU_EXTSB: begin
             alu_value = {{24{held.a[7]}}, held.a[7:0]};
-            record_value = {{24{held.a[7]}}, held.a[7:0]};
+            record_flags = flags_from_record({{24{held.a[7]}}, held.a[7:0]});
           end
           ALU_EXTSH: begin
             alu_value = {{16{held.a[15]}}, held.a[15:0]};
-            record_value = {{16{held.a[15]}}, held.a[15:0]};
+            record_flags = flags_from_record({{16{held.a[15]}}, held.a[15:0]});
           end
           ALU_MULLI: begin
             alu_value = multiply_acc[31:0];
-            record_value = multiply_acc[31:0];
+            record_flags = flags_from_record(multiply_acc[31:0]);
           end
           ALU_MULLW: begin
             alu_value = multiply_acc[31:0];
-            record_value = multiply_acc[31:0];
+            record_flags = flags_from_record(multiply_acc[31:0]);
           end
           ALU_MULHW: begin
             alu_value = multiply_acc[63:32];
-            record_value = multiply_acc[63:32];
+            record_flags = flags_from_record(multiply_acc[63:32]);
           end
           ALU_MULHWU: begin
             alu_value = multiply_acc[63:32];
-            record_value = multiply_acc[63:32];
+            record_flags = flags_from_record(multiply_acc[63:32]);
           end
           ALU_DIVWU: begin
             alu_value = divider_quotient;
-            record_value = divider_quotient;
+            record_flags = flags_from_record(divider_quotient);
           end
           ALU_DIVW: begin
             alu_value = divider_quotient;
-            record_value = divider_quotient;
+            record_flags = flags_from_record(divider_quotient);
           end
           ALU_OR: begin
             alu_value = held.a | held.b;
-            record_value = held.a | held.b;
+            record_flags = flags_from_record(held.a | held.b);
           end
           ALU_XOR: begin
             alu_value = held.a ^ held.b;
-            record_value = held.a ^ held.b;
+            record_flags = flags_from_record(held.a ^ held.b);
           end
           ALU_AND: begin
             alu_value = held.a & held.b;
-            record_value = held.a & held.b;
+            record_flags = flags_from_record(held.a & held.b);
           end
           ALU_ANDC: begin
             alu_value = held.a & ~held.b;
-            record_value = held.a & ~held.b;
+            record_flags = flags_from_record(held.a & ~held.b);
           end
           ALU_ORC: begin
             alu_value = held.a | ~held.b;
-            record_value = held.a | ~held.b;
+            record_flags = flags_from_record(held.a | ~held.b);
           end
           ALU_NAND: begin
             alu_value = ~(held.a & held.b);
-            record_value = ~(held.a & held.b);
+            record_flags = flags_from_record(~(held.a & held.b));
           end
           ALU_NOR: begin
             alu_value = ~(held.a | held.b);
-            record_value = ~(held.a | held.b);
+            record_flags = flags_from_record(~(held.a | held.b));
           end
           ALU_EQV: begin
             alu_value = ~(held.a ^ held.b);
-            record_value = ~(held.a ^ held.b);
+            record_flags = flags_from_record(~(held.a ^ held.b));
           end
           default: begin
             alu_value = '0;
-            record_value = '0;
+            record_flags = flags_from_record('0);
           end
         endcase
       end
