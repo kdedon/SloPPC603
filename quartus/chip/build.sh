@@ -21,7 +21,8 @@ lsu_pipe=0
 post_map=0
 quartus_jobs=2
 sys_mhz=50
-usage() { echo "usage: $0 [--docker] [--dual] [--fpu|--fpu-compact|--no-fpu] [--lsu-pipe] [--mister] [--post-map] [--jobs 1|2] [--sys-mhz 10..99]" >&2; exit 2; }
+routability=
+usage() { echo "usage: $0 [--docker] [--dual] [--fpu|--fpu-compact|--no-fpu] [--lsu-pipe] [--mister] [--post-map] [--jobs 1|2] [--sys-mhz 10..99] [--routability auto|always|never]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     local|--docker) mode="$1" ;;
@@ -36,6 +37,15 @@ while (($#)); do
       shift
       [[ "${1:-}" =~ ^[12]$ ]] || usage
       quartus_jobs="$1"
+      ;;
+    --routability)
+      shift
+      case "${1:-}" in
+        auto) routability=AUTOMATICALLY ;;
+        always) routability=ALWAYS ;;
+        never) routability=NEVER ;;
+        *) usage ;;
+      esac
       ;;
     --sys-mhz)
       shift
@@ -96,6 +106,14 @@ fi
 if [[ "${lsu_pipe}" == 1 ]]; then
   # Its densest region does not route at standard routability.
   echo 'set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS' >> "${qsf}"
+fi
+# An explicit choice replaces the regenerated/default assignment; omission
+# retains the existing LSU-only ALWAYS setting.
+if [[ -n "${routability}" ]]; then
+  sed -i '/^set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION /d' "${qsf}"
+  printf 'set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION %s\n' \
+    "${routability}" >> "${qsf}"
+  echo "Routability override: ${routability}"
 fi
 if [[ "${dual}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "PPC_DISPATCH_WIDTH=2"' >> "${qsf}"
