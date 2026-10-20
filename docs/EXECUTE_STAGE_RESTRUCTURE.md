@@ -139,6 +139,21 @@ later. Alignment of a captured base still comes from a 12-bit sum at
 capture, so `fast` stays registered. Ready bases offer from P1 at the same
 edge as before.
 
+Recorded: `lint`, `check-spec`, `test-dtlb-projection-composition`,
+`test-lsu-*` and 24 core benches (recovery, dual, dual-lsu-pipe,
+branch-recovery/-fold, lsu-timing, -snoop, -602, multiply-/divider-timing,
+serialization, dcache-lsu-pipe, -projection-off, lsu-wake-wrap,
+lsu-response-wrap, lsu-update, lsu-extensions, dq1-page-pipe/-native,
+alignment, alignment-dependencies, add-recovery, memory-edges,
+ctr-target-capture), commit 0b3e520, 2026-10-20. Width 1 and width 2
+(`DISPATCH_WIDTH=2`), each with `EXECUTE_AT_E=0` and `=1`: all pass, and
+every printed cycle count is equal between the two settings. MiSTer config
+(`tools/verilate-lsu-pipe`, `BRANCH_REMOVAL=1`): 21 of 24 pass with both
+settings and equal cycles; memory-edges and ctr-target-capture fail as on
+the baseline, and dq1-page-native does not build under the pipe wrapper
+(it redefines `PPC_LSU_PIPE`). `quartus_map --analysis_and_elaboration`
+of `ppc603e_core` with `PPC_EXECUTE_AT_E=1`: 0 errors. No fit yet.
+
 ### CQ finish ownership from a register
 
 `generations_q` → finish → head retire → store commit is the other worst
