@@ -163,6 +163,52 @@ flop. Ownership is lost only by an accepted kill, so finish acceptance
 becomes `owned_q && !kill[index]` and the generation compare leaves the
 retire and commit cone.
 
+Implemented as `ppc_completion` parameter `OWNER_AT_LOAD`, set from
+`EXECUTE_AT_E`. Six sources each report the edge their producer register
+loads and the producer it takes: the IU (issue), the serialized lane
+(dispatch, held-move issue or adoption of a load/store access), the SRU
+(issue) and the load/store unit's result register (`result_load_o`, for
+the third and fourth ports; a P2 retire or a replay from the miss queue).
+At that edge the CQ evaluates the entry's post-edge state: allocated now
+with this tag, or live, unfinished, of this generation, not killed and not
+finished now. The bit then clears when that entry is killed or finishes on
+any port. Finish acceptance, wake qualification and the head/CQ[1]
+arrival matches use the bit; `pending_head` stays, as it is a flop
+lookup. The generation compare remains as a per-port simulation assertion
+whenever a source offers a result.
+
+### Result flops load on unit free (B2)
+
+With `EXECUTE_AT_E` the IU's `value_q`/flag flops load on
+`!occupied || (result_offer_o && result_ready_i)`. Only `occupied` and
+`held` take the handshake and the cancel. A killed IU op takes every
+younger station op with it, so an issue never depends on the cancel to
+free the unit; a simulation assertion checks it.
+
+### Registered forward selects (B3)
+
+`ppc_dispatch` parameter `REGISTERED_FORWARD` (set from `EXECUTE_AT_E`):
+the load/store and second forward port selects compare the operand's
+producer against each source's next producer (the D input of that
+source's producer register: the IU or SRU issue packet on issue, the
+load/store result load) and register the match. In the operand cycle the
+select is `done && !ready && match_q`; the compare leaves the mux select.
+A simulation assertion checks each registered match against the direct
+compare while the station is occupied.
+
+### Fit of B3a
+
+Coordinator fit, CPU-only, matched to the step A fit, of 0d05b7f with
+`PPC_EXECUTE_AT_E=1`: 45.19 MHz slow corner (setup −6.979 ns at 66 MHz),
+23,923 ALMs; step A alone was 41.64 MHz, baseline aa89a0e 44.5 MHz. The
+LSU P1 EA endpoint left the top paths. The new worst endpoint is
+`ppc_iu:iu|held.ctrl.op[1]` → `route_managed_q`: the IU result and CR
+reach branch resolve and the fetch/router through a `held`-decoded
+select (the multiply/divide result mux keys on `held.ctrl.op`). Next
+step: move BPU resolve and the fetch redirect onto the registered result
+(register the long/short select at issue so `cr0` is a flop, then cut
+resolve → fetch), before B4.
+
 ## Recovery and ownership
 
 The result flops belong to `held`'s producer and are qualified by the same
@@ -176,12 +222,12 @@ the same kill vector and rename rebuilds from survivors.
 | Step | Change | Files | Test |
 |---|---|---|---|
 | B1 (done) | `EXECUTE_AT_E` in `ppc_iu`: single-cycle datapath reads `issue_i`, result registered at issue; multiply/divide form their result from `held` and the engines; core parameter passes it to the IU and SRU | `rtl/ppc_iu.sv`, `rtl/ppc_core.sv`, `sim/Makefile` | lint both settings; focused and core benches off and on |
-| B2 | Result flops load on the IU free condition; `occupied` keeps the handshake | `rtl/ppc_iu.sv` | `test-execution` backpressure cases |
-| B3 | Station LSU/SRU forward selects registered at capture/wake, like `bypass_a/b` | `rtl/ppc_dispatch.sv` | `test-dispatch-*`, core LSU and dual benches |
+| B2 (done) | Result flops load on the IU free condition; `occupied` keeps the handshake | `rtl/ppc_iu.sv` | `test-execution` backpressure cases |
+| B3 (done) | Station LSU/SRU forward selects registered at capture/wake, like `bypass_a/b` | `rtl/ppc_dispatch.sv` | `test-dispatch-*`, core LSU and dual benches |
 | B4 | Stage-timing bench samples the result flops for the trace's value; TD-02 and STAGE_TIMING state the step B intervals | `tb/tb_stage_timing.sv`, `docs/TIMING_DECISIONS.md`, `docs/STAGE_TIMING.md` | `test-stage`, `check-spec` |
 | B5 | Default on; fit the CPU-only and MiSTer tops | `rtl/ppc_core.sv` | full gate by the coordinator |
 | B3a (done) | LSU P1: displacement, base value or registered bus select at dispatch; EA, request address and D-µTLB in P1's cycle from flops; drop the per-bus snoop sums | `rtl/ppc_lsu_pipe.sv`, `rtl/ppc_core.sv` | `test-core-lsu-timing-snoop`, `test-core-lsu-*`, `test-core-dcache-lsu-pipe`, MiSTer config |
-| B3b | CQ registers the finish ownership check at issue | `rtl/ppc_completion.sv`, `rtl/ppc_iu.sv` | `test-completion*`, `test-recovery-*` |
+| B3b (done) | CQ registers the finish ownership check at each source's load edge | `rtl/ppc_completion.sv`, `rtl/ppc_core.sv`, `rtl/ppc_lsu_pipe.sv` | `test-completion*`, `test-recovery-*` |
 | B6 | Retire `MISPREDICT_FETCH_NOW=0` and `LSU_BASE_SNOOP=0` if the fit shows the flop-start chains meet 66 MHz | `rtl/ppc_core.sv` | branch and LSU timing benches |
 
 Each step keeps the parameter off by default until B5, so main stays green.
