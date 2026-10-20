@@ -196,6 +196,16 @@ select is `done && !ready && match_q`; the compare leaves the mux select.
 A simulation assertion checks each registered match against the direct
 compare while the station is occupied.
 
+Recorded: `lint` (`EXECUTE_AT_E` unset and `=1`), commit 2d869bb,
+2026-10-20: pass. `quartus_map ppc603e_core --analysis_and_elaboration
+--verilog_macro=PPC_EXECUTE_AT_E=1'b1`, same commit: 0 errors, 38
+warnings. Pre-sweep checks with `EXECUTE_AT_E=1` (`test-completion`,
+`test-execution`, `test-dispatch-late`, `test-core-recovery`, -dual,
+-dual-lsu-pipe, -lsu-timing-snoop, -lsu-wake-wrap, -dcache-lsu-pipe,
+-multiply-timing, -divider-timing, -add-recovery): pass, no ownership,
+free-load or forward-select assertion. The focused and 24-bench sweeps
+at widths 1 and 2 and the MiSTer config, each setting, are pending.
+
 ### Fit of B3a
 
 Coordinator fit, CPU-only, matched to the step A fit, of 0d05b7f with
