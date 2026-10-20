@@ -98,3 +98,11 @@ decoded ones (`illegal`, `normal`, `special`, `fpu`, `gpr_write`,
 `sru_move`, flag demand, `xer_only` where flags are demanded), the rename
 demand equals `dispatch_uop.gpr_write`, and both plain-access predicates
 match; and for a valid DQ1, every stored form equals its decode.
+
+## Verification
+
+WIP checkpoint. `lint` with `DISPATCH_PRED` unset, commit d7f5b0b,
+2026-10-20: pass. `quartus_map ppc603e_core --analysis_and_elaboration`
+with `PPC_DISPATCH_PRED=1'b1` and `PPC_EXECUTE_AT_E=1'b1`, same commit:
+0 errors, 39 warnings. Not yet run: lint with `DISPATCH_PRED=1`,
+`check-spec`, any simulation bench, or the off/on cycle comparison.
