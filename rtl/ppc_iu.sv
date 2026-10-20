@@ -503,8 +503,19 @@ module ppc_iu #(
       logic [31:0] value_q, long_value;
       logic ca_q, ov_q, so_q, long_ov, long_so, held_long;
       logic [3:0] cr0_q;
+      // The result flops load whenever the unit can take an op, issued or
+      // not; occupied alone qualifies them, so the cancel stays off this
+      // enable. An issue never relies on the cancel to free the unit: a
+      // killed op takes every younger station op with it.
+      logic unit_free;
+      assign unit_free = !occupied || (result_offer_o && result_ready_i);
+      // synthesis translate_off
+      always @(posedge clk_i)
+        if (rst_ni && issue_valid_i && issue_ready_o)
+          assert (unit_free) else $error("issue relied on a cancel to free the unit");
+      // synthesis translate_on
       always_ff @(posedge clk_i) begin
-        if (issue_valid_i && issue_ready_o) begin
+        if (unit_free) begin
           value_q <= alu_result;
           ca_q <= alu_ca;
           ov_q <= alu_ov;
