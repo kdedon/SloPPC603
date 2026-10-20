@@ -217,6 +217,12 @@ reach branch resolve and the fetch/router through a `held`-decoded
 select (the multiply/divide result mux keys on `held.ctrl.op`). B4 below
 removes the decode from that path.
 
+Coordinator fit of 2ad63c4 (B3b/B2/B3), same setup: 43.16 MHz (setup
+−8.017 ns at 66 MHz), 23,977 ALMs; within the ~±1 MHz seed noise of B3a
+but the same path, longer: `ppc_iu:iu|held.ctrl.op[1]~DUPLICATE` →
+`ppc_icache:cache|upd_set_q[3]` (held-op decode → CR → resolve → fetch →
+I-µTLB → I-cache).
+
 ## Branch resolve from registered results (B4)
 
 ### Long-op result selects
@@ -269,6 +275,15 @@ flop → CR merge → resolve → fetch → I-µTLB → I-cache/router, the chai
 `MISPREDICT_FETCH_NOW` keeps for the manual's redirect timing; cutting it
 further (resolve-ahead from `alu_cr0` registered per waiting branch, or a
 registered `bs_res_next` issue class) waits for the fit of this step.
+
+Recorded: `lint` (`EXECUTE_AT_E` unset and `=1`), and with
+`EXECUTE_AT_E=1` `check-spec`, `test-execution`,
+`test-core-multiply-timing`, -divider-timing, -divide-signed,
+-divide-unsigned, -multiply-high, -multiply, -crstate,
+-branch-recovery, commit 9ba2cc2, 2026-10-20: pass, no divide-overflow
+assertion. `quartus_map ppc603e_core --analysis_and_elaboration
+--verilog_macro=PPC_EXECUTE_AT_E=1'b1`, same commit: 0 errors, 38
+warnings. Width 1/2 and MiSTer sweeps, each setting, pending. No fit.
 
 ## Recovery and ownership
 
