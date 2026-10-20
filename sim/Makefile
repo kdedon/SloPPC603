@@ -29,6 +29,10 @@ endif
 ifdef MISPREDICT_FETCH_NOW
 export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_MISPREDICT_FETCH_NOW=$(MISPREDICT_FETCH_NOW)
 endif
+# EXECUTE_AT_E=0 or 1 sets ppc_core's EXECUTE_AT_E default.
+ifdef EXECUTE_AT_E
+export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_EXECUTE_AT_E=$(EXECUTE_AT_E)
+endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)

@@ -12,7 +12,12 @@ module ppc_iu #(
   parameter bit MUL_602_TIMING = 1'b0,
   // Only add and compare forms issue; the multiplier, divider, rotator and
   // logical ops are left out.
-  parameter bit ADD_COMPARE_ONLY = 1'b0
+  parameter bit ADD_COMPARE_ONLY = 1'b0,
+  // 1: a single-cycle op computes from the issuing operands in the cycle
+  // before the issue edge and its result is registered there, so finish,
+  // wake and CR consumers start from a flop at unchanged edges. Multiply
+  // and divide keep their engines and offer from the held op.
+  parameter bit EXECUTE_AT_E = 1'b0
 ) (
   input logic clk_i, rst_ni,
   input logic cancel_i,
@@ -64,6 +69,12 @@ module ppc_iu #(
   logic [2:0] record_flags;
   logic divide_by_zero;
   logic signed_divide_exception;
+  // The single-cycle datapath's input and outputs.
+  issue_packet_t alu_in;
+  logic [31:0] alu_result;
+  logic alu_ca, alu_ov, alu_so;
+  logic [3:0] alu_cr0;
+  assign alu_in = EXECUTE_AT_E ? issue_i : held;
   initial begin
     if (DIV_LATENCY < 17)
       $fatal(1, "DIV_LATENCY must allow 16 radix-4 iterations after start");
@@ -108,17 +119,17 @@ module ppc_iu #(
       );
     end
   endgenerate
-  assign add_operand_a = held.ctrl.invert_a ? ~held.a : held.a;
+  assign add_operand_a = alu_in.ctrl.invert_a ? ~alu_in.a : alu_in.a;
   always_comb begin
-    case (held.ctrl.carry_in)
+    case (alu_in.ctrl.carry_in)
       CARRY_ONE: add_carry_in = 1'b1;
-      CARRY_CA: add_carry_in = held.ctrl.ca_in;
+      CARRY_CA: add_carry_in = alu_in.ctrl.ca_in;
       default: add_carry_in = 1'b0;
     endcase
   end
-  assign add_sum = {1'b0, add_operand_a} + {1'b0, held.b} +
+  assign add_sum = {1'b0, add_operand_a} + {1'b0, alu_in.b} +
                    33'(add_carry_in);
-  assign add_overflow = (add_operand_a[31] == held.b[31]) &&
+  assign add_overflow = (add_operand_a[31] == alu_in.b[31]) &&
                         (add_sum[31] != add_operand_a[31]);
   // Radix-256 multiplier: one signed 33x9 partial product per cycle, rB
   // digits taken low byte first. Each digit is the signed byte plus the
@@ -232,14 +243,14 @@ module ppc_iu #(
   assign signed_divide_exception = divide_by_zero ||
     ((held.a == 32'h8000_0000) && (held.b == 32'hffff_ffff));
   assign operation_overflow = ADD_COMPARE_ONLY ? add_overflow :
-                              ((held.ctrl.op == ALU_MULLI) ||
-                               (held.ctrl.op == ALU_MULLW)) ? multiply_overflow :
-                              (held.ctrl.op == ALU_DIVWU) ? divide_by_zero :
-                              (held.ctrl.op == ALU_DIVW) ? signed_divide_exception :
+                              ((alu_in.ctrl.op == ALU_MULLI) ||
+                               (alu_in.ctrl.op == ALU_MULLW)) ? multiply_overflow :
+                              (alu_in.ctrl.op == ALU_DIVWU) ? divide_by_zero :
+                              (alu_in.ctrl.op == ALU_DIVW) ? signed_divide_exception :
                               add_overflow;
-  assign final_so = held.ctrl.so_in | operation_overflow;
-  assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
-  assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
+  assign final_so = alu_in.ctrl.so_in | operation_overflow;
+  assign alu_ov = alu_in.ctrl.write_ov_so ? operation_overflow : 1'b0;
+  assign alu_so = alu_in.ctrl.write_ov_so ? final_so : 1'b0;
   // A short MULLI's low word comes straight from the first-step product
   // until the accumulator holds it. MULLI writes no CR0, so CR0 reads the
   // other results only.
@@ -250,35 +261,35 @@ module ppc_iu #(
                                {{5{multiply_digit[8]}}, multiply_digit[8:0]});
   assign short_product = 32'(short_low_part) + {short_high_part, 18'b0};
   assign result_value = mulli_short_q ? short_product : alu_value;
-  assign result_o.value = result_value;
+  assign alu_result = result_value;
   // Compares issue as ~a + b + 1 = b - a. Carry out means b >= a unsigned;
   // the true sign of b - a is its sign bit XOR overflow.
-  assign held_compare = (held.ctrl.op == ALU_CMP) || (held.ctrl.op == ALU_CMPL);
-  assign compare_eq = held.a == held.b;
-  assign compare_gt = (held.ctrl.op == ALU_CMPL) ? !add_sum[32] :
+  assign held_compare = (alu_in.ctrl.op == ALU_CMP) || (alu_in.ctrl.op == ALU_CMPL);
+  assign compare_eq = alu_in.a == alu_in.b;
+  assign compare_gt = (alu_in.ctrl.op == ALU_CMPL) ? !add_sum[32] :
                       (add_sum[31] != add_overflow);
-  assign result_o.cr0 = !held.ctrl.write_cr_field ? 4'b0 :
+  assign alu_cr0 = !alu_in.ctrl.write_cr_field ? 4'b0 :
     held_compare ? {!compare_gt && !compare_eq, compare_gt, compare_eq,
-                    held.ctrl.so_in} : {
+                    alu_in.ctrl.so_in} : {
     record_flags[2],
     record_flags[1],
     record_flags[0],
-    held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
+    alu_in.ctrl.write_ov_so ? final_so : alu_in.ctrl.so_in
   };
   generate
     if (ADD_COMPARE_ONLY) begin : g_add_compare_value
       logic [31:0] record_value;
       // These control fields describe datapaths absent from this instance.
       logic _unused_add_compare_control;
-      assign _unused_add_compare_control = ^{held.ctrl.mask, held.ctrl.shift};
-      assign result_o.ca = held.ctrl.write_ca ? add_sum[32] : 1'b0;
+      assign _unused_add_compare_control = ^{alu_in.ctrl.mask, alu_in.ctrl.shift};
+      assign alu_ca = alu_in.ctrl.write_ca ? add_sum[32] : 1'b0;
       // Compare results carry their value in CR; the original ALU case
       // returns zero for CMP/CMPL. Make the restricted datapath explicit.
       assign alu_value = held_compare ? 32'b0 : add_sum[31:0];
       assign record_value = held_compare ? 32'b0 : add_sum[31:0];
       assign record_flags = flags_from_record(record_value);
     end else begin : g_full_alu_value
-      logic [4:0] rotate_amount;
+      logic [4:0] rotate_amount, rotate_amount_d, rotate_amount_q;
       logic [63:0] rotate_double;
       logic [31:0] rotate_value;
       logic [31:0] _unused_rotate_low;
@@ -290,7 +301,7 @@ module ppc_iu #(
       // Source-bit masks for record predicates. They depend only on issue
       // controls and are captured beside the existing rotate amount.
       logic [31:0] record_mask_d, record_sign_mask_d;
-      logic [31:0] record_mask_q, record_sign_mask_q;
+      logic [31:0] record_mask_q, record_sign_mask_q, record_mask, record_sign_mask;
       logic record_a_nonzero, record_a_sign, record_b_nonzero, record_b_sign;
       function automatic logic [31:0] inverse_rotate_mask(
         input logic [31:0] mask, input logic [4:0] amount);
@@ -326,10 +337,10 @@ module ppc_iu #(
           default: begin end
         endcase
       end
-      assign record_a_nonzero = |(held.a & record_mask_q);
-      assign record_a_sign = |(held.a & record_sign_mask_q);
-      assign record_b_nonzero = |(held.b & ~held.ctrl.mask);
-      assign record_b_sign = held.b[31] && !held.ctrl.mask[31];
+      assign record_a_nonzero = |(alu_in.a & record_mask);
+      assign record_a_sign = |(alu_in.a & record_sign_mask);
+      assign record_b_nonzero = |(alu_in.b & ~alu_in.ctrl.mask);
+      assign record_b_sign = alu_in.b[31] && !alu_in.ctrl.mask[31];
       // Tree count: level k merges pairs of 2^k-bit groups. A group count equal
       // to its width means the group is all zero.
       function automatic logic [5:0] count_leading_zeros(input logic [31:0] value);
@@ -350,51 +361,58 @@ module ppc_iu #(
       // One left rotator serves every rotate and shift. A right shift by n is a
       // left rotate by (32 - n) mod 32 masked to the low 32 - n bits. The
       // amount is chosen at issue so the op decode stays off the result path.
+      always_comb begin
+        case (issue_i.ctrl.op)
+          ALU_RLWIMI: rotate_amount_d = issue_i.ctrl.shift;
+          ALU_SRW, ALU_SRAW: rotate_amount_d = 5'd0 - issue_i.b[4:0];
+          default: rotate_amount_d = issue_i.b[4:0];
+        endcase
+      end
       always_ff @(posedge clk_i) begin
         if (issue_valid_i && issue_ready_o) begin
           record_mask_q <= record_mask_d;
           record_sign_mask_q <= record_sign_mask_d;
-          case (issue_i.ctrl.op)
-            ALU_RLWIMI: rotate_amount <= issue_i.ctrl.shift;
-            ALU_SRW, ALU_SRAW: rotate_amount <= 5'd0 - issue_i.b[4:0];
-            default: rotate_amount <= issue_i.b[4:0];
-          endcase
+          rotate_amount_q <= rotate_amount_d;
         end
       end
-      assign rotate_double = {held.a, held.a} << rotate_amount;
+      // Executing at issue, the issue-time values are used directly.
+      assign rotate_amount = EXECUTE_AT_E ? rotate_amount_d : rotate_amount_q;
+      assign record_mask = EXECUTE_AT_E ? record_mask_d : record_mask_q;
+      assign record_sign_mask = EXECUTE_AT_E ? record_sign_mask_d : record_sign_mask_q;
+      assign rotate_double = {alu_in.a, alu_in.a} << rotate_amount;
       assign {rotate_value, _unused_rotate_low} = rotate_double;
-      assign left_mask = 32'hffff_ffff << held.b[4:0];
-      assign right_mask = 32'hffff_ffff >> held.b[4:0];
-      assign sign_fill = held.a[31];
-      assign sraw_value = held.b[5] ? {32{sign_fill}} :
+      assign left_mask = 32'hffff_ffff << alu_in.b[4:0];
+      assign right_mask = 32'hffff_ffff >> alu_in.b[4:0];
+      assign sign_fill = alu_in.a[31];
+      assign sraw_value = alu_in.b[5] ? {32{sign_fill}} :
         (rotate_value & right_mask) | ({32{sign_fill}} & ~right_mask);
       // CA is set when a negative value shifts out any one bit.
-      assign sraw_ca = sign_fill && (held.b[5] || |(held.a & ~left_mask));
-      assign leading_zeros = count_leading_zeros(held.a);
-      assign result_o.ca = held.ctrl.write_ca ?
-        ((held.ctrl.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
+      assign sraw_ca = sign_fill && (alu_in.b[5] || |(alu_in.a & ~left_mask));
+      assign leading_zeros = count_leading_zeros(alu_in.a);
+      assign alu_ca = alu_in.ctrl.write_ca ?
+        ((alu_in.ctrl.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
       always_comb begin
-        case (held.ctrl.op)
+        case (alu_in.ctrl.op)
           ALU_ADD: begin
             alu_value = add_sum[31:0];
             record_flags = flags_from_record(add_sum[31:0]);
           end
           ALU_ROTATE: begin
-            alu_value = rotate_value & held.ctrl.mask;
+            alu_value = rotate_value & alu_in.ctrl.mask;
             record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_RLWIMI: begin
-            alu_value = (rotate_value & held.ctrl.mask) |
-                                     (held.b & ~held.ctrl.mask);
+            alu_value = (rotate_value & alu_in.ctrl.mask) |
+                                     (alu_in.b & ~alu_in.ctrl.mask);
             record_flags = flags_from_record({record_a_sign | record_b_sign, 30'b0,
                             record_a_nonzero | record_b_nonzero});
           end
           ALU_SLW: begin
-            alu_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
+            alu_value = alu_in.b[5] ? 32'b0 : rotate_value & left_mask;
             record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_SRW: begin
-            alu_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
+            alu_value = alu_in.b[5] ? 32'b0 : rotate_value & right_mask;
             record_flags = flags_from_record({record_a_sign, 30'b0, record_a_nonzero});
           end
           ALU_SRAW: begin
@@ -406,12 +424,12 @@ module ppc_iu #(
             record_flags = flags_from_record({26'b0, leading_zeros});
           end
           ALU_EXTSB: begin
-            alu_value = {{24{held.a[7]}}, held.a[7:0]};
-            record_flags = flags_from_record({{24{held.a[7]}}, held.a[7:0]});
+            alu_value = {{24{alu_in.a[7]}}, alu_in.a[7:0]};
+            record_flags = flags_from_record({{24{alu_in.a[7]}}, alu_in.a[7:0]});
           end
           ALU_EXTSH: begin
-            alu_value = {{16{held.a[15]}}, held.a[15:0]};
-            record_flags = flags_from_record({{16{held.a[15]}}, held.a[15:0]});
+            alu_value = {{16{alu_in.a[15]}}, alu_in.a[15:0]};
+            record_flags = flags_from_record({{16{alu_in.a[15]}}, alu_in.a[15:0]});
           end
           ALU_MULLI: begin
             alu_value = multiply_acc[31:0];
@@ -438,36 +456,36 @@ module ppc_iu #(
             record_flags = flags_from_record(divider_quotient);
           end
           ALU_OR: begin
-            alu_value = held.a | held.b;
-            record_flags = flags_from_record(held.a | held.b);
+            alu_value = alu_in.a | alu_in.b;
+            record_flags = flags_from_record(alu_in.a | alu_in.b);
           end
           ALU_XOR: begin
-            alu_value = held.a ^ held.b;
-            record_flags = flags_from_record(held.a ^ held.b);
+            alu_value = alu_in.a ^ alu_in.b;
+            record_flags = flags_from_record(alu_in.a ^ alu_in.b);
           end
           ALU_AND: begin
-            alu_value = held.a & held.b;
-            record_flags = flags_from_record(held.a & held.b);
+            alu_value = alu_in.a & alu_in.b;
+            record_flags = flags_from_record(alu_in.a & alu_in.b);
           end
           ALU_ANDC: begin
-            alu_value = held.a & ~held.b;
-            record_flags = flags_from_record(held.a & ~held.b);
+            alu_value = alu_in.a & ~alu_in.b;
+            record_flags = flags_from_record(alu_in.a & ~alu_in.b);
           end
           ALU_ORC: begin
-            alu_value = held.a | ~held.b;
-            record_flags = flags_from_record(held.a | ~held.b);
+            alu_value = alu_in.a | ~alu_in.b;
+            record_flags = flags_from_record(alu_in.a | ~alu_in.b);
           end
           ALU_NAND: begin
-            alu_value = ~(held.a & held.b);
-            record_flags = flags_from_record(~(held.a & held.b));
+            alu_value = ~(alu_in.a & alu_in.b);
+            record_flags = flags_from_record(~(alu_in.a & alu_in.b));
           end
           ALU_NOR: begin
-            alu_value = ~(held.a | held.b);
-            record_flags = flags_from_record(~(held.a | held.b));
+            alu_value = ~(alu_in.a | alu_in.b);
+            record_flags = flags_from_record(~(alu_in.a | alu_in.b));
           end
           ALU_EQV: begin
-            alu_value = ~(held.a ^ held.b);
-            record_flags = flags_from_record(~(held.a ^ held.b));
+            alu_value = ~(alu_in.a ^ alu_in.b);
+            record_flags = flags_from_record(~(alu_in.a ^ alu_in.b));
           end
           default: begin
             alu_value = '0;
@@ -480,6 +498,45 @@ module ppc_iu #(
   always_ff @(posedge clk_i) begin
     if (issue_valid_i && issue_ready_o) held <= issue_i;
   end
+  generate
+    if (EXECUTE_AT_E) begin : g_execute_at_e
+      logic [31:0] value_q, long_value;
+      logic ca_q, ov_q, so_q, long_ov, long_so, held_long;
+      logic [3:0] cr0_q;
+      always_ff @(posedge clk_i) begin
+        if (issue_valid_i && issue_ready_o) begin
+          value_q <= alu_result;
+          ca_q <= alu_ca;
+          ov_q <= alu_ov;
+          so_q <= alu_so;
+          cr0_q <= alu_cr0;
+        end
+      end
+      // Multiply and divide results form from the held op and the engines.
+      assign held_long = held_multiply || held_divide;
+      assign long_value = mulli_short_q ? short_product :
+        held_divide ? divider_quotient :
+        ((held.ctrl.op == ALU_MULHW) || (held.ctrl.op == ALU_MULHWU)) ?
+          multiply_acc[63:32] : multiply_acc[31:0];
+      assign long_ov = !held_divide ? multiply_overflow :
+        (held.ctrl.op == ALU_DIVW) ? signed_divide_exception : divide_by_zero;
+      assign long_so = held.ctrl.so_in | long_ov;
+      assign result_o.value = held_long ? long_value : value_q;
+      assign result_o.ca = !held_long && ca_q;
+      assign result_o.ov = held_long ? (held.ctrl.write_ov_so && long_ov) : ov_q;
+      assign result_o.so = held_long ? (held.ctrl.write_ov_so && long_so) : so_q;
+      assign result_o.cr0 = !held_long ? cr0_q :
+        !held.ctrl.write_cr_field ? 4'b0 :
+        {flags_from_record(long_value),
+         held.ctrl.write_ov_so ? long_so : held.ctrl.so_in};
+    end else begin : g_execute_after_issue
+      assign result_o.value = alu_result;
+      assign result_o.ca = alu_ca;
+      assign result_o.ov = alu_ov;
+      assign result_o.so = alu_so;
+      assign result_o.cr0 = alu_cr0;
+    end
+  endgenerate
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       occupied <= 1'b0;

@@ -22,6 +22,9 @@
 `ifndef PPC_MISPREDICT_FETCH_NOW
 `define PPC_MISPREDICT_FETCH_NOW 1'b1
 `endif
+`ifndef PPC_EXECUTE_AT_E
+`define PPC_EXECUTE_AT_E 1'b0
+`endif
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
   // Part the build models; see cpu_cfg().
@@ -131,7 +134,12 @@ module ppc_core #(
   // next edge, from registers, a cycle later, which keeps the CR result off
   // the fetch address. Benches may set the default with
   // +define+PPC_MISPREDICT_FETCH_NOW=1'b0.
-  parameter bit MISPREDICT_FETCH_NOW = `PPC_MISPREDICT_FETCH_NOW
+  parameter bit MISPREDICT_FETCH_NOW = `PPC_MISPREDICT_FETCH_NOW,
+  // 1: the IU and SRU compute single-cycle ops from the issuing operands
+  // and register the result at the issue edge, so post-execute logic starts
+  // from flops at unchanged edges. Benches may set the default with
+  // +define+PPC_EXECUTE_AT_E=1'b1.
+  parameter bit EXECUTE_AT_E = `PPC_EXECUTE_AT_E
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -2420,7 +2428,8 @@ module ppc_core #(
   // synthesis translate_on
   ppc_iu #(
     .DIV_LATENCY(DIV_LATENCY_EFFECTIVE),
-    .MUL_602_TIMING(cpu_mul_602_timing(CPU_VARIANT))
+    .MUL_602_TIMING(cpu_mul_602_timing(CPU_VARIANT)),
+    .EXECUTE_AT_E(EXECUTE_AT_E)
   ) iu (
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid),
     .issue_ready_o(issue_ready),
@@ -2454,7 +2463,7 @@ module ppc_core #(
       );
       assign sru_issue_valid = sru_rs_issue_valid && !sru_cr_hold;
       ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0),
-               .ADD_COMPARE_ONLY(1'b1)) sru (
+               .ADD_COMPARE_ONLY(1'b1), .EXECUTE_AT_E(EXECUTE_AT_E)) sru (
         .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid),
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
         .result_valid_o(sru_result_valid), .result_offer_o(sru_result_offer),
