@@ -110,7 +110,15 @@ write enable. Cutting it needs one of:
 
 ## Verification
 
-Recorded: `test-iq`, `lint IQ_RING=1`, `lint IQ_RING=1 EXECUTE_AT_E=1`,
-commit 8a3c1e0 plus uncommitted changes, 2026-10-20. `test-iq`: 38897
-(depth 6) and 49153 (depth 7) queue checks pass with both settings. Lint
-passes with the ring on. Core sweeps below.
+Recorded: `test-iq`, `lint` (`IQ_RING` unset, `=1`, and `=1` with
+`EXECUTE_AT_E=1`), `check-spec`, `test-held-release-equivalence`, commit
+3e1fec6, 2026-10-20: all pass. `test-iq` runs 38897 (depth 6) and 49153
+(depth 7) oracle checks with each setting. This establishes queue-level
+equivalence and clean lint; it does not establish core cycle equality,
+which the core sweep below records, nor fitted area or timing.
+
+Core sweep (pending): the 24 benches of the execute-stage record plus
+`test-core-fetch2`, -translated-held-cr, -fetch-fault, `test-stage` and
+`test-dispatch-late`, each with `IQ_RING=0` and `=1`, at width 1, width 2
+(`DISPATCH_WIDTH=2`) and the MiSTer config (`tools/verilate-lsu-pipe`,
+`BRANCH_REMOVAL=1`), comparing every PASS line and printed cycle count.
