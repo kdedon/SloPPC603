@@ -126,6 +126,19 @@ not keep manual counts; forming the EA in P1 from a registered select does,
 and it needs one adder instead of one per bus. The wake3 leg goes away as
 a separate sum.
 
+Implemented as `ppc_lsu_pipe` parameter `P1_EA`, set from `EXECUTE_AT_E`
+(the bus legs are flops only when the units execute at E). Each P1 entry
+holds its base in `ea` and its addend in `offset`; the head's EA is
+`base + offset`, where the base is `ea` or, while it waits, the bus named
+by `base_sel`. The core keeps a one-hot bus per completion entry
+(`cq_bus_q`, written at allocation from the station or unit the
+instruction goes to) and registers the base producer's at dispatch. A
+base on another bus (a load the serialized lane adopts, which finishes on
+the first bus) is captured, not summed, and the access offers a cycle
+later. Alignment of a captured base still comes from a 12-bit sum at
+capture, so `fast` stays registered. Ready bases offer from P1 at the same
+edge as before.
+
 ### CQ finish ownership from a register
 
 `generations_q` → finish → head retire → store commit is the other worst
@@ -152,7 +165,7 @@ the same kill vector and rename rebuilds from survivors.
 | B3 | Station LSU/SRU forward selects registered at capture/wake, like `bypass_a/b` | `rtl/ppc_dispatch.sv` | `test-dispatch-*`, core LSU and dual benches |
 | B4 | Stage-timing bench samples the result flops for the trace's value; TD-02 and STAGE_TIMING state the step B intervals | `tb/tb_stage_timing.sv`, `docs/TIMING_DECISIONS.md`, `docs/STAGE_TIMING.md` | `test-stage`, `check-spec` |
 | B5 | Default on; fit the CPU-only and MiSTer tops | `rtl/ppc_core.sv` | full gate by the coordinator |
-| B3a | LSU P1: displacement, base value or registered bus select at dispatch; EA, request address and D-µTLB in P1's cycle from flops; drop the per-bus snoop sums | `rtl/ppc_lsu_pipe.sv`, `rtl/ppc_core.sv` | `test-core-lsu-timing-snoop`, `test-core-lsu-*`, `test-core-dcache-lsu-pipe`, MiSTer config |
+| B3a (done) | LSU P1: displacement, base value or registered bus select at dispatch; EA, request address and D-µTLB in P1's cycle from flops; drop the per-bus snoop sums | `rtl/ppc_lsu_pipe.sv`, `rtl/ppc_core.sv` | `test-core-lsu-timing-snoop`, `test-core-lsu-*`, `test-core-dcache-lsu-pipe`, MiSTer config |
 | B3b | CQ registers the finish ownership check at issue | `rtl/ppc_completion.sv`, `rtl/ppc_iu.sv` | `test-completion*`, `test-recovery-*` |
 | B6 | Retire `MISPREDICT_FETCH_NOW=0` and `LSU_BASE_SNOOP=0` if the fit shows the flop-start chains meet 66 MHz | `rtl/ppc_core.sv` | branch and LSU timing benches |
 

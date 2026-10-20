@@ -35,11 +35,18 @@
 // and its alignment decided as the base is written, and the access offers
 // on the next cycle. BASE_SNOOP also offers the head in the cycle the base
 // is written, forming its EA then (UM Table 6-6, load latency 2).
+//
+// With P1_EA, P1 holds an access's base and offset and forms its EA in its
+// own cycle with one adder: the base is the entry's register, or, while it
+// waits, the result bus its producer finishes on, selected by a one-hot
+// select registered at dispatch. A base written on another bus is
+// captured and summed a cycle later.
 module ppc_lsu_pipe #(
   parameter int DMEM_BITS = 32,
   parameter bit STORE_QUEUE = 1'b0,
   parameter bit BASE_SNOOP = 1'b0,
   parameter bit BASE_WAIT = 1'b0,
+  parameter bit P1_EA = 1'b0,
   parameter bit ENABLE_DATA_PAGE_PROJECTION = 1'b0,
   parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
   // 602: a doubleword FP access spends a cycle in P1 before its offer or
@@ -63,6 +70,10 @@ module ppc_lsu_pipe #(
   input  logic base_snoop_i,
   input  ppc_pkg::operand_t base_i,
   input  logic [31:0] offset_i,
+  // P1_EA: ea_i's two addends, and the bus base_i's producer finishes on
+  // (one-hot: first, second, this unit's).
+  input  logic [31:0] ea_base_i, ea_offset_i,
+  input  logic [2:0] base_bus_i,
   input  logic dr_i,
   input  logic wake_valid_i, wake1_valid_i,
   input  ppc_pkg::wake_packet_t wake_i, wake1_i,
@@ -360,6 +371,9 @@ module ppc_lsu_pipe #(
     logic bspec;
     // The EA waits for base_producer's result: base plus offset.
     logic base_wait;
+    // P1_EA: the bus a waiting base arrives on. Otherwise ea holds the
+    // base, and the EA is ea plus offset.
+    logic [2:0] base_sel;
     rename_tag_t base_tag;
     completion_tag_t base_producer;
     logic [31:0] offset;
@@ -516,12 +530,33 @@ module ppc_lsu_pipe #(
   assign base_sum0 = wake_early_value_i + p1_head.offset;
   assign base_sum1 = wake1_early_value_i + p1_head.offset;
   assign base_sum3 = wake3_early_value_i + p1_head.offset;
-  assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1 || head_base3;
-  // Inactive producer metadata can alias a live owner after generation wrap.
-  // Select only a valid wake, retaining port-zero priority when both arrive.
-  assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :
-                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 :
-                   (BASE_SNOOP && p1_head.base_wait && head_base3) ? base_sum3 : p1_head.ea;
+  logic head_bus;
+  logic [31:0] head_base;
+  assign head_bus = BASE_SNOOP && p1_head.base_wait && !p1_head.base_late;
+  assign head_base = ({32{head_bus && p1_head.base_sel[0]}} & wake_early_value_i) |
+                     ({32{head_bus && p1_head.base_sel[1]}} & wake1_early_value_i) |
+                     ({32{head_bus && p1_head.base_sel[2]}} & wake3_early_value_i) |
+                     ({32{!head_bus}} & p1_head.ea);
+  generate
+    if (P1_EA) begin : g_p1_ea
+      // Only the selected bus offers the head.
+      assign head_base_ready = !p1_head.base_wait || (p1_head.base_sel[0] && head_base0) ||
+                               (p1_head.base_sel[1] && head_base1) ||
+                               (p1_head.base_sel[2] && head_base3);
+      assign head_ea = head_base + p1_head.offset;
+    end else begin : g_dispatch_ea
+      logic _unused_head_base;
+      assign _unused_head_base = ^head_base;
+      assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1 || head_base3;
+      // Inactive producer metadata can alias a live owner after generation
+      // wrap. Select only a valid wake, retaining port-zero priority when
+      // both arrive.
+      assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :
+                       (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 :
+                       (BASE_SNOOP && p1_head.base_wait && head_base3) ? base_sum3 :
+                       p1_head.ea;
+    end
+  endgenerate
   assign head_fast = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.fast :
     (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
      !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
@@ -539,7 +574,8 @@ module ppc_lsu_pipe #(
         if (sq_q[i].addr[11:3] == p1_addr[11:3]) sq_overlap = 1'b1;
         // The same compare against the registered EA, for a head not
         // waiting on its base.
-        if (sq_q[i].addr[11:3] == p1_head.ea[11:3]) sq_overlap_reg = 1'b1;
+        if (sq_q[i].addr[11:3] == (P1_EA ? head_ea[11:3] : p1_head.ea[11:3]))
+          sq_overlap_reg = 1'b1;
         if (sq_q[i].young && p2_passed) sq_young = 1'b1;
       end
   end
@@ -576,7 +612,8 @@ module ppc_lsu_pipe #(
     !redo_valid_q && (!q_valid_q || q_pop) && (sq_count_q != SQ_W'(SQ_DEPTH)) &&
     !killed_now(p1_head.producer);
   // A head that may queue is fast, so its EA is registered.
-  assign chk_addr_o = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
+  assign chk_addr_o = P1_EA ? p1_addr :
+                      {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
   assign p1_queue = p1_check && chk_ok_i;
   // An offer stands until accepted. A removed entry leaves without an
   // offer, or withdraws one last made speculatively (the older access whose
@@ -631,14 +668,18 @@ module ppc_lsu_pipe #(
   // Word alignment/endian munge changes only page-offset bits.
   generate
     if (ENABLE_DATA_PAGE_PROJECTION) begin : g_data_page_projection
-      assign data_page_projection_o.page[0] = p1_head.ea[31:12];
-      assign data_page_projection_o.page[1] = base_sum0[31:12];
-      assign data_page_projection_o.page[2] = base_sum1[31:12];
+      assign data_page_projection_o.page[0] = P1_EA ? head_ea[31:12] : p1_head.ea[31:12];
+      assign data_page_projection_o.page[1] = P1_EA ? head_ea[31:12] : base_sum0[31:12];
+      assign data_page_projection_o.page[2] = P1_EA ? head_ea[31:12] : base_sum1[31:12];
       assign data_page_projection_o.page[3] = sq_head.addr[31:12];
-      assign data_page_projection_o.page[4] = base_sum3[31:12];
+      assign data_page_projection_o.page[4] = P1_EA ? head_ea[31:12] : base_sum3[31:12];
       always_comb begin
         data_page_projection_o.use_lookup = 1'b0;
         data_page_projection_o.source = 3'd0;
+        if (P1_EA) begin
+          data_page_projection_o.use_lookup = 1'b1;
+          data_page_projection_o.source = sq_offer ? 3'd3 : 3'd0;
+        end else
         case (sq_offer)
           1'b1: begin
             data_page_projection_o.use_lookup = 1'b1;
@@ -768,7 +809,7 @@ module ppc_lsu_pipe #(
     adopt_producer_o = adopted.producer;
     adopt_pc_o = adopted.pc;
     adopt_insn_o = adopted.insn;
-    adopt_ea_o = adopted.ea;
+    adopt_ea_o = (P1_EA && !p2_adopt && !redo_adopt) ? head_ea : adopted.ea;
     adopt_data_o = (!p2_adopt && !redo_adopt) ? head_data : adopted.data;
   end
 
@@ -813,7 +854,7 @@ module ppc_lsu_pipe #(
     incoming.split = in_split;
     incoming.producer = producer_i;
     incoming.bspec = branch_spec_i;
-    incoming.ea = ea_i;
+    incoming.ea = P1_EA ? ea_base_i : ea_i;
     incoming.munge = !le_i ? 3'b0 :
                      fp_i ? {!fp_double_i, 2'b0} :
                      {1'b1, in_bytes != 3'd4, in_bytes == 3'd1};
@@ -824,7 +865,8 @@ module ppc_lsu_pipe #(
     incoming.base_wait = BASE_ANY && base_snoop_i && !base_i.ready;
     incoming.base_tag = base_i.tag;
     incoming.base_producer = base_i.producer;
-    incoming.offset = offset_i;
+    incoming.offset = (P1_EA && !incoming.base_wait) ? ea_offset_i : offset_i;
+    incoming.base_sel = base_bus_i;
     incoming.pc = pc_i;
     incoming.insn = insn_i;
     incoming.uop = memory_uop(uop_i);
@@ -841,7 +883,8 @@ module ppc_lsu_pipe #(
   // The pop then only selects.
   entry_t base_src [3];
   logic base_hit [3], base_late [3], base_fast [3], base_trap [3];
-  logic [31:0] base_ea [3];
+  logic [31:0] base_ea [3], base_value [3];
+  logic [11:0] base_low [3];
   logic data_hit [3], data_late [3], src_launch [3], src_kill [3];
   logic [31:0] data_value [3];
   logic [31:0] incoming_wake_ea0, incoming_wake_ea1, incoming_wake_ea3;
@@ -887,10 +930,12 @@ module ppc_lsu_pipe #(
              (wake3_i.producer == base_src[s].base_producer);
       base_hit[s] = hit0 || hit1 || hit3;
       base_late[s] = hit0 ? wake_i.late : hit1 && wake1_i.late;
-      base_ea[s] = (hit0 ? wake_i.value : hit1 ? wake1_i.value : wake3_i.value) +
-                   base_src[s].offset;
-      base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
-      base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
+      base_value[s] = hit0 ? wake_i.value : hit1 ? wake1_i.value : wake3_i.value;
+      base_low[s] = base_value[s][11:0] + base_src[s].offset[11:0];
+      // P1_EA keeps the base and forms the EA at the head.
+      base_ea[s] = P1_EA ? base_value[s] : base_value[s] + base_src[s].offset;
+      base_trap[s] = int_trap(base_src[s].uop.mem_size, base_low[s], dr_i);
+      base_fast[s] = int_fast(base_src[s].uop.mem_size, base_low[s][1:0]) && !base_trap[s];
       if (s == 2) begin
         // hit0 retains accepted-valid/tag/generation priority over hit1.
         // Unknown identity controls use the original merged EA predicates.
@@ -901,8 +946,8 @@ module ppc_lsu_pipe #(
           end
           1'b1: begin base_trap[s] = incoming_trap0; base_fast[s] = incoming_fast0; end
           default: begin
-            base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
-            base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
+            base_trap[s] = int_trap(base_src[s].uop.mem_size, base_low[s], dr_i);
+            base_fast[s] = int_fast(base_src[s].uop.mem_size, base_low[s][1:0]) && !base_trap[s];
           end
         endcase
       end
@@ -1064,6 +1109,7 @@ module ppc_lsu_pipe #(
     sq_q <= sq_next;
     if (p1_queue) begin
       q_q <= p1_head;
+      q_q.ea <= head_ea;
       q_young_q <= p2_passed;
     end else if (sq_doom || killed_now(q_q.producer) || (q_young_q && (redo_set || fp_fault)))
       q_q.killed <= 1'b1;
@@ -1217,8 +1263,15 @@ module ppc_lsu_pipe #(
   always @(posedge clk_i)
     if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait &&
         (head_base0 || head_base1 || head_base3))
-      assert (head_ea === (head_base0 ? base_sum0 : head_base1 ? base_sum1 : base_sum3))
+      assert (P1_EA || (head_ea === (head_base0 ? base_sum0 : head_base1 ? base_sum1 : base_sum3)))
         else $error("waiting head did not select the valid wake's base");
+  always @(posedge clk_i)
+    if (rst_ni && P1_EA && BASE_SNOOP && p1_valid && p1_head.base_wait && head_base_ready)
+      assert (head_ea === (head_base0 ? base_sum0 : head_base1 ? base_sum1 : base_sum3))
+        else $error("waiting head offered from a bus other than its base's");
+  always @(posedge clk_i)
+    if (rst_ni && P1_EA && dispatch_fire && !incoming.base_wait)
+      assert (ea_base_i + ea_offset_i == ea_i) else $error("EA addends disagree with the EA");
   // +LSU_STATS reports store-queue use at the end of simulation.
   int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,
       stat_redo = 0, stat_cancelled = 0;

@@ -3470,10 +3470,25 @@ module ppc_core #(
   // Plain integer accesses go to the pipelined unit, including those whose
   // alignment exception was detected at dispatch; the lane adopts those.
   assign lsu_route = ENABLE_LSU_PIPE && dispatch_mem_plain;
+  // The bus each completion entry's register result wakes on, one-hot:
+  // the first (IU, serialized lane), the SRU's, the load/store unit's. A
+  // waiting base registers its producer's at dispatch.
+  logic [2:0] cq_bus_q [CQ_DEPTH];
+  logic [2:0] c0_bus, d1_bus, lsu_base_bus;
+  assign c0_bus = lsu_c0 ? 3'b100 : c0_sru ? 3'b010 : 3'b001;
+  assign d1_bus = lsu_d1 ? 3'b100 :
+                  (HAS_SRU && d1_iu && ((c0_iu && !c0_sru) || d1_alt_sru)) ? 3'b010 : 3'b001;
+  always_ff @(posedge clk_i) begin
+    if (dispatch && !bu_remove) cq_bus_q[alloc_producer.index] <= c0_bus;
+    if (dispatch1 && !d1_remove) cq_bus_q[alloc1_producer.index] <= d1_bus;
+  end
+  assign lsu_base_bus = (!lsu_c0 && (d1_wait_a ? dq1_pair.dep_prev[0] : dq1_pair.dep_prev[1])) ?
+                        c0_bus : cq_bus_q[lsu_base.producer.index];
   generate
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
                      .BASE_SNOOP(LSU_BASE_SNOOP), .BASE_WAIT(LSU_BASE_WAIT),
+                     .P1_EA(EXECUTE_AT_E),
                      .ENABLE_DATA_PAGE_PROJECTION(ENABLE_DATA_PAGE_PROJECTION),
                      .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
                      .FP_DOUBLE_HOLD(FP_DOUBLE_HOLD), .FP_SINGLE_DENORM(!FP_DOUBLE_HOLD)) lsu (
@@ -3486,6 +3501,8 @@ module ppc_core #(
         .ea_i(lsu_c0 ? dispatch_ea : d1_ea_full), .data_i(lsu_c0 ? src_c : d1_data),
         .base_snoop_i(lsu_c0 ? base_snoop : d1_base_wait), .base_i(lsu_base),
         .offset_i(lsu_c0 ? c0_offset : d1_offset),
+        .ea_base_i(lsu_c0 ? special_a : d1_a), .ea_offset_i(lsu_c0 ? special_b : d1_b),
+        .base_bus_i(lsu_base_bus),
         .dr_i(msr[MSR_DR]),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
@@ -3543,7 +3560,8 @@ module ppc_core #(
       assign fp_store_tag = '0;
       assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid,
                                  fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c,
-                                 lsu_base, d1_offset, c0_offset, cq_retire_mem_valid};
+                                 lsu_base, d1_offset, c0_offset, cq_retire_mem_valid,
+                                 lsu_base_bus};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;

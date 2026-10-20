@@ -26,18 +26,19 @@ pkg=(root/'rtl/ppc_pkg.sv').read_text()
 end=pkg.index('} dtlb_projection_t;')+len('} dtlb_projection_t;')
 typecode=pkg[pkg.rfind('typedef struct packed {',0,end):end]
 s=(root/'rtl/ppc_lsu_pipe.sv').read_text()
-for expected in ['assign base_sum0 = wake_early_value_i + p1_head.offset;', 'assign base_sum1 = wake1_early_value_i + p1_head.offset;', 'assign base_sum3 = wake3_early_value_i + p1_head.offset;', 'assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :\n                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 :\n                   (BASE_SNOOP && p1_head.base_wait && head_base3) ? base_sum3 : p1_head.ea;', 'assign p1_addr = {head_ea[31:3], head_ea[2] ^ p1_head.munge[2], 2\'b00};', 'assign req_addr_o = sq_offer ? sq_head.addr : p1_addr;']:
+for expected in ['assign base_sum0 = wake_early_value_i + p1_head.offset;', 'assign base_sum1 = wake1_early_value_i + p1_head.offset;', 'assign base_sum3 = wake3_early_value_i + p1_head.offset;', 'assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :\n                       (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 :\n                       (BASE_SNOOP && p1_head.base_wait && head_base3) ? base_sum3 :\n                       p1_head.ea;', 'assign p1_addr = {head_ea[31:3], head_ea[2] ^ p1_head.munge[2], 2\'b00};', 'assign req_addr_o = sq_offer ? sq_head.addr : p1_addr;']:
  if expected not in s: raise SystemExit('legacy LSU guard failed: '+expected)
 if 'dmem_req_addr_o = lsu_req_sel ? lsu_req_addr : sp_req_addr;' not in (root/'rtl/ppc_core.sv').read_text(): raise SystemExit('legacy core guard failed')
 preamble='`timescale 1ns/1ps\n'+typecode+'\ntypedef struct packed {logic[31:0] ea; logic base_wait;} p1_t;\ntypedef struct packed {logic[31:0] addr;} sq_t;\n'
-code=preamble+'''module hint_lsu #(parameter bit BASE_SNOOP=1, ENABLE_DATA_PAGE_PROJECTION=1)(input p1_t p1_head, input sq_t sq_head,input logic[31:0] base_sum0,base_sum1,base_sum3,input logic sq_offer,head_base0,head_base1,head_base3,output dtlb_projection_t data_page_projection_o);
+code=preamble+'''module hint_lsu #(parameter bit BASE_SNOOP=1, ENABLE_DATA_PAGE_PROJECTION=1, P1_EA=0)(input p1_t p1_head, input sq_t sq_head,input logic[31:0] head_ea,base_sum0,base_sum1,base_sum3,input logic sq_offer,head_base0,head_base1,head_base3,output dtlb_projection_t data_page_projection_o);
 '''+lsu+'''endmodule
 module hint_core #(parameter bit ENABLE_DATA_PAGE_PROJECTION=1)(input logic lsu_req_sel,input dtlb_projection_t lsu_page_projection,input logic[31:0] sp_req_addr,output dtlb_projection_t data_page_projection_o);
 '''+core+'''endmodule
 module proof #(parameter bit BASE_SNOOP=1,ENABLE=1)(output logic done);
  p1_t p1_head; sq_t sq_head;
  logic sq_offer,head_base0,head_base1,head_base3,lsu_req_sel;
- logic[31:0] base_sum0,base_sum1,base_sum3,sp_req_addr,old_head,old_lsu,old_core;
+ logic[31:0] head_ea,base_sum0,base_sum1,base_sum3,sp_req_addr,old_head,old_lsu,old_core;
+ assign head_ea='0;
  logic[19:0] selected; logic expected_use; logic[2:0] expected_source;
  dtlb_projection_t lsu_page_projection,projected;
  integer samples,active,fallback,known_controls;
