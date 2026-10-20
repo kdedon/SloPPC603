@@ -19,7 +19,8 @@ module tb_iu_shift_record #(
       .MUL_602_TIMING(MUL602),.DIV_LATENCY(DIV_LATENCY)) candidate (
     .clk_i(clk),.rst_ni(rst_n),.cancel_i(cancel),.issue_valid_i(issue_valid),
     .issue_ready_o(ready_new),.issue_i(issue),.result_valid_o(valid_new),
-    .result_offer_o(offer_new),.result_ready_i(result_ready),.result_o(result_new));
+    .result_offer_o(offer_new),
+    /* verilator lint_off PINCONNECTEMPTY */ .cr0_next_o(), .long_o(), /* verilator lint_on PINCONNECTEMPTY */.result_ready_i(result_ready),.result_o(result_new));
   task automatic check;
     if (valid_new !== (offer_new && !cancel))
       $fatal(1,"result cancel qualification mismatch");

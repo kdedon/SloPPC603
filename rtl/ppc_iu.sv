@@ -28,7 +28,11 @@ module ppc_iu #(
   // result_valid_o without the cancel.
   output logic result_offer_o,
   input logic result_ready_i,
-  output ppc_pkg::result_packet_t result_o
+  output ppc_pkg::result_packet_t result_o,
+  // With EXECUTE_AT_E: result_o.cr0 after this edge, unless long_o is set
+  // after it; long_o set: result_o.cr0 forms from the multiply/divide engines.
+  output logic [3:0] cr0_next_o,
+  output logic long_o
 );
   import ppc_pkg::*;
   localparam int DIGIT_WIDTH = MUL_602_TIMING ? 17 : 9;
@@ -546,6 +550,8 @@ module ppc_iu #(
       assign long_value = mulli_short_q ? short_product : engine_value;
       assign long_ov = held_divide ? divide_ov_q : multiply_overflow;
       assign long_so = held.ctrl.so_in | long_ov;
+      assign cr0_next_o = unit_free ? alu_cr0 : cr0_q;
+      assign long_o = held_long;
       assign result_o.value = held_long ? long_value : value_q;
       assign result_o.ca = !held_long && ca_q;
       assign result_o.ov = held_long ? (held.ctrl.write_ov_so && long_ov) : ov_q;
@@ -562,6 +568,8 @@ module ppc_iu #(
             else $error("registered divide overflow disagrees");
       // synthesis translate_on
     end else begin : g_execute_after_issue
+      assign cr0_next_o = '0;
+      assign long_o = 1'b1;
       assign result_o.value = alu_result;
       assign result_o.ca = alu_ca;
       assign result_o.ov = alu_ov;

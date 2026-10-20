@@ -475,6 +475,9 @@ module ppc_core #(
   issue_packet_t sru_issue;
   /* verilator lint_on UNUSEDSIGNAL */
   result_packet_t sru_result;
+  // Each unit's cr0 after this edge; iu_long: the IU's comes from its engines.
+  logic [3:0] iu_cr0_next, sru_cr0_next;
+  logic iu_long;
   logic update_pending_q, update_wait0, update_wait1, gpr_ready, gpr_port_write, gpr_port1_write;
   logic [4:0] gpr_port_reg, gpr_port1_reg, update_reg_q;
   logic [31:0] gpr_port_value, gpr_port1_value, update_value_q;
@@ -1096,8 +1099,6 @@ module ppc_core #(
   assign held_word = iabr_check(fd_packet_q, iabr);
   assign held_push = !fold_q && !fstop_q &&
     !(cr_branch(held_word, ctr_fe_ok, ctr_one) && cr_unres);
-  assign held_cr_now = selected_cr_bit(held_word.insn[20:16], bu_cr_capture,
-    owner_crf_valid_q, owner_crf_q, cr, bu_cr, owner_cr0);
   assign held_predict = folds(held_word, trace_mode, lr_ok, ctr_free, cr_final, held_cr_now, ctr_one) &&
     !waits(held_word, lr_ok, lk_free, ctr_free, ctr_fe_ok);
   assign rel_fold = held_q && fd_valid_q && held_push && fd_push_ok_q && held_predict &&
@@ -1847,7 +1848,7 @@ module ppc_core #(
   logic [4:0] bs_bi_q;
   logic [31:0] bs_cr;
   logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit;
-  logic bs_incoming_bit;
+  logic bs_incoming_bit, bs_in_miss;
   assign bs_cr_ready = bs_owner_done_q ||
     (flags_busy && bu_cr_valid_q && (flags_owner == bs_owner_q));
   assign bs_cr = bs_owner_done_q ? cr : bu_cr_q;
@@ -1873,9 +1874,10 @@ module ppc_core #(
   // next cycle: the cycle a branch fetched now is decoded (UM 6.4.1.2,
   // Figure 6-5). A branch predicted not taken may then leave FD; its
   // prediction still waits for the resolution.
-  assign iu_one_cycle = !((issue.ctrl.op == ALU_MULLI) || (issue.ctrl.op == ALU_MULLW) ||
-    (issue.ctrl.op == ALU_MULHW) || (issue.ctrl.op == ALU_MULHWU) ||
-    (issue.ctrl.op == ALU_DIVWU) || (issue.ctrl.op == ALU_DIVW));
+  function automatic logic one_cycle_op(input alu_op_t op);
+    return !((op == ALU_MULLI) || (op == ALU_MULLW) || (op == ALU_MULHW) ||
+             (op == ALU_MULHWU) || (op == ALU_DIVWU) || (op == ALU_DIVW));
+  endfunction
   assign bs_res_next = flags_busy && (flags_owner == bs_owner_q) && owner_simple_q &&
     !flags_waiter && !fp_cr_pending && !recovery_accepted &&
     ((issue_valid && issue_ready && iu_one_cycle && (issue.ctrl.producer == bs_owner_q)) ||
@@ -1893,17 +1895,17 @@ module ppc_core #(
   // result off the retirement path.
   assign bs_early_miss = BS_EARLY && bs_valid_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) &&
-    ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) != bs_pred_q);
+    bs_in_miss;
   // An anchored branch whose owner's CR arrives matching the prediction
   // is resolved; a held branch released by that CR may replace it.
   assign bs_cap_hit = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
-    ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) == bs_pred_q);
+    !bs_in_miss;
   // An instruction behind the branch may complete in its resolve cycle
   // (UM 6.6.1.3, Figure 6-5).
   assign bs_cap_offer = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready &&
     (sru_cr_offer || iu_cr_offer) && (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
-    ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) == bs_pred_q);
+    !bs_in_miss;
   assign bs_young_hold = bs_anch_q && ((bs_valid_q && !bs_hit && !bs_cap_offer) || bs_miss_q);
   assign bs_hold = (bs_valid_q && !bs_anch_q && !bs_hit && (retire_producer == bs_tag_q)) ||
     (bs_young_hold && bs_anch_done_q) || bs_redirect_q;
@@ -1940,10 +1942,6 @@ module ppc_core #(
         bs_owner_q <= alloc_producer;
         bs_owner_done_q <= 1'b0;
         bs_anch_done_q <= 1'b0;
-        bs_pred_q <= dq1_folded;
-        bs_ctr_ok_q <= 1'b1;
-        bs_bo3_q <= dq1_uop.branch_bo[3];
-        bs_bi_q <= dq1_uop.branch_bi;
         bs_alt_q <= dq1_folded ? dq1_head.pc + 32'd4 : d1_bc_target;
       end
       if (dispatch && bu_branch && bu_spec) begin
@@ -1958,10 +1956,6 @@ module ppc_core #(
         bs_owner_done_q <= !flags_waiter &&
                            ((commit && (retire_producer == flags_owner)) ||
                             (commit1 && (retire1_producer == flags_owner)));
-        bs_pred_q <= bu_pred;
-        bs_ctr_ok_q <= bu_ctr_ok;
-        bs_bo3_q <= uop.branch_bo[3];
-        bs_bi_q <= uop.branch_bi;
         bs_alt_q <= bu_pred ? iq_head.pc + 32'd4 : bu_target;
       end
       if (carry_start) begin
@@ -1974,10 +1968,6 @@ module ppc_core #(
         bs_owner_done_q <= !carry_tok && (!flags_busy ||
           (!flags_waiter && ((commit && (retire_producer == flags_owner)) ||
                              (commit1 && (retire1_producer == flags_owner)))));
-        bs_pred_q <= crec[38];
-        bs_ctr_ok_q <= 1'b1;
-        bs_bo3_q <= crec[37];
-        bs_bi_q <= crec[36:32];
         bs_alt_q <= {crec[29:0], 2'b00};
       end
       if (fd_start) begin
@@ -1992,10 +1982,6 @@ module ppc_core #(
         bs_owner_done_q <= !fd_tok && (!flags_busy ||
           (!flags_waiter && ((commit && (retire_producer == flags_owner)) ||
                              (commit1 && (retire1_producer == flags_owner)))));
-        bs_pred_q <= fold_predict;
-        bs_ctr_ok_q <= 1'b1;
-        bs_bo3_q <= queued.insn[24];
-        bs_bi_q <= queued.insn[20:16];
         bs_alt_q <= {rem0_alt, 2'b00};
       end
     end
@@ -2020,6 +2006,100 @@ module ppc_core #(
                        flags_waiter ? flags_waiter_tag : flags_owner;
   assign carry_start = !recovery_accepted && (carry_d1 || (dispatch && iq_pop && c0_carry)) &&
     !(carry_final && ((bu_cr[5'd31 - crec[36:32]] == crec[37]) == crec[38]));
+  // The predicted branch's condition fields after this edge.
+  logic bs_pred_d, bs_ctr_ok_d, bs_bo3_d;
+  logic [4:0] bs_bi_d;
+  always_comb begin
+    bs_pred_d = bs_pred_q;
+    bs_ctr_ok_d = bs_ctr_ok_q;
+    bs_bo3_d = bs_bo3_q;
+    bs_bi_d = bs_bi_q;
+    if (rst_ni && !recovery_accepted) begin
+      if (dispatch1 && d1_bc && !d1_bc_now) begin
+        bs_pred_d = dq1_folded;
+        bs_ctr_ok_d = 1'b1;
+        bs_bo3_d = dq1_uop.branch_bo[3];
+        bs_bi_d = dq1_uop.branch_bi;
+      end
+      if (dispatch && bu_branch && bu_spec) begin
+        bs_pred_d = bu_pred;
+        bs_ctr_ok_d = bu_ctr_ok;
+        bs_bo3_d = uop.branch_bo[3];
+        bs_bi_d = uop.branch_bi;
+      end
+      if (carry_start) begin
+        bs_pred_d = crec[38];
+        bs_ctr_ok_d = 1'b1;
+        bs_bo3_d = crec[37];
+        bs_bi_d = crec[36:32];
+      end
+      if (fd_start) begin
+        bs_pred_d = fold_predict;
+        bs_ctr_ok_d = 1'b1;
+        bs_bo3_d = queued.insn[24];
+        bs_bi_d = queued.insn[20:16];
+      end
+    end
+  end
+  always_ff @(posedge clk_i) begin
+    bs_pred_q <= bs_pred_d;
+    bs_ctr_ok_q <= bs_ctr_ok_d;
+    bs_bo3_q <= bs_bo3_d;
+    bs_bi_q <= bs_bi_d;
+  end
+  // The owner's CR bit for the predicted and the held branch. With the
+  // result registered at issue, the bit is selected at that edge, so the
+  // redirect in the resolve cycle starts from a flop (UM Figure 6-5).
+  generate
+    if (EXECUTE_AT_E) begin : g_resolve_ahead
+      function automatic logic cond_miss(input logic cr_bit, input logic ctr_ok,
+                                         input logic bo3, input logic pred);
+        return (ctr_ok && (cr_bit == bo3)) != pred;
+      endfunction
+      logic [1:0] held_bi_d;
+      logic iu_bs_miss_q, sru_bs_miss_q, iu_held_bit_q, sru_held_bit_q, held_in_bit;
+      assign held_bi_d = fd_split ? fd1_insn[17:16] :
+                         (fetch_valid && fetch_ready) ? fetched.insn[17:16] :
+                         fd_packet_q.insn[17:16];
+      always_ff @(posedge clk_i) begin
+        iu_bs_miss_q <= cond_miss(iu_cr0_next[2'd3 - bs_bi_d[1:0]], bs_ctr_ok_d, bs_bo3_d,
+                                  bs_pred_d);
+        sru_bs_miss_q <= cond_miss(sru_cr0_next[2'd3 - bs_bi_d[1:0]], bs_ctr_ok_d, bs_bo3_d,
+                                   bs_pred_d);
+        iu_held_bit_q <= iu_cr0_next[2'd3 - held_bi_d];
+        sru_held_bit_q <= sru_cr0_next[2'd3 - held_bi_d];
+      end
+      // A multiply or divide owner's CR forms from its engines.
+      assign bs_in_miss = (owner_crf_valid_q && (owner_crf_q == bs_bi_q[4:2])) ?
+        (sru_cr_offer ? sru_bs_miss_q :
+         iu_long ? cond_miss(iu_result.cr0[2'd3 - bs_bi_q[1:0]], bs_ctr_ok_q, bs_bo3_q,
+                             bs_pred_q) : iu_bs_miss_q) :
+        cond_miss(cr[5'd31 - bs_bi_q], bs_ctr_ok_q, bs_bo3_q, bs_pred_q);
+      assign held_in_bit = sru_cr_offer ? sru_held_bit_q :
+        iu_long ? iu_result.cr0[2'd3 - held_word.insn[17:16]] : iu_held_bit_q;
+      assign held_cr_now = bu_cr_capture ?
+        ((owner_crf_valid_q && (owner_crf_q == held_word.insn[20:18])) ? held_in_bit :
+         cr[5'd31 - held_word.insn[20:16]]) :
+        bu_cr[5'd31 - held_word.insn[20:16]];
+      // synthesis translate_off
+      always @(posedge clk_i)
+        if (rst_ni) begin
+          assert (bs_in_miss == ((bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) != bs_pred_q))
+            else $error("registered branch resolve disagrees with the owner's CR");
+          assert (held_cr_now == selected_cr_bit(held_word.insn[20:16], bu_cr_capture,
+                    owner_crf_valid_q, owner_crf_q, cr, bu_cr, owner_cr0))
+            else $error("registered held-branch CR bit disagrees with the owner's CR");
+        end
+      // synthesis translate_on
+    end else begin : g_resolve_now
+      assign bs_in_miss = (bs_ctr_ok_q && (bs_incoming_bit == bs_bo3_q)) != bs_pred_q;
+      assign held_cr_now = selected_cr_bit(held_word.insn[20:16], bu_cr_capture,
+        owner_crf_valid_q, owner_crf_q, cr, bu_cr, owner_cr0);
+      logic _unused_ahead;
+      assign _unused_ahead = ^{iu_cr0_next, sru_cr0_next, iu_long, bs_pred_d, bs_ctr_ok_d,
+                               bs_bo3_d, bs_bi_d};
+    end
+  endgenerate
   // The youngest CQ entry, a removed predicted branch's anchor.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -2396,11 +2476,32 @@ module ppc_core #(
   assign sru_next_producer = (sru_issue_valid && sru_issue_ready) ?
                              sru_issue.ctrl.producer : sru_result.producer;
   assign lsu_next_producer = lsu_result_load ? lsu_result_load_producer : lsu_result.producer;
+  logic rs_dispatch_valid;
+  rs_entry_t rs_entry_in;
+  assign rs_dispatch_valid = (dispatch && normal_uop && !bu_finished && !c0_sru && !bu_remove) ||
+                             (dispatch1 && d1_iu && (!c0_iu || c0_sru) && !d1_alt_sru);
+  assign rs_entry_in = d1_iu && (!c0_iu || c0_sru) ? rs_entry1 : rs_entry;
+  // The station entry's latency class, registered at capture.
+  generate
+    if (EXECUTE_AT_E) begin : g_one_cycle_q
+      logic rs_one_q;
+      always_ff @(posedge clk_i)
+        if (rs_dispatch_valid && rs_ready) rs_one_q <= one_cycle_op(rs_entry_in.ctrl.op);
+      assign iu_one_cycle = rs_one_q;
+      // synthesis translate_off
+      always @(posedge clk_i)
+        if (rst_ni && issue_valid)
+          assert (rs_one_q == one_cycle_op(issue.ctrl.op))
+            else $error("registered latency class disagrees with the issued op");
+      // synthesis translate_on
+    end else begin : g_one_cycle_decode
+      assign iu_one_cycle = one_cycle_op(issue.ctrl.op);
+    end
+  endgenerate
   ppc_dispatch #(.REGISTERED_FORWARD(EXECUTE_AT_E)) station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
-    .dispatch_valid_i((dispatch && normal_uop && !bu_finished && !c0_sru && !bu_remove) ||
-                      (dispatch1 && d1_iu && (!c0_iu || c0_sru) && !d1_alt_sru)),
-    .dispatch_ready_o(rs_ready), .entry_i(d1_iu && (!c0_iu || c0_sru) ? rs_entry1 : rs_entry),
+    .dispatch_valid_i(rs_dispatch_valid),
+    .dispatch_ready_o(rs_ready), .entry_i(rs_entry_in),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .wake3_valid_i(wake3_valid), .wake3_i(wake3),
     .iu_done_i(iu_result_valid && iu_result_ready),
@@ -2443,7 +2544,8 @@ module ppc_core #(
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid),
     .issue_ready_o(issue_ready),
     .issue_i(issue), .result_valid_o(iu_result_valid), .result_offer_o(iu_result_offer),
-    .result_ready_i(iu_result_ready), .result_o(iu_result)
+    .result_ready_i(iu_result_ready), .result_o(iu_result),
+    .cr0_next_o(iu_cr0_next), .long_o(iu_long)
   );
   // The SRU is a second station and integer unit that only ever receives
   // add and compare forms. Its results, which never fault, finish on the
@@ -2480,7 +2582,9 @@ module ppc_core #(
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
         .result_valid_o(sru_result_valid), .result_offer_o(sru_result_offer),
         .result_ready_i(sru_result_ready),
-        .result_o(sru_result)
+        .result_o(sru_result),
+        .cr0_next_o(sru_cr0_next),
+        /* verilator lint_off PINCONNECTEMPTY */ .long_o() /* verilator lint_on PINCONNECTEMPTY */
       );
       assign sru_idle = sru_rs_ready && !sru_issue_valid && sru_issue_ready &&
                         !sru_result_valid;
@@ -2494,6 +2598,7 @@ module ppc_core #(
       assign sru_result_valid = 1'b0;
       assign sru_result_offer = 1'b0;
       assign sru_result = '0;
+      assign sru_cr0_next = '0;
       assign sru_idle = 1'b1;
     end
   endgenerate
