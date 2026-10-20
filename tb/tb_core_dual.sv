@@ -475,6 +475,9 @@ module tb_core_dual #(
     $finish;
   endtask
   int port1_exec=0, port1_contention=0, port1_timer=0, port1_timer_lsu=0;
+  // A load/store unit register result this cycle.
+  logic lsu_reg;
+  assign lsu_reg = dut.lsu_result_offer && !dut.lsu_result_store;
   int port1_suffix_retired=0;
   logic [31:0] port1_suffix_next=32'h140;
   task automatic take(input retire_packet_t p, input int slot);
@@ -522,32 +525,27 @@ module tb_core_dual #(
       if (PORT1_STRESS && $test$plusargs("PORT1_DEBUG") &&
           ((dut.iq_head.pc >= 32'h140 && dut.iq_head.pc < 32'h180) ||
            (dut.iq_head.pc >= 32'h140 &&
-            (dut.sru_issue_go || (dut.special_result_valid && dut.lsu_port0)))))
+            (dut.sru_issue_go || (dut.special_result_valid && lsu_reg)))))
         $display("P1DBG cy=%0d iq=%h/%h disp=%b%b lanePC=%h state=%0d heldmove=%b lane=%b specialV/R/ok=%b%b%b LSUoffer/valid/p0=%b%b%b SRUoffer=%b request=%b%b addr=%h rsp=%b%b retire=%b:%h/%b:%h",
           cycle,dut.iq_head.pc,dut.dq1_head.pc,dut.dispatch,dut.dispatch1,
           dut.special.pc_q,dut.special.state_q,dut.sru_hold_q,dut.sru_in_lane,
           dut.special_result_valid,dut.special_result_ready,dut.special.result_port1_o,
-          dut.lsu_result_offer,dut.lsu_result_valid,dut.lsu_port0,dut.sru_result_offer,
+          dut.lsu_result_offer,dut.lsu_result_valid,lsu_reg,dut.sru_result_offer,
           dv,dr,da,rv,rr,retire_valid,retired.pc,retire1_valid,retired1.pc);
 
       if (PORT1_STRESS) begin
-        // Observe the original public-producer qualification, independent of
-        // the proposed complete-offer output. No new RTL signal is required.
+        // A special result beside a load/store unit result, and beside an
+        // SRU result too, finishes at once on its own port.
         if (dut.special_result_valid && dut.special.result_port1_o &&
-            dut.special_result_select && dut.lsu_port0) begin
-          if (dut.sru_result_offer) begin
-            port1_contention++;
-            if (dut.special_port1 || dut.result1 !== dut.sru_result)
-              $fatal(1,"SRU priority/payload changed");
-          end else begin
-            if (!dut.special_port1 || dut.result1 !== dut.special_result)
-              $fatal(1,"special port1 grant/payload changed");
-            if (dut.special.timer_read) port1_timer_lsu++;
-            else port1_exec++;
-          end
+            dut.special_result_select && lsu_reg) begin
+          if (!dut.special_result_ready || dut.result !== dut.special_result)
+            $fatal(1,"special result waited beside a load/store unit result");
+          if (dut.sru_result_offer) port1_contention++;
+          else if (dut.special.timer_read) port1_timer_lsu++;
+          else port1_exec++;
         end
         if (dut.special_result_valid && dut.special_result_ready &&
-            dut.special.timer_read && !dut.lsu_port0) port1_timer++;
+            dut.special.timer_read && !lsu_reg) port1_timer++;
       end
       assert (!halted && !(retire_valid && retired.illegal)) else $fatal(1, "unexpected fault at %08x insn %08x", retired.pc, retired.insn);
       if (dut.dispatch && (dcycle.exists(int'(dut.iq_head.pc)) == 0)) begin

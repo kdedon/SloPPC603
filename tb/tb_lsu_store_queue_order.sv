@@ -62,6 +62,7 @@ module tb_lsu_store_queue_order #(parameter bit ALLOW_MISALIGNED=1'b1);
       .pc_i(pc),.insn_i(insn),.ea_i(ea),.data_i(data),.base_snoop_i(base_snoop),
       .base_i(base),.offset_i(offset),.dr_i(dr),.wake_valid_i(wake_valid),.wake1_valid_i(wake1_valid),
       .wake_i(wake),.wake1_i(wake1),.wake_early_value_i(early0),.wake1_early_value_i(early1),
+      .wake3_valid_i(1'b0),.wake3_i('0),.wake3_early_value_i(32'b0),
       .fp_i(fp),.fp_store_i(fp_store),.fp_double_i(fp_double),.fp_launch_valid_i(fp_launch_valid),
       .fp_launch_tag_i(fp_launch_tag),.fp_store_valid_i(fp_store_valid),
       .fp_store_tag_o(observed.fp_store_tag),.fp_store_data_i(fp_store_data),.le_i(le),

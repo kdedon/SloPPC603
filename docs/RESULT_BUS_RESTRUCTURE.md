@@ -47,8 +47,9 @@ projection probe. No unit waits on another unit's result.
 
 ## Wake validity without cancel
 
-A wake needs only its producer's own offer and CQ ownership (active, not
-done, exact generation); it carries no recovery-kill or unit-cancel term.
+Unit offers already reach the CQ without the unit cancel. The next step drops
+the CQ's recovery-kill term from the wakes too, so a wake needs only its
+producer's offer and CQ ownership (active, not done, exact generation).
 This is safe because a recovery removes a contiguous younger suffix of the
 CQ, and every consumer of a producer is younger than it:
 
