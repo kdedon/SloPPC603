@@ -4,15 +4,17 @@
 /* verilator lint_off BLKSEQ */
 module tb_iq;
   logic clk = 1'b0;
-  logic done6, done7;
+  logic done6, done7, ring6, ring7;
   always #5 clk = ~clk;
   tb_iq_case #(.DEPTH(6)) depth6 (.clk_i(clk), .done_o(done6));
   // Covers count-width wrap at a full 2^n - 1 depth as well.
   tb_iq_case #(.DEPTH(7)) depth7 (.clk_i(clk), .done_o(done7));
+  tb_iq_case #(.DEPTH(6), .RING(1'b1)) ring_depth6 (.clk_i(clk), .done_o(ring6));
+  tb_iq_case #(.DEPTH(7), .RING(1'b1)) ring_depth7 (.clk_i(clk), .done_o(ring7));
   initial begin
     @(posedge clk);
     #1;
-    wait (done6 && done7);
+    wait (done6 && done7 && ring6 && ring7);
     $finish;
   end
 endmodule

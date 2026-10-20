@@ -3,7 +3,7 @@
 `default_nettype none
 /* verilator lint_off BLKSEQ */
 
-module tb_iq_case #(parameter int DEPTH = 6) (
+module tb_iq_case #(parameter int DEPTH = 6, parameter bit RING = 1'b0) (
   input logic clk_i,
   output logic done_o
 );
@@ -19,7 +19,7 @@ module tb_iq_case #(parameter int DEPTH = 6) (
   logic [WIDTH-1:0] model[$];
   int serial, checks;
 
-  ppc_iq #(.WIDTH(WIDTH), .DEPTH(DEPTH), .REC_W(REC_W), .FOLD_BIT(FOLD_BIT)) dut (
+  ppc_iq #(.WIDTH(WIDTH), .RING(RING), .DEPTH(DEPTH), .REC_W(REC_W), .FOLD_BIT(FOLD_BIT)) dut (
     .clk_i, .rst_ni(rst_n), .clear_i(clear), .flush_i(flush),
     .push_valid_i(push), .push_ready_o(ready), .push2_ready_o(ready2),
     .push0_data_i(data0), .push1_data_i(data1), .push_lane1_i(lane1),
@@ -124,7 +124,7 @@ module tb_iq_case #(parameter int DEPTH = 6) (
                 while (model.size() > 0)
                   step(2'b00, 2'b11, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0);
               end
-    $display("PASS: IQ depth=%0d, %0d independent queue checks", DEPTH, checks);
+    $display("PASS: IQ depth=%0d ring=%0d, %0d independent queue checks", DEPTH, RING, checks);
     done_o = 1'b1;
   end
 endmodule

@@ -25,6 +25,9 @@
 `ifndef PPC_EXECUTE_AT_E
 `define PPC_EXECUTE_AT_E 1'b0
 `endif
+`ifndef PPC_IQ_RING
+`define PPC_IQ_RING 1'b0
+`endif
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
   // Part the build models; see cpu_cfg().
@@ -139,7 +142,11 @@ module ppc_core #(
   // and register the result at the issue edge, so post-execute logic starts
   // from flops at unchanged edges. Benches may set the default with
   // +define+PPC_EXECUTE_AT_E=1'b1.
-  parameter bit EXECUTE_AT_E = `PPC_EXECUTE_AT_E
+  parameter bit EXECUTE_AT_E = `PPC_EXECUTE_AT_E,
+  // 1: the IQ keeps entries in a circular buffer and copies the two oldest
+  // into registered dispatch slots; dispatch timing is unchanged. Benches
+  // may set the default with +define+PPC_IQ_RING=1'b1.
+  parameter bit IQ_RING = `PPC_IQ_RING
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -1296,7 +1303,7 @@ module ppc_core #(
     {queued, iq_pack(push_uop, queued.insn), fold_predict, push_branch, push_pair,
      fetch_removed_q, push_rec};
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W),
-           .DEPTH(IQ_DEPTH), .REC_W(BREC_W),
+           .RING(IQ_RING), .DEPTH(IQ_DEPTH), .REC_W(BREC_W),
            .FOLD_BIT(BREC_W + 6 + $bits(iq_pair_t))) iq (
     .clk_i, .rst_ni, .clear_i(fe_clear), .flush_i(bs_now),
     .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
