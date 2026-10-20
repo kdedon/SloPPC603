@@ -474,8 +474,10 @@ module ppc_completion #(
       end
     end
   end
-  // Each candidate is qualified as the port's result would be; the owner
-  // only selects. The port's own mux carries the payload.
+  // Each candidate is qualified as the port's result would be, except that
+  // wakes ignore the recovery kill: every consumer is younger than its
+  // producer and dies by the same kill, and rename rebuilds from survivors.
+  // The owner only selects; the port's own mux carries the payload.
   always_comb begin
     wake_valid_o = 1'b0;
     wake_o = '0;
@@ -488,7 +490,7 @@ module ppc_completion #(
       ok = wake_cand_valid_i[k] && (idx < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
            active_q[idx] && !done_q[idx] &&
            (generations_q[idx] == wake_cand_i[k].producer.generation) &&
-           !redirect_kill_o[idx] && packets_q[idx].gpr_write &&
+           packets_q[idx].gpr_write &&
            !wake_cand_i[k].fault && (wake_cand_i[k].data_fault == DATA_OK);
       if (wake_sel_i[k]) begin
         wake_valid_o = ok;
@@ -498,12 +500,13 @@ module ppc_completion #(
   end
 
   always_comb begin
-    finish1_accept = result1_valid_i &&
+    logic owned1, owned3;
+    owned1 = result1_valid_i &&
       (result1_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
       active_q[result1_i.producer.index] && !done_q[result1_i.producer.index] &&
-      (generations_q[result1_i.producer.index] == result1_i.producer.generation) &&
-      !redirect_kill_o[result1_i.producer.index];
-    wake1_valid_o = finish1_accept && packets_q[result1_i.producer.index].gpr_write;
+      (generations_q[result1_i.producer.index] == result1_i.producer.generation);
+    finish1_accept = owned1 && !redirect_kill_o[result1_i.producer.index];
+    wake1_valid_o = owned1 && packets_q[result1_i.producer.index].gpr_write;
     wake1_o.producer = result1_i.producer;
     wake1_o.tag = packets_q[result1_i.producer.index].tag;
     wake1_o.value = result1_i.value;
@@ -513,12 +516,12 @@ module ppc_completion #(
       active_q[result2_i.producer.index] && !done_q[result2_i.producer.index] &&
       (generations_q[result2_i.producer.index] == result2_i.producer.generation) &&
       !redirect_kill_o[result2_i.producer.index];
-    finish3_accept = result3_valid_i &&
+    owned3 = result3_valid_i &&
       (result3_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
       active_q[result3_i.producer.index] && !done_q[result3_i.producer.index] &&
-      (generations_q[result3_i.producer.index] == result3_i.producer.generation) &&
-      !redirect_kill_o[result3_i.producer.index];
-    wake3_valid_o = finish3_accept && packets_q[result3_i.producer.index].gpr_write &&
+      (generations_q[result3_i.producer.index] == result3_i.producer.generation);
+    finish3_accept = owned3 && !redirect_kill_o[result3_i.producer.index];
+    wake3_valid_o = owned3 && packets_q[result3_i.producer.index].gpr_write &&
       !result3_i.fault && (result3_i.data_fault == DATA_OK);
     wake3_o.producer = result3_i.producer;
     wake3_o.tag = packets_q[result3_i.producer.index].tag;
