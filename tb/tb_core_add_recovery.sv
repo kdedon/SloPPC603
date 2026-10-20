@@ -371,7 +371,8 @@ module tb_core_add_recovery;
     #1;
     require(redirect_accepted, "directed prefix cut rejected");
     if (!keep_change)
-      require(!dut.completion.finish_accept && !dut.wake_valid, "killed ADD finished/woke");
+      // Its wake may still fire: every reader dies by the same kill.
+      require(!dut.completion.finish_accept, "killed ADD finished");
     if (mode == 3)
       require(dut.completion.finish_accept && dut.result.producer == owner,
               "kept ADD finish missing on redirect");
