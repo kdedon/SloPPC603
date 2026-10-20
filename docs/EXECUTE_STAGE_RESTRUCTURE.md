@@ -85,6 +85,56 @@ IU result feeds the SRU's. With both units executing at E these are flop
 starts. With only one converted, the other unit's ALU sits in front of the
 converted unit's ALU, so both convert together under one parameter.
 
+## Fit after step A
+
+A matched CPU-only fit of step A (c887c01: hints, width 2, LSU pipe, no FPU,
+seed 1, 66 MHz constraint) gave 41.64 MHz slow corner (−8.862 ns) and
+24,569 ALMs, against 44.5 MHz and about 23.2k ALMs before. The worst
+endpoints are CQ `generations_q` → LSU `sq_q[0].committed` and IQ entries →
+LSU `p1_q[0].ea`. The fourth wake bus added a third base sum to P1's
+same-cycle snoop, which costs more than the removed steering. Step B
+therefore also covers the LSU and the CQ, and must not widen any
+same-cycle forwarding mux.
+
+### LSU P1 forms its EA from registers
+
+Today a ready-base load adds base and displacement in the dispatch cycle
+(dispatch cone → adder → `p1_q.ea`), and a waiting base adds every wake
+bus to the displacement in parallel and selects late (wake → adder →
+request address → D-µTLB).
+
+Step B: dispatch captures into P1 the displacement, the base value when
+ready, and otherwise a one-hot source select registered at dispatch: the
+producing unit is known from the base's rename owner, and each unit now
+has a fixed bus. In P1's own cycle the base is a registered-select mux of
+flops (the P1 base register, the IU, SRU or LSU result flop), followed by
+one adder, the request address and the D-µTLB. Only the access's valid
+waits on the wake match; the address cone carries no compare. This is
+the manual's LSU first stage, EA and translation in one cycle after the
+operands are latched (UM 6.4.4).
+
+Cycle counts:
+
+| Case | Today | Step B |
+|---|---|---|
+| Ready base | EA formed in the dispatch cycle, captured at D | EA formed in `[D, D+1)`; the same offer edge only if today's access offers from `p1_q` in that cycle (to confirm with `test-core-lsu-timing` before B3a) |
+| `addi`/`lwz` then a load on its base (Table 6-6, 2 cycles) | snoop sums the bus in the producer's result cycle | sums the producer's result flop in that same cycle: unchanged |
+| Snoop removed, base read after writeback | — | 3 cycles: one more than Table 6-6 |
+
+So removing the base snoop outright (the old `LSU_BASE_SNOOP=0` wait) does
+not keep manual counts; forming the EA in P1 from a registered select does,
+and it needs one adder instead of one per bus. The wake3 leg goes away as
+a separate sum.
+
+### CQ finish ownership from a register
+
+`generations_q` → finish → head retire → store commit is the other worst
+endpoint. A unit learns its producer at issue; the CQ can compare that
+producer's ownership then and register an `owned` bit beside the result
+flop. Ownership is lost only by an accepted kill, so finish acceptance
+becomes `owned_q && !kill[index]` and the generation compare leaves the
+retire and commit cone.
+
 ## Recovery and ownership
 
 The result flops belong to `held`'s producer and are qualified by the same
@@ -102,6 +152,8 @@ the same kill vector and rename rebuilds from survivors.
 | B3 | Station LSU/SRU forward selects registered at capture/wake, like `bypass_a/b` | `rtl/ppc_dispatch.sv` | `test-dispatch-*`, core LSU and dual benches |
 | B4 | Stage-timing bench samples the result flops for the trace's value; TD-02 and STAGE_TIMING state the step B intervals | `tb/tb_stage_timing.sv`, `docs/TIMING_DECISIONS.md`, `docs/STAGE_TIMING.md` | `test-stage`, `check-spec` |
 | B5 | Default on; fit the CPU-only and MiSTer tops | `rtl/ppc_core.sv` | full gate by the coordinator |
+| B3a | LSU P1: displacement, base value or registered bus select at dispatch; EA, request address and D-µTLB in P1's cycle from flops; drop the per-bus snoop sums | `rtl/ppc_lsu_pipe.sv`, `rtl/ppc_core.sv` | `test-core-lsu-timing-snoop`, `test-core-lsu-*`, `test-core-dcache-lsu-pipe`, MiSTer config |
+| B3b | CQ registers the finish ownership check at issue | `rtl/ppc_completion.sv`, `rtl/ppc_iu.sv` | `test-completion*`, `test-recovery-*` |
 | B6 | Retire `MISPREDICT_FETCH_NOW=0` and `LSU_BASE_SNOOP=0` if the fit shows the flop-start chains meet 66 MHz | `rtl/ppc_core.sv` | branch and LSU timing benches |
 
 Each step keeps the parameter off by default until B5, so main stays green.
