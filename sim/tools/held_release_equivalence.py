@@ -230,8 +230,16 @@ def actual_function(source, name):
     return matches[0]
 
 
+# Generate blocks that exist only with EXECUTE_AT_E; the check covers the default.
+EXECUTE_AT_E_BLOCKS = {"g_resolve_ahead"}
+
+
 def actual_assignment(source, name):
-    matches = re.findall(r"  assign " + name + r"\s*=.*?;", source, re.S)
+    matches = []
+    for m in re.finditer(r"^ +assign " + name + r"\s*=.*?;", source, re.S | re.M):
+        labels = re.findall(r"begin : (\w+)", source[:m.start()])
+        if not labels or labels[-1] not in EXECUTE_AT_E_BLOCKS:
+            matches.append(m[0].strip())
     if len(matches) != 1:
         raise ValueError("expected one continuous assignment: " + name)
     return matches[0]
