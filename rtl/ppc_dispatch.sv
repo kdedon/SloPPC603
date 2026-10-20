@@ -10,7 +10,11 @@
 // and a result on the second forward port, are taken the same way in the
 // cycle they finish. Any other wake is captured and issues one cycle later.
 // Sources arrive already resolved against a same-cycle wake.
-module ppc_dispatch (
+module ppc_dispatch #(
+  // Set: the load/store and forward-port operand selects are registered,
+  // compared at the edge before from each source's next producer.
+  parameter bit REGISTERED_FORWARD = 1'b0
+) (
   input logic clk_i, rst_ni,
   input logic cancel_i,
   input logic dispatch_valid_i,
@@ -35,10 +39,13 @@ module ppc_dispatch (
   input logic lsu_done_i,
   input ppc_pkg::completion_tag_t lsu_producer_i,
   input logic [31:0] lsu_value_i,
+  // The load/store source's producer after this edge.
+  input ppc_pkg::completion_tag_t lsu_next_producer_i,
   // Another unit's result finishing this cycle.
   input logic fwd_done_i,
   input ppc_pkg::completion_tag_t fwd_producer_i,
   input logic [31:0] fwd_value_i,
+  input ppc_pkg::completion_tag_t fwd_next_producer_i,
   output logic issue_valid_o,
   input logic issue_ready_i,
   output ppc_pkg::issue_packet_t issue_o
@@ -110,10 +117,35 @@ module ppc_dispatch (
     if (issue_fire) return producer == entry.ctrl.producer;
     return !issue_ready_i && (producer == iu_producer_i);
   endfunction
-  assign lsu_a = lsu_done_i && !entry.a.ready && (entry.a.producer == lsu_producer_i);
-  assign lsu_b = lsu_done_i && !entry.b.ready && (entry.b.producer == lsu_producer_i);
-  assign fwd_a = fwd_done_i && !entry.a.ready && (entry.a.producer == fwd_producer_i);
-  assign fwd_b = fwd_done_i && !entry.b.ready && (entry.b.producer == fwd_producer_i);
+  // Operand producer matches against each source, registered.
+  logic lsu_match_a_q, lsu_match_b_q, fwd_match_a_q, fwd_match_b_q;
+  logic lsu_match_a, lsu_match_b, fwd_match_a, fwd_match_b;
+  always_ff @(posedge clk_i) begin
+    completion_tag_t next_a, next_b;
+    next_a = capture_fire ? entry_i.a.producer : entry.a.producer;
+    next_b = capture_fire ? entry_i.b.producer : entry.b.producer;
+    lsu_match_a_q <= next_a == lsu_next_producer_i;
+    lsu_match_b_q <= next_b == lsu_next_producer_i;
+    fwd_match_a_q <= next_a == fwd_next_producer_i;
+    fwd_match_b_q <= next_b == fwd_next_producer_i;
+  end
+  assign lsu_match_a = REGISTERED_FORWARD ? lsu_match_a_q : entry.a.producer == lsu_producer_i;
+  assign lsu_match_b = REGISTERED_FORWARD ? lsu_match_b_q : entry.b.producer == lsu_producer_i;
+  assign fwd_match_a = REGISTERED_FORWARD ? fwd_match_a_q : entry.a.producer == fwd_producer_i;
+  assign fwd_match_b = REGISTERED_FORWARD ? fwd_match_b_q : entry.b.producer == fwd_producer_i;
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && REGISTERED_FORWARD && occupied)
+      assert ((lsu_match_a_q == (entry.a.producer == lsu_producer_i)) &&
+              (lsu_match_b_q == (entry.b.producer == lsu_producer_i)) &&
+              (fwd_match_a_q == (entry.a.producer == fwd_producer_i)) &&
+              (fwd_match_b_q == (entry.b.producer == fwd_producer_i)))
+        else $error("registered forward select disagrees with its source");
+  // synthesis translate_on
+  assign lsu_a = lsu_done_i && !entry.a.ready && lsu_match_a;
+  assign lsu_b = lsu_done_i && !entry.b.ready && lsu_match_b;
+  assign fwd_a = fwd_done_i && !entry.a.ready && fwd_match_a;
+  assign fwd_b = fwd_done_i && !entry.b.ready && fwd_match_b;
   assign ready_a = entry.a.ready || (bypass_a && iu_done_i) || lsu_a || fwd_a;
   assign ready_b = entry.b.ready || (bypass_b && iu_done_i) || lsu_b || fwd_b;
   assign issue_valid_o = !cancel_i && occupied && ready_a && ready_b;

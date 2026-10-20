@@ -19,8 +19,8 @@ module tb_dispatch_late;
     .dispatch_valid_i(dispatch_valid),.dispatch_ready_o(dispatch_ready),.entry_i(incoming),
     .wake_valid_i(wake_valid),.wake_i(wake),.wake1_valid_i(wake1_valid),.wake1_i(wake1), .wake3_valid_i(1'b0), .wake3_i('0),
     .iu_done_i(iu_done),.iu_producer_i(iu_owner),.iu_value_i(iu_value),
-    .lsu_done_i(lsu_done),.lsu_producer_i(lsu_owner),.lsu_value_i(lsu_value),
-    .fwd_done_i(fwd_done),.fwd_producer_i(fwd_owner),.fwd_value_i(fwd_value),
+    .lsu_done_i(lsu_done),.lsu_producer_i(lsu_owner),.lsu_value_i(lsu_value), .lsu_next_producer_i('0),
+    .fwd_done_i(fwd_done),.fwd_producer_i(fwd_owner),.fwd_value_i(fwd_value), .fwd_next_producer_i('0),
     .issue_valid_o(issue_valid),.issue_ready_i(issue_ready),.issue_o(issue_packet)
   );
   task automatic require(input logic ok,input string why);

@@ -91,14 +91,14 @@ module tb_execution;
     dp_entry.b = dp_b;
   end
   ppc_dispatch dispatch_dut (
-    .fwd_done_i(dp_fwd_done), .fwd_producer_i(dp_fwd_producer), .fwd_value_i(dp_fwd_value),
+    .fwd_done_i(dp_fwd_done), .fwd_producer_i(dp_fwd_producer), .fwd_value_i(dp_fwd_value), .fwd_next_producer_i('0),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(dp_valid), .dispatch_ready_o(dp_ready),
     .entry_i(dp_entry),
     .wake_valid_i(dp_wake_valid), .wake_i(dp_wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake3_valid_i(1'b0), .wake3_i('0),
     .iu_done_i(iu_result_valid && iu_result_ready),
     .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
-    .lsu_done_i(dp_lsu_done), .lsu_producer_i(dp_lsu_producer), .lsu_value_i(dp_lsu_value),
+    .lsu_done_i(dp_lsu_done), .lsu_producer_i(dp_lsu_producer), .lsu_value_i(dp_lsu_value), .lsu_next_producer_i('0),
     .issue_valid_o(dp_issue_valid), .issue_ready_i(dp_issue_ready),
     .issue_o(dp_issue)
   );
@@ -117,13 +117,13 @@ module tb_execution;
   issue_packet_t ln_issue;
   result_packet_t ln_result;
   ppc_dispatch linked_dut (
-    .fwd_done_i(dp_fwd_done), .fwd_producer_i(dp_fwd_producer), .fwd_value_i(dp_fwd_value),
+    .fwd_done_i(dp_fwd_done), .fwd_producer_i(dp_fwd_producer), .fwd_value_i(dp_fwd_value), .fwd_next_producer_i('0),
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(ln_valid), .dispatch_ready_o(ln_ready),
     .entry_i(ln_entry), .wake_valid_i(1'b0), .wake_i('0), .wake1_valid_i(1'b0), .wake1_i('0), .wake3_valid_i(1'b0), .wake3_i('0),
     .iu_done_i(ln_result_valid && ln_result_ready),
     .iu_producer_i(ln_result.producer), .iu_value_i(ln_result.value),
-    .lsu_done_i(dp_lsu_done), .lsu_producer_i(dp_lsu_producer), .lsu_value_i(dp_lsu_value),
+    .lsu_done_i(dp_lsu_done), .lsu_producer_i(dp_lsu_producer), .lsu_value_i(dp_lsu_value), .lsu_next_producer_i('0),
     .issue_valid_o(ln_issue_valid), .issue_ready_i(ln_issue_ready),
     .issue_o(ln_issue)
   );

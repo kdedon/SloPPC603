@@ -2391,7 +2391,12 @@ module ppc_core #(
   logic iu_cr_hold, sru_cr_hold, rs_issue_valid;
   assign iu_cr_hold = flags_waiter && !waiter_sru_q;
   assign sru_cr_hold = flags_waiter && waiter_sru_q;
-  ppc_dispatch station (
+  // Each source's result producer after this edge.
+  completion_tag_t sru_next_producer, lsu_next_producer;
+  assign sru_next_producer = (sru_issue_valid && sru_issue_ready) ?
+                             sru_issue.ctrl.producer : sru_result.producer;
+  assign lsu_next_producer = lsu_result_load ? lsu_result_load_producer : lsu_result.producer;
+  ppc_dispatch #(.REGISTERED_FORWARD(EXECUTE_AT_E)) station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
     .dispatch_valid_i((dispatch && normal_uop && !bu_finished && !c0_sru && !bu_remove) ||
                       (dispatch1 && d1_iu && (!c0_iu || c0_sru) && !d1_alt_sru)),
@@ -2404,10 +2409,12 @@ module ppc_core #(
     .lsu_done_i(SRU_TO_IU ? sru_result_valid : lsu_result_valid),
     .lsu_producer_i(SRU_TO_IU ? sru_result.producer : lsu_result.producer),
     .lsu_value_i(SRU_TO_IU ? sru_result.value : lsu_result.value),
+    .lsu_next_producer_i(SRU_TO_IU ? sru_next_producer : lsu_next_producer),
     // With it, SRU results take the second forward port (UM 6.3.1 feed
     // forwarding).
     .fwd_done_i(HAS_SRU && !SRU_TO_IU && sru_result_valid && sru_result_ready),
     .fwd_producer_i(sru_result.producer), .fwd_value_i(sru_result.value),
+    .fwd_next_producer_i(sru_next_producer),
     .issue_valid_o(rs_issue_valid), .issue_ready_i(issue_ready && !iu_cr_hold), .issue_o(issue)
   );
   assign issue_valid = rs_issue_valid && !iu_cr_hold;
@@ -2446,7 +2453,10 @@ module ppc_core #(
       logic sru_rs_issue_valid;
       logic sru_fwd_iu;
       assign sru_fwd_iu = iu_result_valid && iu_result_ready;
-      ppc_dispatch sru_station (
+      completion_tag_t iu_next_producer;
+      assign iu_next_producer = (issue_valid && issue_ready) ? issue.ctrl.producer :
+                                iu_result.producer;
+      ppc_dispatch #(.REGISTERED_FORWARD(EXECUTE_AT_E)) sru_station (
         .clk_i, .rst_ni, .cancel_i(sru_rs_cancel),
         .dispatch_valid_i((dispatch && c0_sru) || (dispatch1 && d1_iu && ((c0_iu && !c0_sru) || d1_alt_sru))),
         .dispatch_ready_o(sru_rs_ready), .entry_i(c0_sru ? rs_entry : rs_entry1),
@@ -2457,9 +2467,9 @@ module ppc_core #(
         // IU and load results reach the SRU in the cycle they finish (UM
         // 6.3.1 feed forwarding).
         .lsu_done_i(lsu_result_valid), .lsu_producer_i(lsu_result.producer),
-        .lsu_value_i(lsu_result.value),
+        .lsu_value_i(lsu_result.value), .lsu_next_producer_i(lsu_next_producer),
         .fwd_done_i(sru_fwd_iu), .fwd_producer_i(iu_result.producer),
-        .fwd_value_i(iu_result.value),
+        .fwd_value_i(iu_result.value), .fwd_next_producer_i(iu_next_producer),
         .issue_valid_o(sru_rs_issue_valid), .issue_ready_i(sru_issue_ready && !sru_cr_hold),
         .issue_o(sru_issue)
       );
