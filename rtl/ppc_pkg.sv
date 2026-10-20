@@ -85,8 +85,8 @@ package ppc_pkg;
   // Source order: stored P1/special, wake0 sum, wake1 sum, queued store.
   typedef struct packed {
     logic use_lookup;
-    logic [1:0] source;
-    logic [3:0][19:0] page;
+    logic [2:0] source;
+    logic [4:0][19:0] page;
   } dtlb_projection_t;
   // Fetch-borne events. FETCH_MACHINE_CHECK is a bus TEA on the fetch;
   // FETCH_TEA_REPEAT a 603 refetch that took TEA again with the machine

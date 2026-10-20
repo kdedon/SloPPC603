@@ -21,6 +21,11 @@ module ppc_dispatch (
   // Second wake bus (the SRU's finish port).
   input logic wake1_valid_i,
   input ppc_pkg::wake_packet_t wake1_i,
+  // Load/store unit wake bus; never late.
+  input logic wake3_valid_i,
+  /* verilator lint_off UNUSEDSIGNAL */
+  input ppc_pkg::wake_packet_t wake3_i,
+  /* verilator lint_on UNUSEDSIGNAL */
   // IU result accepted this cycle. The producer is valid while the IU holds
   // an op.
   input logic iu_done_i,
@@ -55,6 +60,11 @@ module ppc_dispatch (
         pending.producer == wake1_i.producer) begin
       operand.ready = 1'b1;
       operand.value = wake1_i.value;
+    end
+    if (!pending.ready && wake3_valid_i && pending.tag == wake3_i.tag &&
+        pending.producer == wake3_i.producer) begin
+      operand.ready = 1'b1;
+      operand.value = wake3_i.value;
     end
     return operand;
   endfunction

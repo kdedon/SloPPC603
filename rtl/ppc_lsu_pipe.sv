@@ -68,6 +68,12 @@ module ppc_lsu_pipe #(
   input  ppc_pkg::wake_packet_t wake_i, wake1_i,
   // wake_i.value and wake1_i.value while the wake is not late.
   input  logic [31:0] wake_early_value_i, wake1_early_value_i,
+  // This unit's own register results; never late.
+  input  logic wake3_valid_i,
+  /* verilator lint_off UNUSEDSIGNAL */
+  input  ppc_pkg::wake_packet_t wake3_i,
+  /* verilator lint_on UNUSEDSIGNAL */
+  input  logic [31:0] wake3_early_value_i,
   // FP access: store and doubleword forms.
   input  logic fp_i, fp_store_i, fp_double_i,
   // The FPU has launched the memory form with this tag.
@@ -455,15 +461,17 @@ module ppc_lsu_pipe #(
   // FPU presents its data.
   // Store data written this cycle is used at once, a late wake's from the
   // next cycle.
-  logic head_wake, head_wake1, head_data_ready;
+  logic head_wake, head_wake1, head_wake3, head_data_ready;
   logic [31:0] head_data;
   assign head_wake = wake_valid_i && !wake_i.late && (wake_i.tag == p1_head.data_tag) &&
                      (wake_i.producer == p1_head.data_producer);
   assign head_wake1 = wake1_valid_i && !wake1_i.late && (wake1_i.tag == p1_head.data_tag) &&
                       (wake1_i.producer == p1_head.data_producer);
-  assign head_data_ready = p1_head.data_ready || head_wake || head_wake1;
+  assign head_wake3 = wake3_valid_i && (wake3_i.tag == p1_head.data_tag) &&
+                      (wake3_i.producer == p1_head.data_producer);
+  assign head_data_ready = p1_head.data_ready || head_wake || head_wake1 || head_wake3;
   assign head_data = p1_head.data_ready ? p1_head.data :
-                     head_wake ? wake_i.value : wake1_i.value;
+                     head_wake ? wake_i.value : head_wake1 ? wake1_i.value : wake3_i.value;
   assign fp_store_tag_o = p1_head.producer;
   logic conv_store, conv_store_wait, conv_load, conv_load_wait;
   logic [4:0] conv_store_cycles, conv_load_cycles, conv_store_q, conv_load_q;
@@ -493,21 +501,27 @@ module ppc_lsu_pipe #(
   // A waiting head's EA from the base written this cycle; both sums are
   // formed while the tags compare.
   localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
-  logic head_match0, head_match1, head_base0, head_base1, head_base_ready, head_fast;
-  logic [31:0] head_ea, base_sum0, base_sum1;
+  logic head_match0, head_match1, head_match3, head_base0, head_base1, head_base3;
+  logic head_base_ready, head_fast;
+  logic [31:0] head_ea, base_sum0, base_sum1, base_sum3;
   assign head_match0 = BASE_SNOOP && !wake_i.late && (wake_i.tag == p1_head.base_tag) &&
                        (wake_i.producer == p1_head.base_producer);
   assign head_match1 = BASE_SNOOP && !wake1_i.late && (wake1_i.tag == p1_head.base_tag) &&
                        (wake1_i.producer == p1_head.base_producer);
   assign head_base0 = wake_valid_i && head_match0;
+  assign head_match3 = BASE_SNOOP && (wake3_i.tag == p1_head.base_tag) &&
+                       (wake3_i.producer == p1_head.base_producer);
   assign head_base1 = wake1_valid_i && head_match1;
+  assign head_base3 = wake3_valid_i && head_match3;
   assign base_sum0 = wake_early_value_i + p1_head.offset;
   assign base_sum1 = wake1_early_value_i + p1_head.offset;
-  assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
+  assign base_sum3 = wake3_early_value_i + p1_head.offset;
+  assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1 || head_base3;
   // Inactive producer metadata can alias a live owner after generation wrap.
   // Select only a valid wake, retaining port-zero priority when both arrive.
   assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :
-                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 : p1_head.ea;
+                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 :
+                   (BASE_SNOOP && p1_head.base_wait && head_base3) ? base_sum3 : p1_head.ea;
   assign head_fast = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.fast :
     (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
      !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
@@ -621,27 +635,37 @@ module ppc_lsu_pipe #(
       assign data_page_projection_o.page[1] = base_sum0[31:12];
       assign data_page_projection_o.page[2] = base_sum1[31:12];
       assign data_page_projection_o.page[3] = sq_head.addr[31:12];
+      assign data_page_projection_o.page[4] = base_sum3[31:12];
       always_comb begin
         data_page_projection_o.use_lookup = 1'b0;
-        data_page_projection_o.source = 2'd0;
+        data_page_projection_o.source = 3'd0;
         case (sq_offer)
           1'b1: begin
             data_page_projection_o.use_lookup = 1'b1;
-            data_page_projection_o.source = 2'd3;
+            data_page_projection_o.source = 3'd3;
           end
           1'b0: begin
             case (BASE_SNOOP && p1_head.base_wait && head_base0)
               1'b1: begin
                 data_page_projection_o.use_lookup = 1'b1;
-                data_page_projection_o.source = 2'd1;
+                data_page_projection_o.source = 3'd1;
               end
               1'b0: begin
                 case (BASE_SNOOP && p1_head.base_wait && head_base1)
                   1'b1: begin
                     data_page_projection_o.use_lookup = 1'b1;
-                    data_page_projection_o.source = 2'd2;
+                    data_page_projection_o.source = 3'd2;
                   end
-                  1'b0: data_page_projection_o.use_lookup = 1'b1;
+                  1'b0: begin
+                    case (BASE_SNOOP && p1_head.base_wait && head_base3)
+                      1'b1: begin
+                        data_page_projection_o.use_lookup = 1'b1;
+                        data_page_projection_o.source = 3'd4;
+                      end
+                      1'b0: data_page_projection_o.use_lookup = 1'b1;
+                      default: begin end
+                    endcase
+                  end
                   default: begin end
                 endcase
               end
@@ -820,48 +844,61 @@ module ppc_lsu_pipe #(
   logic [31:0] base_ea [3];
   logic data_hit [3], data_late [3], src_launch [3], src_kill [3];
   logic [31:0] data_value [3];
-  logic [31:0] incoming_wake_ea0, incoming_wake_ea1;
-  logic incoming_trap0, incoming_trap1, incoming_fast0, incoming_fast1;
+  logic [31:0] incoming_wake_ea0, incoming_wake_ea1, incoming_wake_ea3;
+  logic incoming_trap0, incoming_trap1, incoming_trap3;
+  logic incoming_fast0, incoming_fast1, incoming_fast3;
   // Form incoming alignment/page predicates before the late wake identity select.
   // Full-width expressions preserve arithmetic X/Z poisoning from high bits;
   // only low12/low2 are used, so binary synthesis can prune high adder bits.
   logic unused_incoming_sum_upper;
-  assign unused_incoming_sum_upper = ^{incoming_wake_ea0[31:12],incoming_wake_ea1[31:12]};
+  assign unused_incoming_sum_upper = ^{incoming_wake_ea0[31:12],incoming_wake_ea1[31:12],
+                                       incoming_wake_ea3[31:12]};
   assign incoming_wake_ea0 = wake_i.value + offset_i;
   assign incoming_wake_ea1 = wake1_i.value + offset_i;
   assign incoming_trap0 = int_trap(uop_i.mem_size, incoming_wake_ea0[11:0], dr_i);
   assign incoming_trap1 = int_trap(uop_i.mem_size, incoming_wake_ea1[11:0], dr_i);
   assign incoming_fast0 = int_fast(uop_i.mem_size, incoming_wake_ea0[1:0]) && !incoming_trap0;
   assign incoming_fast1 = int_fast(uop_i.mem_size, incoming_wake_ea1[1:0]) && !incoming_trap1;
+  assign incoming_wake_ea3 = wake3_i.value + offset_i;
+  assign incoming_trap3 = int_trap(uop_i.mem_size, incoming_wake_ea3[11:0], dr_i);
+  assign incoming_fast3 = int_fast(uop_i.mem_size, incoming_wake_ea3[1:0]) && !incoming_trap3;
   always_comb begin
     base_src[0] = p1_q[0];
     base_src[1] = p1_q[1];
     base_src[2] = incoming;
     for (int s = 0; s < 3; s++) begin
-      logic hit0, hit1, dhit0, dhit1;
+      logic hit0, hit1, hit3, dhit0, dhit1, dhit3;
       dhit0 = wake_valid_i && (wake_i.tag == base_src[s].data_tag) &&
               (wake_i.producer == base_src[s].data_producer);
       dhit1 = wake1_valid_i && (wake1_i.tag == base_src[s].data_tag) &&
               (wake1_i.producer == base_src[s].data_producer);
-      data_hit[s] = !base_src[s].data_ready && (dhit0 || dhit1);
-      data_value[s] = dhit0 ? wake_i.value : wake1_i.value;
-      data_late[s] = dhit0 ? wake_i.late : wake1_i.late;
+      dhit3 = wake3_valid_i && (wake3_i.tag == base_src[s].data_tag) &&
+              (wake3_i.producer == base_src[s].data_producer);
+      data_hit[s] = !base_src[s].data_ready && (dhit0 || dhit1 || dhit3);
+      data_value[s] = dhit0 ? wake_i.value : dhit1 ? wake1_i.value : wake3_i.value;
+      data_late[s] = dhit0 ? wake_i.late : dhit1 && wake1_i.late;
       src_launch[s] = fp_launch_valid_i && (base_src[s].producer == fp_launch_tag_i);
       src_kill[s] = killed_now(base_src[s].producer);
       hit0 = wake_valid_i && (wake_i.tag == base_src[s].base_tag) &&
              (wake_i.producer == base_src[s].base_producer);
       hit1 = wake1_valid_i && (wake1_i.tag == base_src[s].base_tag) &&
              (wake1_i.producer == base_src[s].base_producer);
-      base_hit[s] = hit0 || hit1;
-      base_late[s] = hit0 ? wake_i.late : wake1_i.late;
-      base_ea[s] = (hit0 ? wake_i.value : wake1_i.value) + base_src[s].offset;
+      hit3 = wake3_valid_i && (wake3_i.tag == base_src[s].base_tag) &&
+             (wake3_i.producer == base_src[s].base_producer);
+      base_hit[s] = hit0 || hit1 || hit3;
+      base_late[s] = hit0 ? wake_i.late : hit1 && wake1_i.late;
+      base_ea[s] = (hit0 ? wake_i.value : hit1 ? wake1_i.value : wake3_i.value) +
+                   base_src[s].offset;
       base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
       base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
       if (s == 2) begin
         // hit0 retains accepted-valid/tag/generation priority over hit1.
         // Unknown identity controls use the original merged EA predicates.
         case (hit0)
-          1'b0: begin base_trap[s] = incoming_trap1; base_fast[s] = incoming_fast1; end
+          1'b0: begin
+            base_trap[s] = (hit3 && !hit1) ? incoming_trap3 : incoming_trap1;
+            base_fast[s] = (hit3 && !hit1) ? incoming_fast3 : incoming_fast1;
+          end
           1'b1: begin base_trap[s] = incoming_trap0; base_fast[s] = incoming_fast0; end
           default: begin
             base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
@@ -1166,18 +1203,21 @@ module ppc_lsu_pipe #(
   always @(posedge clk_i)
     if (rst_ni)
       assert ((!wake_valid_i || wake_i.late || wake_early_value_i == wake_i.value) &&
-              (!wake1_valid_i || wake1_i.late || wake1_early_value_i == wake1_i.value))
+              (!wake1_valid_i || wake1_i.late || wake1_early_value_i == wake1_i.value) &&
+              (!wake3_valid_i || wake3_early_value_i == wake3_i.value))
         else $error("early wake value differs from the wake bus");
   always @(posedge clk_i)
     if (rst_ni && p1_check)
       assert (chk_addr_o == p1_addr) else $error("store check address is not the head's");
   always @(posedge clk_i)
     if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && !head_base0 && !head_base1 &&
+        !head_base3 &&
         (p1_check || offer))
       assert (0) else $error("waiting head checked or offered without its base");
   always @(posedge clk_i)
-    if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && (head_base0 || head_base1))
-      assert (head_ea === (head_base0 ? base_sum0 : base_sum1))
+    if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait &&
+        (head_base0 || head_base1 || head_base3))
+      assert (head_ea === (head_base0 ? base_sum0 : head_base1 ? base_sum1 : base_sum3))
         else $error("waiting head did not select the valid wake's base");
   // +LSU_STATS reports store-queue use at the end of simulation.
   int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,

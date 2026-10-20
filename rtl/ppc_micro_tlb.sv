@@ -53,11 +53,11 @@ module ppc_micro_tlb #(
   int chosen;
 
   logic [ENTRIES-1:0] legacy_match;
-  logic [3:0][ENTRIES-1:0] projected_match;
+  logic [4:0][ENTRIES-1:0] projected_match;
   genvar probe;
   generate
     if (PROJECTED_LOOKUP) begin : g_projected_lookup
-      for (probe = 0; probe < 4; probe = probe + 1) begin : g_probe
+      for (probe = 0; probe < 5; probe = probe + 1) begin : g_probe
         always_comb begin
           for (int i = 0; i < ENTRIES; i++)
             projected_match[probe][i] = valid_q[i] &&
@@ -78,10 +78,11 @@ module ppc_micro_tlb #(
       case (projected_i.use_lookup)
         1'b1: begin
           case (projected_i.source)
-            2'd0: match = projected_match[0];
-            2'd1: match = projected_match[1];
-            2'd2: match = projected_match[2];
-            2'd3: match = projected_match[3];
+            3'd0: match = projected_match[0];
+            3'd1: match = projected_match[1];
+            3'd2: match = projected_match[2];
+            3'd3: match = projected_match[3];
+            3'd4: match = projected_match[4];
             default: match = legacy_match;
           endcase
         end

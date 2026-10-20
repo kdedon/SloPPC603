@@ -310,7 +310,7 @@ module ppc_core #(
   wake_packet_t wake, cq_wake;
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
-  logic cq_result_valid, cq_result1_valid, cq_iu_port1_offer;
+  logic cq_result_valid, cq_result1_valid, cq_result3_valid;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
   logic special_late;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
@@ -323,7 +323,6 @@ module ppc_core #(
   logic lsu_route, lsu_ready, lsu_empty, lsu_quiet, lsu_result_valid, lsu_store_irrevocable;
   logic lsu_result_offer, lsu_result_store;
   // An LSU result on the first finish port; a store's takes the third.
-  logic lsu_port0;
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
@@ -493,7 +492,10 @@ module ppc_core #(
   logic [1:0] recovery_remove;
   rename_tag_t alloc_tag;
   logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
-  logic [31:0] special_early_value, wake_early_value, wake1_early_value;
+  logic [31:0] special_early_value, wake_early_value, wake1_early_value, wake3_early_value;
+  logic wake3_valid;
+  wake_packet_t wake3;
+  logic special_port1_offer;
   logic [11:0] src_a_early, src_b_early, special_a_early, special_b_early;
   // Second dispatch slot (DQ1); idle at DISPATCH_WIDTH 1.
   logic [31:0] arch_a1, arch_b1, arch_c1;
@@ -2305,6 +2307,7 @@ module ppc_core #(
     .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
     .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
+    .wake3_early_value_i(wake3_early_value),
     .read_a_early_o(src_a_early), .read_b_early_o(src_b_early),
     .read_a1_i(dq1_uop.src_a), .read_b1_i(dq1_uop.src_b),
     .arch_a1_i(arch_a1), .arch_b1_i(arch_b1),
@@ -2332,6 +2335,8 @@ module ppc_core #(
     .alloc2_reg_i(dq1_uop.dst), .alloc2_producer_i(alloc1_producer),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .wake1_offer_i(result1_offer),
+    .wake3_valid_i(wake3_valid), .wake3_i(wake3),
+    .wake3_offer_i(lsu_result_offer && !lsu_result_store),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
     .release_producer_i(retire_producer),
     .release1_i(commit1 && retire1_o.rename_owned), .release1_reg_i(retire1_o.gpr),
@@ -2382,6 +2387,7 @@ module ppc_core #(
                       (dispatch1 && d1_iu && (!c0_iu || c0_sru) && !d1_alt_sru)),
     .dispatch_ready_o(rs_ready), .entry_i(d1_iu && (!c0_iu || c0_sru) ? rs_entry1 : rs_entry),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
+    .wake3_valid_i(wake3_valid), .wake3_i(wake3),
     .iu_done_i(iu_result_valid && iu_result_ready),
     .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
     // Without the pipelined unit, this port takes SRU results instead.
@@ -2434,6 +2440,7 @@ module ppc_core #(
         .dispatch_valid_i((dispatch && c0_sru) || (dispatch1 && d1_iu && ((c0_iu && !c0_sru) || d1_alt_sru))),
         .dispatch_ready_o(sru_rs_ready), .entry_i(c0_sru ? rs_entry : rs_entry1),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
+        .wake3_valid_i(wake3_valid), .wake3_i(wake3),
         .iu_done_i(sru_result_valid && sru_result_ready),
         .iu_producer_i(sru_result.producer), .iu_value_i(sru_result.value),
         // IU and load results reach the SRU in the cycle they finish (UM
@@ -2613,84 +2620,47 @@ module ppc_core #(
   assign context_dr_o = msr[MSR_DR];
   assign context_pr_o = msr[MSR_PR];
 
-  // An adopted access can reach the lane with IU work in flight; that
-  // result waits while the lane owns the port.
-  // The port selects on the LSU's offer, keeping the recovery kill out of
-  // the result's identity and value; a killed offer holds the port.
-  // A store writes no register, so it finishes on its own port (UM 6.3:
-  // each unit has its own result path) and leaves this one to the IU.
-  assign lsu_port0 = lsu_result_offer && !lsu_result_store;
-  assign result_valid = (lsu_result_valid && !lsu_result_store) ||
-    (!lsu_port0 && (special_result_valid || (iu_result_valid && !special_result_select)));
+  // Each unit finishes on its own CQ port (UM 6.3.3): IU and special
+  // results on the first, SRU on the second, stores on the third and other
+  // load/store unit results on the fourth.
+  assign result_valid = special_result_valid || (iu_result_valid && !special_result_select);
   // Retain the cancel-qualified signal for stage/event observations.
   logic _unused_result_valid;
   assign _unused_result_valid = result_valid;
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
-  // Integer work overlapping a plain load or store waits one cycle when both
-  // finish together.
-  // A pipelined access result goes first; the lane never has one then.
   // CQ checks the same accepted exact-generation recovery kill itself.
-  // Its IU/SRU candidate validity need not traverse the unit's cancel loop.
-  // Actual unit handshakes and all payload/owner selections stay unchanged.
-  assign cq_result_valid = (lsu_result_valid && !lsu_result_store) ||
-    (!lsu_port0 && (special_result_valid || (iu_result_offer && !special_result_select)));
-  assign result = lsu_port0 ? lsu_result :
-                  special_result_select ? special_result : iu_result;
-  // The SRU has its own result bus (UM 6.3.3): a special result that meets
-  // a load's on the first port takes the second when the SRU pipe leaves it
-  // free.
-  // special_port1_sel steers the second port's payload without the result's
-  // valid, which a recovery's cancel reaches late: with it set, no other
-  // unit's result is valid on that port.
-  logic special_port1, special_port1_sel, special_port1_offer;
-  assign special_port1_sel = ENABLE_LSU_PIPE && special_result_select && lsu_port0 &&
-                             !sru_result_offer;
-  assign special_port1 = special_port1_sel && special_port1_offer;
-  assign special_result_ready = special_result_valid &&
-                                ((result_ready && !lsu_port0) || special_port1);
-  // An IU result that meets a load's on the first port takes the second
-  // when the SRU, if any, leaves it free: each unit has its own result bus
-  // (UM 6.3.3), so a load's consumer finishes on its own timing. IU results
-  // never fault and write only what the second port records.
-  logic iu_port1;
+  assign cq_result_valid = special_result_valid || (iu_result_offer && !special_result_select);
+  assign result = special_result_select ? special_result : iu_result;
+  assign special_result_ready = special_result_valid && result_ready;
+  logic _unused_special_port1;
+  assign _unused_special_port1 = special_port1_offer;
   result_packet_t result1;
-  assign iu_port1 = ENABLE_LSU_PIPE && iu_result_valid && lsu_port0 &&
-                    !special_result_select && !sru_result_offer;
-  // The port selects on offers so a recovery's cancel stays out of the
-  // second result's identity and value.
-  assign result1 = sru_result_offer ? sru_result : special_port1_sel ? special_result : iu_result;
-  assign result1_offer = sru_result_offer || iu_result_offer || special_port1;
-  // This is the existing IU second-port ownership condition using its raw
-  // offer. Do not use result1_offer: it also includes IU offers on port 0.
-  assign cq_iu_port1_offer = ENABLE_LSU_PIPE && iu_result_offer && lsu_port0 &&
-                            !special_result_select && !sru_result_offer;
-  assign cq_result1_valid = sru_result_offer || cq_iu_port1_offer || special_port1;
+  assign result1 = sru_result;
+  assign result1_offer = sru_result_offer;
+  assign cq_result1_valid = sru_result_offer;
+  assign cq_result3_valid = lsu_result_valid && !lsu_result_store;
   // synthesis translate_off
   always @(posedge clk_i)
-    if (rst_ni && special_port1_sel)
-      assert (!sru_result_valid && !iu_port1) else $error("second port steered off a valid result");
+    if (rst_ni && cq_result3_valid)
+      assert (!lsu_result.fault) else $error("load/store unit result took an illegal fault");
   // synthesis translate_on
   // A completion-serialized result is forwarded only once it retires (UM
   // 6.3.3.2, 6.4.5); it retires the cycle after it finishes.
   // Each wake value where it is not late, without the late special result's
   // mux, for the load/store unit's same-cycle base.
-  assign wake_early_value = lsu_port0 ? lsu_result.value :
-                            special_result_select ? special_early_value : iu_result.value;
-  assign wake1_early_value = sru_result_offer ? sru_result.value :
-                             special_result_select ? special_early_value : iu_result.value;
+  assign wake_early_value = special_result_select ? special_early_value : iu_result.value;
+  assign wake1_early_value = sru_result.value;
+  assign wake3_early_value = lsu_result.value;
   always_comb begin
     wake = cq_wake;
-    wake.late = !lsu_port0 && special_result_select && special_late;
-    wake1 = cq_wake1;
-    wake1.late = special_port1_sel && special_late;
+    wake.late = special_result_select && special_late;
   end
-  assign iu_result_ready = (result_ready && !special_result_select && !lsu_port0) ||
-                           iu_port1;
+  assign wake1 = cq_wake1;
+  assign iu_result_ready = result_ready && !special_result_select;
   // iu_result_ready for an offer, without the cancel.
-  assign iu_offer_ready = (result_ready && !special_result_select && !lsu_port0) ||
-    (ENABLE_LSU_PIPE && lsu_port0 && !special_result_select && !sru_result_offer);
+  assign iu_offer_ready = result_ready && !special_result_select;
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
@@ -3009,6 +2979,10 @@ module ppc_core #(
                  (wake1.producer == o.producer)) begin
       sru_wake.ready = 1'b1;
       sru_wake.value = wake1.value;
+    end else if (!o.ready && wake3_valid && (wake3.tag == o.tag) &&
+                 (wake3.producer == o.producer)) begin
+      sru_wake.ready = 1'b1;
+      sru_wake.value = wake3.value;
     end
   endfunction
   assign sru_issue_go = sru_hold_q && sru_a_q.ready && !cq_empty &&
@@ -3506,6 +3480,7 @@ module ppc_core #(
         .dr_i(msr[MSR_DR]),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
+        .wake3_valid_i(wake3_valid), .wake3_i(wake3), .wake3_early_value_i(wake3_early_value),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
         .fp_store_valid_i(fp_store_valid), .fp_store_tag_o(fp_store_tag),
@@ -3582,7 +3557,7 @@ module ppc_core #(
       logic _unused_store_check;
       assign _unused_store_check = dmem_store_check_ok_i;
       logic _unused_early_wake;
-      assign _unused_early_wake = ^{wake_early_value, wake1_early_value};
+      assign _unused_early_wake = ^{wake_early_value, wake1_early_value, wake3_early_value};
     end
   endgenerate
   // The lane takes an adopted access in place of a dispatch; a lane dispatch
@@ -3633,10 +3608,10 @@ module ppc_core #(
     if (ENABLE_DATA_PAGE_PROJECTION) begin : g_data_page_projection
       assign data_page_projection_o.page[0] = lsu_req_sel ?
         lsu_page_projection.page[0] : sp_req_addr[31:12];
-      assign data_page_projection_o.page[3:1] = lsu_page_projection.page[3:1];
+      assign data_page_projection_o.page[4:1] = lsu_page_projection.page[4:1];
       always_comb begin
         data_page_projection_o.use_lookup = 1'b0;
-        data_page_projection_o.source = 2'd0;
+        data_page_projection_o.source = 3'd0;
         case (lsu_req_sel)
           1'b0: data_page_projection_o.use_lookup = 1'b1;
           1'b1: begin
@@ -3953,21 +3928,19 @@ module ppc_core #(
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(cq_result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
-    .result_retire_i(lsu_port0 || !special_result_select),
-    .wake_sel_i({lsu_port0, !lsu_port0 && special_result_select,
-                 !lsu_port0 && !special_result_select}),
-    .wake_cand_valid_i({lsu_result_valid && !lsu_result_store, special_result_valid,
-                        iu_result_offer}),
+    .result_retire_i(!special_result_select),
+    .wake_sel_i({1'b0, special_result_select, !special_result_select}),
+    .wake_cand_valid_i({1'b0, special_result_valid, iu_result_offer}),
     .wake_cand_i({lsu_result, special_result, iu_result}),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(cq_wake),
     .result1_valid_i(cq_result1_valid), .result1_i(result1),
-    // Special results retire a cycle after they finish on either port.
-    .result1_retire_i(!special_port1_sel),
+    .result1_retire_i(1'b1),
     .wake1_valid_o(wake1_valid), .wake1_o(cq_wake1),
     .result2_valid_i(lsu_result_valid && lsu_result_store), .result2_i(lsu_result),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
-    .result_lsu_valid_i(lsu_result_valid && !lsu_result_store),
+    .result3_valid_i(cq_result3_valid), .result3_i(lsu_result),
+    .wake3_valid_o(wake3_valid), .wake3_o(wake3),
     .retire_mem_valid_o(cq_retire_mem_valid),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&

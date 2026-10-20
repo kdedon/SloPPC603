@@ -42,7 +42,8 @@ into an idle IU and blocks dispatch until it finishes, so the two are never
 valid together and registered `special_result_select` steers the payload.
 Port 3 is tied off without the LSU pipe and synthesises away. Every wake
 consumer (rename, IU and SRU stations, LSU P1, SRU store-data snoop) gains a
-third wake input. The IU never waits on another unit's result.
+third wake input; LSU P1 forms a third base sum, which takes a fifth D-µTLB
+projection probe. No unit waits on another unit's result.
 
 ## Wake validity without cancel
 
@@ -81,10 +82,10 @@ Order of magnitude, before a fit:
 | CQ full finish port 3 (five-entry merge legs, fault capsule) | 300–400 |
 | Rename: compare per slot, value leg per read port (six) | 150–250 |
 | IU and SRU stations: snoop and select leg per operand | 150 |
-| LSU P1 base/data snoop | 80 |
+| LSU P1 base/data snoop, fifth D-µTLB projection probe | 150 |
 | Removed steering muxes | −50 |
 
-About 600–850 ALMs, under 2 % of the device.
+About 700–950 ALMs, about 2 % of the device.
 
 ## Step B outline
 

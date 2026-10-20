@@ -66,11 +66,15 @@ module ppc_completion #(
   /* verilator lint_off UNUSEDSIGNAL */
   input ppc_pkg::result_packet_t result2_i,
   /* verilator lint_on UNUSEDSIGNAL */
+  // Fourth finish port, the load/store unit's register results: a clean
+  // finish retires in its arrival cycle.
+  input logic result3_valid_i,
+  input ppc_pkg::result_packet_t result3_i,
+  output logic wake3_valid_o,
+  output ppc_pkg::wake_packet_t wake3_o,
   output logic retire_valid_o,
   // The head finished on an earlier cycle.
   output logic retire_settled_o,
-  // The first port carries a valid load/store unit result.
-  input logic result_lsu_valid_i,
   // retire_valid_o for a head that finished earlier or finishes on a load/store
   // unit result, without the other units' finish terms.
   output logic retire_mem_valid_o,
@@ -115,16 +119,17 @@ module ppc_completion #(
   logic [COUNT_WIDTH-1:0] count_q;
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
-  logic finish2_accept, result2_fault, head_now2, head1_now2, head_mem0;
+  logic finish2_accept, result2_fault, head_now2, head1_now2;
+  logic finish3_accept, result3_fault, head_now3, head1_now3;
   // synthesis translate_off
   logic head_killed;
   // synthesis translate_on
-  retire_packet_t finish0_packet, finish1_packet, finish2_packet;
+  retire_packet_t finish0_packet, finish1_packet, finish2_packet, finish3_packet;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
   logic pending_head, pending_head1, pivot_at_head, pivot_at_head1;
   logic pending_head_kill, pending_head1_kill, head_recovery_protected;
-  logic [2:0] head_result_match, head1_result_match;
+  logic [3:0] head_result_match, head1_result_match;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
   logic [COUNT_WIDTH-1:0] redirect_candidate_survivors;
   logic [CQ_INDEX_WIDTH-1:0] redirect_candidate_tail;
@@ -354,8 +359,6 @@ module ppc_completion #(
         assert (!redirect_candidate_kill[head_q])
           else $error("a branch recovery removed the head");
       assert (int'(head_q) < CQ_DEPTH) else $error("CQ head out of range");
-      if (result_lsu_valid_i)
-        assert (result_valid_i && result_retire_i) else $error("CQ LSU result off the first port");
       if (retire_mem_valid_o)
         assert (retire_valid_o) else $error("CQ memory retire without retire");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
@@ -510,11 +513,23 @@ module ppc_completion #(
       active_q[result2_i.producer.index] && !done_q[result2_i.producer.index] &&
       (generations_q[result2_i.producer.index] == result2_i.producer.generation) &&
       !redirect_kill_o[result2_i.producer.index];
+    finish3_accept = result3_valid_i &&
+      (result3_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+      active_q[result3_i.producer.index] && !done_q[result3_i.producer.index] &&
+      (generations_q[result3_i.producer.index] == result3_i.producer.generation) &&
+      !redirect_kill_o[result3_i.producer.index];
+    wake3_valid_o = finish3_accept && packets_q[result3_i.producer.index].gpr_write &&
+      !result3_i.fault && (result3_i.data_fault == DATA_OK);
+    wake3_o.producer = result3_i.producer;
+    wake3_o.tag = packets_q[result3_i.producer.index].tag;
+    wake3_o.value = result3_i.value;
+    wake3_o.late = 1'b0;
   end
   // A faulting result changes the entry's fault fields; it retires a cycle
   // later from the stored packet.
   assign result_fault = is_fault(result_i);
   assign result2_fault = is_fault(result2_i);
+  assign result3_fault = is_fault(result3_i);
   assign result_clean = finish_accept && result_retire_i && !result_fault;
   assign retire_settled_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
   assign head_o = packets_q[head_q];
@@ -555,6 +570,10 @@ module ppc_completion #(
     (result1_i.producer.generation == generations_q[head1_q]);
   assign head1_result_match[2] = pending_head1 && (result2_i.producer.index == head1_q) &&
     (result2_i.producer.generation == generations_q[head1_q]);
+  assign head_result_match[3] = pending_head && (result3_i.producer.index == head_q) &&
+    (result3_i.producer.generation == generations_q[head_q]);
+  assign head1_result_match[3] = pending_head1 && (result3_i.producer.index == head1_q) &&
+    (result3_i.producer.generation == generations_q[head1_q]);
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && pending_head) begin
@@ -566,6 +585,8 @@ module ppc_completion #(
                            (result1_i.producer.index == head_q)));
       assert (head_now2 == (finish2_accept && !result2_fault &&
                            (result2_i.producer.index == head_q)));
+      assert (head_now3 == (finish3_accept && !result3_fault &&
+                           (result3_i.producer.index == head_q)));
     end
     if (rst_ni && pending_head1) begin
       assert (pending_head1_kill == redirect_kill_o[head1_q]);
@@ -574,6 +595,8 @@ module ppc_completion #(
                             (result1_i.producer.index == head1_q)));
       assert (head1_now2 == (finish2_accept && !result2_fault &&
                             (result2_i.producer.index == head1_q)));
+      assert (head1_now3 == (finish3_accept && !result3_fault &&
+                            (result3_i.producer.index == head1_q)));
     end
   end
   // synthesis translate_on
@@ -596,17 +619,20 @@ module ppc_completion #(
                 !pending_head_kill;
     head1_now2 = result2_valid_i && !result2_fault && head1_result_match[2] &&
                  !pending_head1_kill;
+    head_now3 = result3_valid_i && !result3_fault && head_result_match[3] &&
+                !pending_head_kill;
+    head1_now3 = result3_valid_i && !result3_fault && head1_result_match[3] &&
+                 !pending_head1_kill;
     retire_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
-                                          (head_now0 || head_now1 || head_now2));
-    head_mem0 = result_lsu_valid_i && head_result_match[0] &&
-                !pending_head_kill && !result_fault;
+                                          (head_now0 || head_now1 || head_now2 || head_now3));
     retire_mem_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
-                                              (head_mem0 || head_now2));
+                                              (head_now3 || head_now2));
     retire_o = '0;
     if (retire_valid_o)
       retire_o = head_now0 ? finished(packets_q[head_q], result_i) :
                  head_now1 ? finished1(packets_q[head_q], result1_i) :
-                 head_now2 ? finished(packets_q[head_q], NO_RESULT) : packets_q[head_q];
+                 head_now2 ? finished(packets_q[head_q], NO_RESULT) :
+                 head_now3 ? finished(packets_q[head_q], result3_i) : packets_q[head_q];
     // The tag comes from registered state so that holds keyed on it stay off
     // the finish path; it matters only with retire_valid_o.
     retire_tag_o = '0;
@@ -620,13 +646,14 @@ module ppc_completion #(
     retire1_valid_o = ENABLE_PAIR_RETIRE && retire_valid_o &&
                       (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
                       ((done_q[head1_q] && !redirect_kill_o[head1_q]) ||
-                       head1_now0 || head1_now1 || head1_now2) &&
+                       head1_now0 || head1_now1 || head1_now2 || head1_now3) &&
                       pair_ok(packets_q[head_q], packets_q[head1_q]);
     retire1_o = '0;
     if (retire1_valid_o)
       retire1_o = head1_now0 ? finished(packets_q[head1_q], result_i) :
                   head1_now1 ? finished1(packets_q[head1_q], result1_i) :
-                  head1_now2 ? finished(packets_q[head1_q], NO_RESULT) : packets_q[head1_q];
+                  head1_now2 ? finished(packets_q[head1_q], NO_RESULT) :
+                  head1_now3 ? finished(packets_q[head1_q], result3_i) : packets_q[head1_q];
     retire1_tag_o = '0;
     if ((count_q > COUNT_WIDTH'(1)) && active_q[head1_q]) begin
       retire1_tag_o.index = head1_q;
@@ -666,6 +693,12 @@ module ppc_completion #(
               !(result_valid_i && (result_i.producer == result2_i.producer)) &&
               !(result1_valid_i && (result1_i.producer == result2_i.producer)))
         else $error("third finish port took a register result or a shared producer");
+  always @(posedge clk_i)
+    if (rst_ni && result3_valid_i)
+      assert (!(result_valid_i && (result_i.producer == result3_i.producer)) &&
+              !(result1_valid_i && (result1_i.producer == result3_i.producer)) &&
+              !(result2_valid_i && (result2_i.producer == result3_i.producer)))
+        else $error("fourth finish port shared a producer");
   // synthesis translate_on
 
   // Unshifted narrow metadata: the expensive packet/tag/owner selection
@@ -738,6 +771,9 @@ module ppc_completion #(
   assign finish2_packet = result2_fault ?
     faulted(packets_q[result2_i.producer.index], result2_i) :
     finished(packets_q[result2_i.producer.index], NO_RESULT);
+  assign finish3_packet = result3_fault ?
+    faulted(packets_q[result3_i.producer.index], result3_i) :
+    finished(packets_q[result3_i.producer.index], result3_i);
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -817,10 +853,17 @@ module ppc_completion #(
           else
             packets_q[i] <= merge_finish(packets_q[i], finish2_packet);
         end
+        if (finish3_accept && (result3_i.producer.index == CQ_INDEX_WIDTH'(i))) begin
+          if (result3_fault)
+            packets_q[i] <= merge_fault(packets_q[i], finish3_packet);
+          else
+            packets_q[i] <= merge_finish(packets_q[i], finish3_packet);
+        end
       end
       if (finish_accept) done_q[result_i.producer.index] <= 1'b1;
       if (finish1_accept) done_q[result1_i.producer.index] <= 1'b1;
       if (finish2_accept) done_q[result2_i.producer.index] <= 1'b1;
+      if (finish3_accept) done_q[result3_i.producer.index] <= 1'b1;
     end
   end
 endmodule

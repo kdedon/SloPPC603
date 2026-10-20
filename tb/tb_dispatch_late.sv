@@ -17,7 +17,7 @@ module tb_dispatch_late;
   ppc_dispatch dut (
     .clk_i(clk),.rst_ni(rst_n),.cancel_i(cancel),
     .dispatch_valid_i(dispatch_valid),.dispatch_ready_o(dispatch_ready),.entry_i(incoming),
-    .wake_valid_i(wake_valid),.wake_i(wake),.wake1_valid_i(wake1_valid),.wake1_i(wake1),
+    .wake_valid_i(wake_valid),.wake_i(wake),.wake1_valid_i(wake1_valid),.wake1_i(wake1), .wake3_valid_i(1'b0), .wake3_i('0),
     .iu_done_i(iu_done),.iu_producer_i(iu_owner),.iu_value_i(iu_value),
     .lsu_done_i(lsu_done),.lsu_producer_i(lsu_owner),.lsu_value_i(lsu_value),
     .fwd_done_i(fwd_done),.fwd_producer_i(fwd_owner),.fwd_value_i(fwd_value),

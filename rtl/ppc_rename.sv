@@ -16,7 +16,7 @@ module ppc_rename #(
   output ppc_pkg::operand_t read_a_o, read_b_o,
   // Low bits of the read_a_o and read_b_o values, forwarding the early wake
   // values: equal wherever the operand is ready.
-  input logic [31:0] wake_early_value_i, wake1_early_value_i,
+  input logic [31:0] wake_early_value_i, wake1_early_value_i, wake3_early_value_i,
   output logic [11:0] read_a_early_o, read_b_early_o,
   // Store data of a lane-0 access.
   input logic [4:0] read_c_i,
@@ -57,6 +57,12 @@ module ppc_rename #(
   input ppc_pkg::wake_packet_t wake1_i,
   // The second port holds a result for wake1_i's producer, accepted or not.
   input logic wake1_offer_i,
+  // The load/store unit's bus, with its offer as wake1_offer_i; never late.
+  input logic wake3_valid_i,
+  /* verilator lint_off UNUSEDSIGNAL */
+  input ppc_pkg::wake_packet_t wake3_i,
+  /* verilator lint_on UNUSEDSIGNAL */
+  input logic wake3_offer_i,
   input logic release_i,
   input logic [4:0] release_reg_i,
   input ppc_pkg::rename_tag_t release_tag_i,
@@ -83,13 +89,15 @@ module ppc_rename #(
   completion_tag_t owners [GPR_RENAME_DEPTH];
   logic [31:0] map_valid;
   rename_tag_t map_tag [32];
-  logic wake_match, wake1_match, release_match, release1_match, release2_match;
+  logic wake_match, wake1_match, wake3_match, release_match, release1_match, release2_match;
   logic alloc_fire, alloc1_fire, alloc2_fire;
 
   assign wake_match = wake_valid_i && int'(wake_i.tag) < GPR_RENAME_DEPTH &&
                       valid[wake_i.tag] && owners[wake_i.tag] == wake_i.producer;
   assign wake1_match = wake1_valid_i && int'(wake1_i.tag) < GPR_RENAME_DEPTH &&
                        valid[wake1_i.tag] && owners[wake1_i.tag] == wake1_i.producer;
+  assign wake3_match = wake3_valid_i && int'(wake3_i.tag) < GPR_RENAME_DEPTH &&
+                       valid[wake3_i.tag] && owners[wake3_i.tag] == wake3_i.producer;
   assign release_match = release_i && int'(release_tag_i) < GPR_RENAME_DEPTH &&
                          valid[release_tag_i] &&
                          owners[release_tag_i] == release_producer_i;
@@ -105,17 +113,19 @@ module ppc_rename #(
 
   // Each slot's owner against each wake's producer, shared by every read
   // port. A matched wake of the operand's own slot is that slot's owner.
-  logic [GPR_RENAME_DEPTH-1:0] wake_owns, wake1_owns;
+  logic [GPR_RENAME_DEPTH-1:0] wake_owns, wake1_owns, wake3_owns;
   always_comb
     for (int i = 0; i < GPR_RENAME_DEPTH; i++) begin
       wake_owns[i] = owners[i] == wake_i.producer;
       wake1_owns[i] = owners[i] == wake1_i.producer;
+      wake3_owns[i] = owners[i] == wake3_i.producer;
     end
 
   function automatic operand_t read_operand(input logic [4:0] reg_index,
                                              input logic [31:0] arch_value,
                                              input logic [31:0] wake_value,
-                                             input logic [31:0] wake1_value);
+                                             input logic [31:0] wake1_value,
+                                             input logic [31:0] wake3_value);
     operand_t operand;
     operand = '0;
     operand.ready = 1'b1;
@@ -129,12 +139,17 @@ module ppc_rename #(
       // The value forwards on the producer alone, keeping recovery's kill
       // and the wake's tag lookup out of the dispatch operand cone. It is
       // consumed only with ready, which needs a valid wake of this tag on
-      // the same bus or a second-port wake, which takes precedence; a killed
-      // wake also kills the reader.
+      // the same bus or an offered wake on another bus, which takes
+      // precedence; a killed wake also kills the reader.
       if (!ready[operand.tag] && wake_owns[operand.tag])
         operand.value = wake_value;
       // A late wake is not forwarded; the reader takes it from the bus.
       if (wake_match && !wake_i.late && wake_i.tag == operand.tag)
+        operand.ready = 1'b1;
+      if (!ready[operand.tag] && wake3_offer_i && wake3_i.tag == operand.tag &&
+          wake3_owns[operand.tag])
+        operand.value = wake3_value;
+      if (wake3_match && wake3_i.tag == operand.tag)
         operand.ready = 1'b1;
       if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
           wake1_owns[operand.tag])
@@ -146,18 +161,20 @@ module ppc_rename #(
   endfunction
 
   assign mapped_o = map_valid;
-  assign read_a_o = read_operand(read_a_i, arch_a_i, wake_i.value, wake1_i.value);
-  assign read_b_o = read_operand(read_b_i, arch_b_i, wake_i.value, wake1_i.value);
-  assign read_c_o = read_operand(read_c_i, arch_c_i, wake_i.value, wake1_i.value);
-  assign read_a1_o = read_operand(read_a1_i, arch_a1_i, wake_i.value, wake1_i.value);
-  assign read_b1_o = read_operand(read_b1_i, arch_b1_i, wake_i.value, wake1_i.value);
-  assign read_c1_o = read_operand(read_c1_i, arch_c1_i, wake_i.value, wake1_i.value);
+  assign read_a_o = read_operand(read_a_i, arch_a_i, wake_i.value, wake1_i.value, wake3_i.value);
+  assign read_b_o = read_operand(read_b_i, arch_b_i, wake_i.value, wake1_i.value, wake3_i.value);
+  assign read_c_o = read_operand(read_c_i, arch_c_i, wake_i.value, wake1_i.value, wake3_i.value);
+  assign read_a1_o = read_operand(read_a1_i, arch_a1_i, wake_i.value, wake1_i.value, wake3_i.value);
+  assign read_b1_o = read_operand(read_b1_i, arch_b1_i, wake_i.value, wake1_i.value, wake3_i.value);
+  assign read_c1_o = read_operand(read_c1_i, arch_c1_i, wake_i.value, wake1_i.value, wake3_i.value);
   // Only the values are read.
   /* verilator lint_off UNUSEDSIGNAL */
   ppc_pkg::operand_t early_a, early_b;
   /* verilator lint_on UNUSEDSIGNAL */
-  assign early_a = read_operand(read_a_i, arch_a_i, wake_early_value_i, wake1_early_value_i);
-  assign early_b = read_operand(read_b_i, arch_b_i, wake_early_value_i, wake1_early_value_i);
+  assign early_a = read_operand(read_a_i, arch_a_i, wake_early_value_i, wake1_early_value_i,
+                                 wake3_early_value_i);
+  assign early_b = read_operand(read_b_i, arch_b_i, wake_early_value_i, wake1_early_value_i,
+                                 wake3_early_value_i);
   assign read_a_early_o = early_a.value[11:0];
   assign read_b_early_o = early_b.value[11:0];
 
@@ -196,6 +213,7 @@ module ppc_rename #(
   always_ff @(posedge clk_i) begin
     if (wake_match) values[wake_i.tag] <= wake_i.value;
     if (wake1_match) values[wake1_i.tag] <= wake1_i.value;
+    if (wake3_match) values[wake3_i.tag] <= wake3_i.value;
     if (alloc_fire && alloc_value_valid_i) values[alloc_tag_o] <= alloc_value_i;
     if (alloc1_fire && alloc1_value_valid_i) values[alloc1_tag_o] <= alloc1_value_i;
   end
@@ -250,7 +268,9 @@ module ppc_rename #(
             (wake_match && wake_i.tag == recovery_rename_i[age].tag &&
              wake_i.producer == recovery_rename_i[age].producer) ||
             (wake1_match && wake1_i.tag == recovery_rename_i[age].tag &&
-             wake1_i.producer == recovery_rename_i[age].producer);
+             wake1_i.producer == recovery_rename_i[age].producer) ||
+            (wake3_match && wake3_i.tag == recovery_rename_i[age].tag &&
+             wake3_i.producer == recovery_rename_i[age].producer);
           pre_slot_age[recovery_rename_i[age].tag] = RECOVERY_AGE_WIDTH'(age);
           pre_map_valid[recovery_rename_i[age].gpr] = 1'b1;
           pre_map_tag[recovery_rename_i[age].gpr] = recovery_rename_i[age].tag;
@@ -410,6 +430,11 @@ module ppc_rename #(
                 (wake1_i.producer == recovery_survivor_tag_i[age])) begin
               ready[recovery_survivor_packet_i[age].tag] <= 1'b1;
             end
+            if (wake3_match &&
+                (wake3_i.tag == recovery_survivor_packet_i[age].tag) &&
+                (wake3_i.producer == recovery_survivor_tag_i[age])) begin
+              ready[recovery_survivor_packet_i[age].tag] <= 1'b1;
+            end
             map_valid[recovery_survivor_packet_i[age].gpr] <= 1'b1;
             map_tag[recovery_survivor_packet_i[age].gpr] <=
               recovery_survivor_packet_i[age].tag;
@@ -435,6 +460,9 @@ module ppc_rename #(
       end
       if (wake1_match) begin
         ready[wake1_i.tag] <= 1'b1;
+      end
+      if (wake3_match) begin
+        ready[wake3_i.tag] <= 1'b1;
       end
       if (release_match) begin
         valid[release_tag_i] <= 1'b0;
