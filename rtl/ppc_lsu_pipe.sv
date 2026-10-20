@@ -143,6 +143,9 @@ module ppc_lsu_pipe #(
   output ppc_pkg::result_packet_t result_o,
   // The result is a store's without update: it writes no register.
   output logic result_store_o,
+  // result_o's producer loads at this edge.
+  output logic result_load_o,
+  output ppc_pkg::completion_tag_t result_load_producer_o,
   output logic fp_rsp_valid_o,
   output ppc_pkg::completion_tag_t fp_rsp_tag_o,
   output logic [63:0] fp_rsp_data_o,
@@ -818,6 +821,8 @@ module ppc_lsu_pipe #(
   assign result_valid_o = r_valid_q && !killed_now(r_q.producer);
   assign result_o = r_q;
   assign result_store_o = r_store_q;
+  assign result_load_o = p2_retire || q_go;
+  assign result_load_producer_o = q_go ? q_q.producer : p2_head.producer;
   assign fp_rsp_valid_o = r_fp_valid_q && !killed_now(r_fp_tag_q);
   assign fp_rsp_tag_o = r_fp_tag_q;
   assign fp_rsp_data_o = r_fp_data_q;

@@ -15,7 +15,11 @@ module ppc_completion #(
   parameter bit ENABLE_PIVOT_RECOVERY = 1'b1,
   // A recovery that keeps its pivot may also come from a mispredicted
   // branch, which never removes the head.
-  parameter bit ENABLE_BRANCH_PIVOT = 1'b0
+  parameter bit ENABLE_BRANCH_PIVOT = 1'b0,
+  // Set: each result source's ownership of its producer is checked when the
+  // source loads it and kept in a flop until a kill or finish of that entry,
+  // so finish, wake and retire need no generation compare.
+  parameter bit OWNER_AT_LOAD = 1'b0
 ) (
   input logic clk_i,
   input logic rst_ni,
@@ -72,6 +76,10 @@ module ppc_completion #(
   input ppc_pkg::result_packet_t result3_i,
   output logic wake3_valid_o,
   output ppc_pkg::wake_packet_t wake3_o,
+  // A result source loads a new producer at this edge: the first port's
+  // three candidates, then the second, third and fourth ports.
+  input logic [5:0] own_load_i,
+  input ppc_pkg::completion_tag_t [5:0] own_producer_i,
   output logic retire_valid_o,
   // The head finished on an earlier cycle.
   output logic retire_settled_o,
@@ -130,6 +138,10 @@ module ppc_completion #(
   logic pending_head, pending_head1, pivot_at_head, pivot_at_head1;
   logic pending_head_kill, pending_head1_kill, head_recovery_protected;
   logic [3:0] head_result_match, head1_result_match;
+  logic [5:0] owned_q;
+  logic [3:0] port_owned;
+  logic [CQ_DEPTH-1:0] finish_vec;
+  completion_tag_t [5:0] own_current;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
   logic [COUNT_WIDTH-1:0] redirect_candidate_survivors;
   logic [CQ_INDEX_WIDTH-1:0] redirect_candidate_tail;
@@ -451,6 +463,67 @@ module ppc_completion #(
   assign retire1_fire = retire_fire && retire1_valid_o && retire1_ready_i;
   assign finish_accept_o = finish_accept;
 
+  // The entry is live, unfinished and of this generation.
+  function automatic logic holds(input completion_tag_t t);
+    return (t.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) && active_q[t.index] && !done_q[t.index] &&
+           (generations_q[t.index] == t.generation);
+  endfunction
+  // Ownership tracked per source: taken at the source's load edge from the
+  // entry's post-edge state, lost when that entry finishes or is killed.
+  always_comb begin
+    for (int k = 0; k < 3; k++) own_current[k] = wake_cand_i[k].producer;
+    own_current[3] = result1_i.producer;
+    own_current[4] = result2_i.producer;
+    own_current[5] = result3_i.producer;
+    for (int i = 0; i < CQ_DEPTH; i++)
+      finish_vec[i] =
+        (finish_accept && (result_i.producer.index == CQ_INDEX_WIDTH'(i))) ||
+        (finish1_accept && (result1_i.producer.index == CQ_INDEX_WIDTH'(i))) ||
+        (finish2_accept && (result2_i.producer.index == CQ_INDEX_WIDTH'(i))) ||
+        (finish3_accept && (result3_i.producer.index == CQ_INDEX_WIDTH'(i)));
+    port_owned[0] = |(wake_sel_i & owned_q[2:0]);
+    port_owned[1] = owned_q[3];
+    port_owned[2] = owned_q[4];
+    port_owned[3] = owned_q[5];
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) owned_q <= '0;
+    else begin
+      for (int s = 0; s < 6; s++) begin
+        if (own_load_i[s])
+          owned_q[s] <=
+            (alloc_fire && (alloc_tag_o == own_producer_i[s]) &&
+             !(alloc_i.illegal || alloc_finished_i)) ||
+            (alloc1_fire && (alloc1_tag_o == own_producer_i[s]) &&
+             !(alloc1_i.illegal || alloc1_finished_i)) ||
+            (holds(own_producer_i[s]) && !redirect_kill_o[own_producer_i[s].index] &&
+             !finish_vec[own_producer_i[s].index]);
+        else if ((own_current[s].index >= CQ_INDEX_WIDTH'(CQ_DEPTH)) ||
+                 redirect_kill_o[own_current[s].index] || finish_vec[own_current[s].index])
+          owned_q[s] <= 1'b0;
+      end
+    end
+  end
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni && OWNER_AT_LOAD) begin
+      for (int k = 0; k < 3; k++)
+        if (wake_cand_valid_i[k])
+          assert (owned_q[k] == holds(wake_cand_i[k].producer))
+            else $error("first-port candidate %0d ownership disagrees with its generation", k);
+      if (result1_valid_i)
+        assert (owned_q[3] == holds(result1_i.producer))
+          else $error("second-port ownership disagrees with its generation");
+      if (result2_valid_i)
+        assert (owned_q[4] == holds(result2_i.producer))
+          else $error("third-port ownership disagrees with its generation");
+      if (result3_valid_i)
+        assert (owned_q[5] == holds(result3_i.producer))
+          else $error("fourth-port ownership disagrees with its generation");
+    end
+  end
+  // synthesis translate_on
+
   always_comb begin
     allocation = normalize(alloc_i);
     allocation1 = normalize(alloc1_i);
@@ -465,10 +538,7 @@ module ppc_completion #(
     // has no effect on ordinary progress.
     if (result_valid_i && result_ready_o &&
         (result_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH))) begin
-      if (active_q[result_i.producer.index] &&
-          !done_q[result_i.producer.index] &&
-          (generations_q[result_i.producer.index] ==
-           result_i.producer.generation) &&
+      if ((OWNER_AT_LOAD ? port_owned[0] : holds(result_i.producer)) &&
           !redirect_kill_o[result_i.producer.index]) begin
         finish_accept = 1'b1;
       end
@@ -487,9 +557,8 @@ module ppc_completion #(
       logic [CQ_INDEX_WIDTH-1:0] idx;
       logic ok;
       idx = wake_cand_i[k].producer.index;
-      ok = wake_cand_valid_i[k] && (idx < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
-           active_q[idx] && !done_q[idx] &&
-           (generations_q[idx] == wake_cand_i[k].producer.generation) &&
+      ok = wake_cand_valid_i[k] &&
+           (OWNER_AT_LOAD ? owned_q[k] : holds(wake_cand_i[k].producer)) &&
            packets_q[idx].gpr_write &&
            !wake_cand_i[k].fault && (wake_cand_i[k].data_fault == DATA_OK);
       if (wake_sel_i[k]) begin
@@ -502,9 +571,7 @@ module ppc_completion #(
   always_comb begin
     logic owned1, owned3;
     owned1 = result1_valid_i &&
-      (result1_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
-      active_q[result1_i.producer.index] && !done_q[result1_i.producer.index] &&
-      (generations_q[result1_i.producer.index] == result1_i.producer.generation);
+      (OWNER_AT_LOAD ? port_owned[1] : holds(result1_i.producer));
     finish1_accept = owned1 && !redirect_kill_o[result1_i.producer.index];
     wake1_valid_o = owned1 && packets_q[result1_i.producer.index].gpr_write;
     wake1_o.producer = result1_i.producer;
@@ -512,14 +579,10 @@ module ppc_completion #(
     wake1_o.value = result1_i.value;
     wake1_o.late = 1'b0;
     finish2_accept = result2_valid_i &&
-      (result2_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
-      active_q[result2_i.producer.index] && !done_q[result2_i.producer.index] &&
-      (generations_q[result2_i.producer.index] == result2_i.producer.generation) &&
+      (OWNER_AT_LOAD ? port_owned[2] : holds(result2_i.producer)) &&
       !redirect_kill_o[result2_i.producer.index];
     owned3 = result3_valid_i &&
-      (result3_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
-      active_q[result3_i.producer.index] && !done_q[result3_i.producer.index] &&
-      (generations_q[result3_i.producer.index] == result3_i.producer.generation);
+      (OWNER_AT_LOAD ? port_owned[3] : holds(result3_i.producer));
     finish3_accept = owned3 && !redirect_kill_o[result3_i.producer.index];
     wake3_valid_o = owned3 && packets_q[result3_i.producer.index].gpr_write &&
       !result3_i.fault && (result3_i.data_fault == DATA_OK);
@@ -561,22 +624,21 @@ module ppc_completion #(
     !(head_recovery_protected && pending_head_kill);
   // Compare the candidate directly with each fixed retirement lane. Full
   // indexed finish/write/wake qualification below is otherwise unchanged.
-  assign head_result_match[0] = pending_head && (result_i.producer.index == head_q) &&
-    (result_i.producer.generation == generations_q[head_q]);
-  assign head_result_match[1] = pending_head && (result1_i.producer.index == head_q) &&
-    (result1_i.producer.generation == generations_q[head_q]);
-  assign head_result_match[2] = pending_head && (result2_i.producer.index == head_q) &&
-    (result2_i.producer.generation == generations_q[head_q]);
-  assign head1_result_match[0] = pending_head1 && (result_i.producer.index == head1_q) &&
-    (result_i.producer.generation == generations_q[head1_q]);
-  assign head1_result_match[1] = pending_head1 && (result1_i.producer.index == head1_q) &&
-    (result1_i.producer.generation == generations_q[head1_q]);
-  assign head1_result_match[2] = pending_head1 && (result2_i.producer.index == head1_q) &&
-    (result2_i.producer.generation == generations_q[head1_q]);
-  assign head_result_match[3] = pending_head && (result3_i.producer.index == head_q) &&
-    (result3_i.producer.generation == generations_q[head_q]);
-  assign head1_result_match[3] = pending_head1 && (result3_i.producer.index == head1_q) &&
-    (result3_i.producer.generation == generations_q[head1_q]);
+  always_comb begin
+    completion_tag_t port_producer [4];
+    port_producer[0] = result_i.producer;
+    port_producer[1] = result1_i.producer;
+    port_producer[2] = result2_i.producer;
+    port_producer[3] = result3_i.producer;
+    for (int p = 0; p < 4; p++) begin
+      head_result_match[p] = pending_head && (port_producer[p].index == head_q) &&
+        (OWNER_AT_LOAD ? port_owned[p] :
+                         (port_producer[p].generation == generations_q[head_q]));
+      head1_result_match[p] = pending_head1 && (port_producer[p].index == head1_q) &&
+        (OWNER_AT_LOAD ? port_owned[p] :
+                         (port_producer[p].generation == generations_q[head1_q]));
+    end
+  end
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && pending_head) begin

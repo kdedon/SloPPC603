@@ -36,7 +36,7 @@ module tb_completion_arrival_oracle;
     .finish_accept_o(finish),.wake_valid_o(wv0),.wake_o(wake0),
     .result1_valid_i(rv1),.result1_retire_i(ret1),.result1_i(result1),
     .wake1_valid_o(wv1),.wake1_o(wake1),.result2_valid_i(rv2),.result2_i(result2),
-    .retire_valid_o(tv0),.retire_settled_o(unused_settled),.result3_valid_i(1'b0), .result3_i('0), /* verilator lint_off PINCONNECTEMPTY */ .wake3_valid_o(), .wake3_o(), /* verilator lint_on PINCONNECTEMPTY */
+    .retire_valid_o(tv0),.retire_settled_o(unused_settled),.result3_valid_i(1'b0), .result3_i('0), .own_load_i('0), .own_producer_i('0), /* verilator lint_off PINCONNECTEMPTY */ .wake3_valid_o(), .wake3_o(), /* verilator lint_on PINCONNECTEMPTY */
     .retire_mem_valid_o(unused_mem),.head_o(unused_head),.head1_o(unused_head1),
     .retire_ready_i(tr0),.retire_hold_i(hold),.retire_o(r0),.retire_tag_o(rt0),
     .retire1_valid_o(tv1),.retire1_ready_i(tr1),.retire1_o(r1),.retire1_tag_o(rt1),

@@ -338,6 +338,8 @@ module ppc_core #(
   logic [DMEM_BITS-1:0] lsu_req_wdata;
   logic [DMEM_BITS/8-1:0] lsu_req_wstrb;
   result_packet_t lsu_result;
+  logic lsu_result_load;
+  completion_tag_t lsu_result_load_producer;
   logic lsu_adopt_valid, lsu_adopt_response;
   uop_t lsu_adopt_uop;
   completion_tag_t lsu_adopt_producer;
@@ -3530,6 +3532,7 @@ module ppc_core #(
         .lane_rsp_ready_i(sp_rsp_ready),
         .result_valid_o(lsu_result_valid), .result_offer_o(lsu_result_offer),
         .result_o(lsu_result), .result_store_o(lsu_result_store),
+        .result_load_o(lsu_result_load), .result_load_producer_o(lsu_result_load_producer),
         .fp_rsp_valid_o(fp_rsp_valid), .fp_rsp_tag_o(fp_rsp_tag),
         .fp_rsp_data_o(fp_rsp_data), .fp_rsp_fault_o(fp_rsp_fault),
         .adopt_valid_o(lsu_adopt_valid), .adopt_ready_i(special_ready && !sru_issue_go &&
@@ -3568,6 +3571,8 @@ module ppc_core #(
       assign lsu_result_offer = 1'b0;
       assign lsu_result_store = 1'b0;
       assign lsu_result = '0;
+      assign lsu_result_load = 1'b0;
+      assign lsu_result_load_producer = '0;
       assign lsu_adopt_valid = 1'b0;
       assign lsu_adopt_response = 1'b0;
       assign lsu_adopt_uop = '0;
@@ -3944,7 +3949,8 @@ module ppc_core #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_PAIR_RETIRE(DUAL),
     .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT),
-    .ENABLE_BRANCH_PIVOT(BS_EARLY)
+    .ENABLE_BRANCH_PIVOT(BS_EARLY),
+    .OWNER_AT_LOAD(EXECUTE_AT_E)
   ) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch && !bu_remove), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty), .head_index_o(cq_head),
@@ -3968,6 +3974,12 @@ module ppc_core #(
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
     .result3_valid_i(cq_result3_valid), .result3_i(lsu_result),
     .wake3_valid_o(wake3_valid), .wake3_o(wake3),
+    // Producer register loads, low bit first: IU, serialized lane, load/store
+    // unit, SRU, then the load/store unit for its two ports.
+    .own_load_i({{2{lsu_result_load}}, sru_issue_valid && sru_issue_ready, lsu_result_load,
+                 sp_dispatch_valid && special_ready, issue_valid && issue_ready}),
+    .own_producer_i({{2{lsu_result_load_producer}}, sru_issue.ctrl.producer,
+                     lsu_result_load_producer, sp_producer, issue.ctrl.producer}),
     .retire_mem_valid_o(cq_retire_mem_valid),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&

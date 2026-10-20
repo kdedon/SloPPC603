@@ -80,6 +80,8 @@ module tb_lsu_store_queue_order #(parameter bit ALLOW_MISALIGNED=1'b1);
       .rsp_owner_o(observed.rsp_owner),.lane_rsp_ready_i(lane_rsp_ready),
       .result_valid_o(observed.result_valid),.result_offer_o(observed.result_offer),
       .result_o(observed.result_packet),.result_store_o(observed.result_store),
+      /* verilator lint_off PINCONNECTEMPTY */ .result_load_o(), .result_load_producer_o(),
+      /* verilator lint_on PINCONNECTEMPTY */
       .fp_rsp_valid_o(observed.fp_rsp_valid),.fp_rsp_tag_o(observed.fp_rsp_tag),
       .fp_rsp_data_o(observed.fp_rsp_data),.fp_rsp_fault_o(observed.fp_rsp_fault),
       .adopt_valid_o(observed.adopt_valid),.adopt_ready_i(adopt_ready),
