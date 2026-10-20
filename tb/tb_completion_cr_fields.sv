@@ -338,8 +338,8 @@ module tb_completion_cr_fields;
     #1;
     require(redirect_accepted && redirect_kill[killed_tag.index],
             "all-cut did not kill owner");
-    require(result_ready && !completion.finish_accept && !wake_valid,
-            "killed coincident result finished or woke");
+    require(result_ready && !completion.finish_accept,
+            "killed coincident result finished");
     require(survivor_count == 0, "all-cut retained a survivor");
     @(posedge clk);
     #1;

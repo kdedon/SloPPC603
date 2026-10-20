@@ -466,7 +466,7 @@ module tb_recovery_state;
     #1;
     require(redirect_accepted && redirect_kill[killed.index],
             "unfinished all-cut rejected");
-    require(!cq_alloc_ready && result_ready && !wake_valid,
+    require(!cq_alloc_ready && result_ready,
             "accepted cut allocation/result qualification wrong");
     @(posedge clk);
     #1;

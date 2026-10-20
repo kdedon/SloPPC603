@@ -127,7 +127,7 @@ module tb_completion_arrival_oracle;
   // The reference stores ordered entries, not DUT head/pivot-age equations.
   task automatic step;
     int count,pivot_age,retained,retired_count,age[3];
-    bit found,accept_cut,expected_ar,expected_ar1,port_accept[3];
+    bit found,accept_cut,expected_ar,expected_ar1,port_accept[3],port_owned[3];
     bit expected_tv0,expected_tv1,settled_pair,expected_wv0,expected_wv1;
     bit alloc0_fire,alloc1_fire;
     logic [CQ_DEPTH-1:0] expected_kill;
@@ -155,13 +155,14 @@ module tb_completion_arrival_oracle;
     if(accept_cut)for(int a=retained;a<count;a++)expected_kill[queue[a].owner.index]=1'b1;
     for(int port=0;port<3;port++)begin
       age[port]=age_of(responses[port].producer);
-      port_accept[port]=offered[port]&&age[port]>=0;
-      if(age[port]>=0)port_accept[port]&=!queue[age[port]].done&&
-        (!accept_cut||age[port]<retained);
+      port_owned[port]=offered[port]&&age[port]>=0;
+      if(age[port]>=0)port_owned[port]&=!queue[age[port]].done;
+      port_accept[port]=port_owned[port]&&(!accept_cut||age[port]<retained);
     end
+    // Wakes ignore the cut: every reader of a killed producer dies with it.
     expected_wv0=1'b0;expected_wv1=1'b0;
-    if(port_accept[0])expected_wv0=queue[age[0]].packet.gpr_write&&!fault_response(result0);
-    if(port_accept[1])expected_wv1=queue[age[1]].packet.gpr_write;
+    if(port_owned[0])expected_wv0=queue[age[0]].packet.gpr_write&&!fault_response(result0);
+    if(port_owned[1])expected_wv1=queue[age[1]].packet.gpr_write;
     packet0='0;packet1='0;
     expected_tv0=1'b0;
     if(count>0)expected_tv0=queue[0].done;
