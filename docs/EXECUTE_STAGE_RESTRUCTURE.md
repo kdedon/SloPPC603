@@ -203,8 +203,16 @@ warnings. Pre-sweep checks with `EXECUTE_AT_E=1` (`test-completion`,
 `test-execution`, `test-dispatch-late`, `test-core-recovery`, -dual,
 -dual-lsu-pipe, -lsu-timing-snoop, -lsu-wake-wrap, -dcache-lsu-pipe,
 -multiply-timing, -divider-timing, -add-recovery): pass, no ownership,
-free-load or forward-select assertion. The focused and 24-bench sweeps
-at widths 1 and 2 and the MiSTer config, each setting, are pending.
+free-load or forward-select assertion.
+
+Recorded: focused benches (25) and the 24-bench core set at width 1,
+width 2 (`DISPATCH_WIDTH=2`) and the MiSTer config, each with
+`EXECUTE_AT_E=0` and `=1`, commit 8ef02d7, 2026-10-20: all pass except
+the MiSTer-config baseline failures (`test-core-memory-edges`,
+`test-core-ctr-target-capture`, `test-core-dq1-page-native`), which fail
+in both settings. No assertion fired. Printed cycle counts are identical
+between settings; the one differing line prints the value of an invalid
+result lane.
 
 ### Fit of B3a
 
@@ -323,6 +331,23 @@ Left in `[E,E+1)`:
 | `bu_cr_capture` control (offer, CQ ready, cancel, `recovery_accepted`) → `bs_now`/`rel_fold` → fetch | the decision is per cycle; it is control, not data |
 | FD-lane fold (`cr0_now`, `cr1_now`) | BI comes from the word fetched in that cycle; it ends in `fold_q` and the FD push |
 | redirect select → `early_target_i` → I-µTLB → I-cache | the fetch side, below |
+
+Recorded: focused benches and the core set at width 1, width 2 and the
+MiSTer config, each with `EXECUTE_AT_E=0` and `=1`, commit ee8f29d (RTL),
+2026-10-20: all pass except `test-core-ctr-target-capture` in the MiSTer
+config, which fails in both settings as on the baseline; printed cycle
+counts identical between settings. `test-dispatch-rules` (with
+`DEMO_FW_DIR`) and `test-held-release-equivalence`, commit e0a678e: pass
+in both settings; Dhrystone, CoreMark and Whetstone at width 1 take
+5,443,950, 9,278,500 and 9,966,934 cycles in both.
+
+### Fit of B4b
+
+Recorded: `quartus/chip/build.sh --docker --mister --no-fpu --jobs 2
+--sys-mhz 66` with `ENABLE_FETCH_HINTS 1` and `PPC_EXECUTE_AT_E=1`,
+commit e0a678e, seed 1, 2026-10-20: 43.21 MHz slow corner, 23,873 ALMs.
+Single-seed results on this design vary by about ±3 MHz between
+neighbouring commits; seeds 2 and 3 against the baseline are pending.
 
 ### Fetch side: parallel translation
 
