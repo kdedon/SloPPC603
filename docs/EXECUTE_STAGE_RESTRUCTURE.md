@@ -285,6 +285,64 @@ assertion. `quartus_map ppc603e_core --analysis_and_elaboration
 --verilog_macro=PPC_EXECUTE_AT_E=1'b1`, same commit: 0 errors, 38
 warnings. Width 1/2 and MiSTer sweeps, each setting, pending. No fit.
 
+### Resolve-ahead (B4b)
+
+With `EXECUTE_AT_E` the CR bit a waiting branch needs is selected at the
+owner's issue edge, from the value being registered there.
+
+- `ppc_iu` exports `cr0_next_o` (`cr0_q` after the edge: `alu_cr0` when
+  the unit is free, else `cr0_q`) and `long_o` (`held_long`).
+- The predicted branch's fields (`bs_pred_q`, `bs_ctr_ok_q`, `bs_bo3_q`,
+  `bs_bi_q`) load from one next-state (`bs_*_d`, same four writers and
+  priority). At every edge the core registers, per unit,
+  `(ctr_ok && cr0_next[BI] == BO[3]) != pred` from those next values.
+- The held word's BI next-state (`fd_split`, fetch load or hold, as
+  `fd_packet_q`) selects a registered CR bit per unit for `rel_fold`.
+- In `[E,E+1)`: owner field match (flops) → the SRU/IU flop (by the offer)
+  or, for another field, the committed CR bit (flop-indexed). `bs_early_miss`,
+  `bs_cap_hit`, `bs_cap_offer` and `held_cr_now` use these.
+- `bs_res_next`'s latency class is a flop loaded with the station capture
+  (`rs_one_q`), so chain (b) starts at a flop.
+
+Edges are unchanged: the bits are the values the old expressions computed
+in the same cycle. Simulation assertions compare each registered bit and
+the registered class with the direct form every cycle.
+
+CR sources: only a simple IU/SRU owner (`owner_simple_q`) forwards its CR;
+mtcrf, CR-logical, SPECIAL and LSU (stwcx.) owners resolve from the
+committed CR after they retire, which is already a flop. The rename/owner
+state (`owner_crf_q`, `flags_owner`) is registered; `bu_cr_d` ends in
+`bu_cr_q`. Recovery clears `bs_valid_q`; the ahead bits need no kill,
+since every use is qualified by `bu_cr_capture` and `bs_valid_q`.
+
+Left in `[E,E+1)`:
+
+| Chain | Why |
+|---|---|
+| Multiply/divide owner: engine flops → record flags → resolve → fetch | the result forms at the offer; an ahead bit needs the engine's last-step value one edge early |
+| `bu_cr_capture` control (offer, CQ ready, cancel, `recovery_accepted`) → `bs_now`/`rel_fold` → fetch | the decision is per cycle; it is control, not data |
+| FD-lane fold (`cr0_now`, `cr1_now`) | BI comes from the word fetched in that cycle; it ends in `fold_q` and the FD push |
+| redirect select → `early_target_i` → I-µTLB → I-cache | the fetch side, below |
+
+### Fetch side: parallel translation
+
+The redirect target is a flop (`bs_alt_q`, `early_target_q`) or an adder
+on flops (`rel_target`); what remains in the cycle is the late select
+(`bs_now`, `rel_fold`, `early_q`) → request address → I-µTLB page compare
+→ I-cache tag compare and `upd_set_q`. Translating every candidate in
+parallel and selecting the hit late would need:
+
+- one µTLB compare bank (4 entries × 20-bit page) per candidate whose page
+  can differ: `pc`, `early_target_q`, `bs_alt_q`, `rel_target`; `pc+4/8`
+  share `pc`'s page except across a page, which fetch would split;
+- `rel_target` registered when the word is held (adder moved to the
+  fetch → FD cycle);
+- the I-cache set index from the untranslated low bits of each candidate,
+  muxed late, and the physical-tag compare against the selected
+  candidate's RPN (a 4:1 of the hits and RPNs).
+
+Not implemented this round.
+
 ## Recovery and ownership
 
 The result flops belong to `held`'s producer and are qualified by the same
