@@ -214,10 +214,61 @@ Coordinator fit, CPU-only, matched to the step A fit, of 0d05b7f with
 LSU P1 EA endpoint left the top paths. The new worst endpoint is
 `ppc_iu:iu|held.ctrl.op[1]` → `route_managed_q`: the IU result and CR
 reach branch resolve and the fetch/router through a `held`-decoded
-select (the multiply/divide result mux keys on `held.ctrl.op`). Next
-step: move BPU resolve and the fetch redirect onto the registered result
-(register the long/short select at issue so `cr0` is a flop, then cut
-resolve → fetch), before B4.
+select (the multiply/divide result mux keys on `held.ctrl.op`). B4 below
+removes the decode from that path.
+
+## Branch resolve from registered results (B4)
+
+### Long-op result selects
+
+The B3a fit's worst path decoded `held.ctrl.op` (multiply/divide) on the
+way to `result_o.cr0`. With `EXECUTE_AT_E` the IU now registers at issue,
+beside `held`: `held_divide`, `held_multiply`, `held_long`, `held_high`
+(MULHW/MULHWU) and the divide overflow (`divide_ov_q`, checked against
+the held-operand form by a simulation assertion). `held_divide` and
+`held_multiply` are flops in both settings. During the offer cycle:
+
+- single-cycle op: `value`, `cr0`, `ca`, `ov`, `so` are flops;
+- multiply/divide: a flop-selected mux of the engine flops
+  (`multiply_acc`, `divider_quotient`); `cr0` takes the record flags of
+  that mux, without the short-MULLI product leg (a MULLI records no CR0).
+
+The SRU (add/compare only) has no long ops, so its `cr0` is `cr0_q`.
+
+### Edge-by-edge, CR owner then branch
+
+Manual: the branch resolves in the cycle after the compare executes, and
+a mispredicted target is fetched in that cycle (UM 6.4.1.2, Figure 6-5).
+
+| Interval / edge | `EXECUTE_AT_E=0` | `EXECUTE_AT_E=1` |
+|---|---|---|
+| `[E-1,E)` | owner waits in the station | owner's ALU runs from the station entry; `bs_res_next` sees the issue |
+| E | IU captures `held` | IU captures `cr0_q` (and `held`) |
+| `[E,E+1)` | ALU → `cr0` → owner CR merge → BI select → resolve → fetch | `cr0_q` → owner CR merge → BI select → resolve → fetch |
+| F = E+1 | `bu_cr_q` captured; resolved branch retires or recovers | same |
+
+The compare executes in `[E-1,E)` and the branch resolves and redirects
+fetch in `[E,E+1)`: one cycle after execute, as Figure 6-5 shows, and at
+the same edges as `EXECUTE_AT_E=0`. Resolving from `bu_cr_q` instead
+(the capture edge F) would cost the mispredict path one cycle against
+the manual, so resolve stays in `[E,E+1)`, now from flops.
+
+What reaches fetch in `[E,E+1)` with `EXECUTE_AT_E=1`:
+
+| Source | Path | Start |
+|---|---|---|
+| IU/SRU `cr0` (single-cycle owner) | `owner_cr0` → `selected_cr_bit` → `bs_early_miss` / `cr0_now` / `held_cr_now` → `bs_now` / fold / `rel_fold` → fetch target → I-µTLB | `cr0_q` |
+| IU `cr0` (multiply/divide record form) | engine mux → record flags → as above | `multiply_acc`, `divider_quotient`, registered selects |
+| CR capture control (`bu_cr_capture`) | offer, CQ ready, producer = flags owner, cancel, `recovery_accepted` | `occupied`, `held_*`, completion and recovery state |
+| `bs_res_next` (`[E-1,E)`) | station issue → op decode → `cr_unres_fd` → FD lane-1 hold | station issue select (unchanged from `EXECUTE_AT_E=0`) |
+
+No path from `held.ctrl.op` or from the issue operands runs through the
+CR forward into resolve or the fetch address. The control terms and
+`bs_res_next` are unchanged by step B. The remaining one-cycle chain is
+flop → CR merge → resolve → fetch → I-µTLB → I-cache/router, the chain
+`MISPREDICT_FETCH_NOW` keeps for the manual's redirect timing; cutting it
+further (resolve-ahead from `alu_cr0` registered per waiting branch, or a
+registered `bs_res_next` issue class) waits for the fit of this step.
 
 ## Recovery and ownership
 

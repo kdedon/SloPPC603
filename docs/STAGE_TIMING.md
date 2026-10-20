@@ -62,6 +62,12 @@ commit=D+2. The historical P05 implementation committed no earlier than D+3.
 This is an implementation edge convention, not a universal binding of manual
 stage labels under every stall.
 
+With `EXECUTE_AT_E=1` (default off) a single-cycle op computes in `[E-1,E)`
+from the station entry and E registers its result; during `[E,E+1)` the
+result, CR0 and flags come from flops, and every edge above is unchanged.
+Multiply and divide still compute from their engines after E. See
+[EXECUTE_STAGE_RESTRUCTURE.md](EXECUTE_STAGE_RESTRUCTURE.md#branch-resolve-from-registered-results-b4).
+
 The checker processes same-edge finish information before checking RAW issue
 eligibility and retirement, allowing both to use the accepted result. It
 calculates source registers, destination registers and expected operands/results

@@ -79,11 +79,14 @@ module ppc_iu #(
     if (DIV_LATENCY < 17)
       $fatal(1, "DIV_LATENCY must allow 16 radix-4 iterations after start");
   end
-  assign held_divide = !ADD_COMPARE_ONLY &&
-    ((held.ctrl.op == ALU_DIVWU) || (held.ctrl.op == ALU_DIVW));
-  assign held_multiply = !ADD_COMPARE_ONLY && ((held.ctrl.op == ALU_MULLI) ||
-    (held.ctrl.op == ALU_MULLW) || (held.ctrl.op == ALU_MULHW) ||
-    (held.ctrl.op == ALU_MULHWU));
+  // Decoded beside held so the result path reads no opcode compare.
+  always_ff @(posedge clk_i) begin
+    if (issue_valid_i && issue_ready_o) begin
+      held_divide <= !ADD_COMPARE_ONLY &&
+        ((issue_i.ctrl.op == ALU_DIVWU) || (issue_i.ctrl.op == ALU_DIVW));
+      held_multiply <= issue_multiply;
+    end
+  end
   assign held_complete = held_divide ?
     ((divide_cycles_left == '0) && divider_quotient_valid && !divider_busy) :
     (!held_multiply || multiply_done);
@@ -523,14 +526,25 @@ module ppc_iu #(
           cr0_q <= alu_cr0;
         end
       end
-      // Multiply and divide results form from the held op and the engines.
-      assign held_long = held_multiply || held_divide;
-      assign long_value = mulli_short_q ? short_product :
-        held_divide ? divider_quotient :
-        ((held.ctrl.op == ALU_MULHW) || (held.ctrl.op == ALU_MULHWU)) ?
-          multiply_acc[63:32] : multiply_acc[31:0];
-      assign long_ov = !held_divide ? multiply_overflow :
-        (held.ctrl.op == ALU_DIVW) ? signed_divide_exception : divide_by_zero;
+      // Multiply and divide results form from the engines; their selects
+      // and the divide overflow are registered at issue.
+      logic held_high, divide_ov_q;
+      logic [31:0] engine_value;
+      always_ff @(posedge clk_i) begin
+        if (issue_valid_i && issue_ready_o) begin
+          held_long <= issue_multiply || (!ADD_COMPARE_ONLY &&
+            ((issue_i.ctrl.op == ALU_DIVWU) || (issue_i.ctrl.op == ALU_DIVW)));
+          held_high <= (issue_i.ctrl.op == ALU_MULHW) ||
+                       (issue_i.ctrl.op == ALU_MULHWU);
+          divide_ov_q <= (issue_i.b == 0) || ((issue_i.ctrl.op == ALU_DIVW) &&
+            (issue_i.a == 32'h8000_0000) && (issue_i.b == 32'hffff_ffff));
+        end
+      end
+      // A short MULLI records no CR0, so the record flags skip its product.
+      assign engine_value = held_divide ? divider_quotient :
+        held_high ? multiply_acc[63:32] : multiply_acc[31:0];
+      assign long_value = mulli_short_q ? short_product : engine_value;
+      assign long_ov = held_divide ? divide_ov_q : multiply_overflow;
       assign long_so = held.ctrl.so_in | long_ov;
       assign result_o.value = held_long ? long_value : value_q;
       assign result_o.ca = !held_long && ca_q;
@@ -538,8 +552,15 @@ module ppc_iu #(
       assign result_o.so = held_long ? (held.ctrl.write_ov_so && long_so) : so_q;
       assign result_o.cr0 = !held_long ? cr0_q :
         !held.ctrl.write_cr_field ? 4'b0 :
-        {flags_from_record(long_value),
+        {flags_from_record(engine_value),
          held.ctrl.write_ov_so ? long_so : held.ctrl.so_in};
+      // synthesis translate_off
+      always @(posedge clk_i)
+        if (rst_ni && occupied && held_divide)
+          assert (divide_ov_q == ((held.ctrl.op == ALU_DIVW) ?
+                  signed_divide_exception : divide_by_zero))
+            else $error("registered divide overflow disagrees");
+      // synthesis translate_on
     end else begin : g_execute_after_issue
       assign result_o.value = alu_result;
       assign result_o.ca = alu_ca;
